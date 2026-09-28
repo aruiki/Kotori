@@ -3,10 +3,13 @@
 //! M0 では IPC の受け口だけを持ち、変換はしない。キーはすべて未処理
 //! (`consumed = false`)として返し、フロントエンドにアプリへ渡させる。
 
+mod instance;
+
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::Mutex;
 
+pub use instance::InstanceGuard;
 use kotori_proto::ipc::{self, request, response, ErrorCode, Request, Response};
 use kotori_proto::{protocol_version, read_message, write_message, FrameError, PROTOCOL_MAJOR};
 
@@ -115,7 +118,7 @@ fn reply(request_id: u64, body: response::Body) -> Response {
 ///
 /// ソケットのパーミッションは 0600 にする(4.2)。既存のソケットファイルは置き換える。
 /// 呼び出し元は `path` の親ディレクトリを専用にすること(0700 に変更する)。
-/// 単一インスタンスの保証(REQ-4-1)は後続の PR で入れる。
+/// 既存のソケットを置き換えるので、先に [`InstanceGuard`] を取っておくこと(REQ-4-1)。
 #[cfg(unix)]
 pub fn listen_unix(
     path: &std::path::Path,

@@ -78,4 +78,6 @@ pub fn connect_unix(
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-pub use windows::{connect_pipe, current_user_sid, default_pipe_name, PipeListener, PipeStream};
+pub use windows::{
+    connect_pipe, current_user_sid, default_pipe_name, InstanceMutex, PipeListener, PipeStream,
+};

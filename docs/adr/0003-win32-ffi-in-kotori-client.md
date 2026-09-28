@@ -28,3 +28,4 @@
 
 - `kotori-server` は Windows でだけ `kotori-client` に通常の依存を持つ。
 - 単一インスタンス保証(REQ-4-1)の名前付きミューテックスも同じモジュールに置く。
+- Unix のロックファイル(REQ-4-1)は `flock` を直接呼ばず、`fs4` の `FileExt::try_lock` を使って `kotori-server` に `unsafe` を持ち込まない。ロックファイルはソケットと同じディレクトリの `server.lock` とする。

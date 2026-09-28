@@ -20,3 +20,6 @@ kotori-client = { path = "../kotori-client" }
 
 [target.'cfg(windows)'.dependencies]
 kotori-client = { path = "../kotori-client" }
+
+[target."cfg(unix)".dependencies]
+fs4 = { version = "1.1.0", features = ["sync"] }
