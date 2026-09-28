@@ -31,9 +31,12 @@ fn builds_dictionary_from_mozc_text() {
         .lookup("キョウ")
         .unwrap()
         .entries()
-        .map(|e| (e.surface, e.cost))
+        .map(|e| (e.surface.into_owned(), e.cost))
         .collect();
-    assert_eq!(surfaces, [("今日", 3000), ("京", 4500)]);
+    assert_eq!(
+        surfaces,
+        [("今日".to_owned(), 3000), ("京".to_owned(), 4500)]
+    );
     assert!(dict.lookup("トウキョウ").is_some());
     assert!(dict.lookup("ヒョウj").is_none(), "誤読の行は入れない");
     assert_eq!(dict.connection_cost(1, 2), 5);
