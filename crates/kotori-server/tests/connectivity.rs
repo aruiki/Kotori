@@ -146,3 +146,75 @@ fn unix_socket_roundtrip() {
 
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[cfg(windows)]
+fn spawn_pipe_server(tag: &str) -> String {
+    let name = format!(r"\\.\pipe\kotori-test-{}-{tag}", std::process::id());
+    let server = std::sync::Arc::new(Mutex::new(Server::new()));
+    let (tx, rx) = std::sync::mpsc::channel();
+    {
+        let name = name.clone();
+        thread::spawn(move || {
+            // bind が済んだことを知らせてから待ち受けに入る。
+            let mut listener = kotori_client::PipeListener::bind(&name).unwrap();
+            tx.send(()).unwrap();
+            loop {
+                let mut stream = listener.accept().unwrap();
+                let server = std::sync::Arc::clone(&server);
+                thread::spawn(move || serve(&server, &mut stream));
+            }
+        });
+    }
+    rx.recv().unwrap();
+    name
+}
+
+#[cfg(windows)]
+#[test]
+fn user_sid_is_string_form() {
+    let sid = kotori_client::current_user_sid().unwrap();
+    assert!(sid.starts_with("S-1-"), "{sid}");
+    let name = kotori_client::default_pipe_name().unwrap();
+    assert_eq!(name, format!(r"\\.\pipe\kotori-{sid}"));
+}
+
+#[cfg(windows)]
+#[test]
+fn named_pipe_roundtrip_with_multiple_clients() {
+    let name = spawn_pipe_server("multi");
+    let mut first = kotori_client::connect_pipe(&name).unwrap();
+    let mut second = kotori_client::connect_pipe(&name).unwrap();
+    let a = create_session(&mut first);
+    let b = create_session(&mut second);
+    assert_ne!(a, b, "接続をまたいで同じサーバー状態を共有する");
+}
+
+#[cfg(windows)]
+#[test]
+fn named_pipe_rejects_second_listener() {
+    let name = spawn_pipe_server("dup");
+    assert!(kotori_client::PipeListener::bind(&name).is_err());
+}
+
+#[cfg(windows)]
+#[test]
+fn named_pipe_delivers_reply_before_close() {
+    let name = spawn_pipe_server("close");
+    let mut stream = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&name)
+        .unwrap();
+    let req = Request {
+        protocol_version: Some(ipc::ProtocolVersion {
+            major: 99,
+            minor: 0,
+        }),
+        request_id: 7,
+        body: Some(send_key(1)),
+    };
+    write_message(&mut stream, &req).unwrap();
+    // サーバーは応答直後に接続を閉じるが、応答は失われない。
+    let resp: Response = read_message(&mut stream).unwrap().unwrap();
+    assert_eq!(resp.request_id, 7);
+}

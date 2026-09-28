@@ -130,6 +130,7 @@ version = "0.0.0"
 dependencies = [
  "kotori-proto",
  "thiserror 2.0.21",
+ "windows-sys",
 ]
 
 [[package]]

@@ -17,3 +17,6 @@ kotori-proto = { path = "../kotori-proto" }
 
 [dev-dependencies]
 kotori-client = { path = "../kotori-client" }
+
+[target.'cfg(windows)'.dependencies]
+kotori-client = { path = "../kotori-client" }

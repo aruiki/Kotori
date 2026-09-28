@@ -149,3 +149,20 @@ pub fn listen_unix(
     }
     Ok(())
 }
+
+/// 名前付きパイプで待ち受け、接続ごとにスレッドを立てて処理する(4.2)。
+///
+/// パイプの DACL は現在のユーザーだけに接続を許す。同名のパイプが既にあれば失敗する。
+#[cfg(windows)]
+pub fn listen_pipe(name: &str, server: std::sync::Arc<Mutex<Server>>) -> std::io::Result<()> {
+    let mut listener = kotori_client::PipeListener::bind(name)?;
+    loop {
+        let mut stream = listener.accept()?;
+        let server = std::sync::Arc::clone(&server);
+        std::thread::spawn(move || {
+            if let Err(e) = serve(&server, &mut stream) {
+                eprintln!("kotori-server: 接続エラー: {e}");
+            }
+        });
+    }
+}

@@ -17,4 +17,4 @@ SPEC 18.1 は M0 で `.proto` の定義とサーバー・クライアントの�
 
 ## 未決
 
-- 名前付きパイプの ACL 設定を `kotori-server` に置くか、`unsafe` を許す別クレートに切り出すか。
+- 名前付きパイプの ACL 設定を `kotori-server` に置くか、`unsafe` を許す別クレートに切り出すか。→ docs/adr/0003 で決定。
