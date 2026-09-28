@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use anyhow::{bail, Context, Result};
-use kotori_dict::DictBuilder;
+use kotori_dict::{DictBuilder, PosClass};
 use unicode_normalization::UnicodeNormalization;
 
 /// 辞書本体のファイル名。
@@ -22,6 +22,9 @@ pub const MOZC_DICTIONARY_FILES: [&str; 10] = [
     "dictionary08.txt",
     "dictionary09.txt",
 ];
+
+/// 品詞 ID の定義ファイル名。
+pub const MOZC_ID_DEF_FILE: &str = "id.def";
 
 /// 連接コストのファイル名。
 pub const MOZC_CONNECTION_FILE: &str = "connection_single_column.txt";
@@ -95,6 +98,45 @@ pub fn parse_mozc_connection(text: &str) -> Result<(usize, Vec<i16>)> {
     Ok((n, costs))
 }
 
+/// 品詞名(`助詞,格助詞,一般,*,*,*,*` など)から文節区切りの分類を決める(docs/adr/0005)。
+pub fn classify_pos(name: &str) -> PosClass {
+    let mut fields = name.split(',');
+    let major = fields.next().unwrap_or_default();
+    let minor = fields.next().unwrap_or_default();
+    match (major, minor) {
+        ("助詞" | "助動詞", _) => PosClass::Function,
+        (_, "接尾") => PosClass::Function,
+        ("動詞" | "形容詞", "非自立") => PosClass::Function,
+        ("記号", "句点" | "読点" | "括弧閉") => PosClass::Function,
+        ("接頭詞", _) | ("記号", "括弧開") => PosClass::Prefix,
+        _ => PosClass::Content,
+    }
+}
+
+/// `ID 品詞名` の行を読み、ID を添字とする分類表を返す。
+pub fn parse_mozc_id_def(text: &str) -> Result<Vec<PosClass>> {
+    let mut classes = Vec::new();
+    for (i, line) in text.lines().enumerate() {
+        if line.is_empty() {
+            continue;
+        }
+        let (id, name) = line
+            .split_once(' ')
+            .with_context(|| format!("id.def:{}: 形式が不正", i + 1))?;
+        let id: usize = id
+            .parse()
+            .with_context(|| format!("id.def:{}: ID", i + 1))?;
+        if id >= usize::from(u16::MAX) {
+            bail!("id.def:{}: ID {id} が大きすぎる", i + 1);
+        }
+        if classes.len() <= id {
+            classes.resize(id + 1, PosClass::Content);
+        }
+        classes[id] = classify_pos(name);
+    }
+    Ok(classes)
+}
+
 /// `dir`(fetch.sh の出力)から辞書を作る。
 pub fn compile_mozc(dir: &Path) -> Result<Vec<u8>> {
     let read = |name: &str| {
@@ -107,6 +149,7 @@ pub fn compile_mozc(dir: &Path) -> Result<Vec<u8>> {
     }
     let (n, costs) = parse_mozc_connection(&read(MOZC_CONNECTION_FILE)?)?;
     builder.set_connection(n, n, costs)?;
+    builder.set_pos_classes(parse_mozc_id_def(&read(MOZC_ID_DEF_FILE)?)?);
     Ok(builder.build()?)
 }
 

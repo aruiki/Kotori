@@ -5,7 +5,7 @@ use proptest::prelude::*;
 
 use super::*;
 
-/// 品詞は 0: BOS/EOS、1: 名詞、2: 助詞、3: 形容詞、4: 助動詞。
+/// 品詞は 0: BOS/EOS、1: 名詞、2: 助詞、3: 形容詞、4: 助動詞、5: 接頭辞(オ)。
 fn dict() -> Dictionary {
     let mut b = DictBuilder::new();
     for (r, s, id, cost) in [
@@ -21,11 +21,13 @@ fn dict() -> Dictionary {
         ("テン", "点", 1, 2000),
         ("キ", "木", 1, 2500),
         ("デス", "です", 4, 300),
+        ("オ", "お", 5, 500),
+        ("チャ", "茶", 1, 1500),
     ] {
         b.add(r, s, id, id, cost, 0).unwrap();
     }
     // 名詞→助詞、助詞→形容詞などを安く、名詞→名詞を高くする。
-    let mut conn = vec![500i16; 25];
+    let mut conn = vec![500i16; 36];
     for (rid, lid, c) in [
         (1, 2, 0),
         (2, 3, 0),
@@ -34,9 +36,11 @@ fn dict() -> Dictionary {
         (4, 0, 0),
         (1, 1, 1500),
     ] {
-        conn[rid * 5 + lid] = c;
+        conn[rid * 6 + lid] = c;
     }
-    b.set_connection(5, 5, conn).unwrap();
+    b.set_connection(6, 6, conn).unwrap();
+    use kotori_dict::PosClass::*;
+    b.set_pos_classes(vec![Content, Content, Function, Content, Function, Prefix]);
     Dictionary::from_bytes(b.build().unwrap()).unwrap()
 }
 
@@ -172,6 +176,18 @@ fn converts_with_system_dictionary() {
     }
     assert_eq!(cands.len(), DEFAULT_N_BEST);
     assert_eq!(cands[0].surface(), "今日はいい天気ですね");
+
+    for reading in [
+        "キョウハイイテンキデスネ",
+        "ワタシハガッコウニイキマシタ",
+        "オチャヲノンデイル",
+    ] {
+        let mut l = Lattice::new(Config::default());
+        l.set_reading(&d, reading);
+        let (path, _) = l.best_path(&d).unwrap();
+        let segs: Vec<String> = segment(&d, &path).iter().map(|s| s.surface()).collect();
+        println!("{}", segs.join(" | "));
+    }
 }
 
 #[test]
@@ -223,4 +239,31 @@ proptest! {
             prop_assert_eq!(cost, c.cost);
         }
     }
+}
+
+fn segments(d: &Dictionary, reading: &str) -> Vec<String> {
+    let mut l = Lattice::new(config());
+    l.set_reading(d, reading);
+    let (path, _) = l.best_path(d).unwrap();
+    let segs = segment(d, &path);
+    // 文節は読みを隙間なく覆う。
+    assert_eq!(segs.first().unwrap().start, 0);
+    assert_eq!(segs.last().unwrap().end, reading.chars().count());
+    assert!(segs.windows(2).all(|w| w[0].end == w[1].start));
+    segs.iter().map(|s| s.surface()).collect()
+}
+
+#[test]
+fn segments_are_content_word_plus_function_words() {
+    let d = dict();
+    assert_eq!(
+        segments(&d, "キョウハイイテンキデス"),
+        ["今日は", "いい", "天気です"]
+    );
+}
+
+#[test]
+fn prefix_joins_the_next_word() {
+    let d = dict();
+    assert_eq!(segments(&d, "オチャハ"), ["お茶は"]);
 }

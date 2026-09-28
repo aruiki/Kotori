@@ -9,6 +9,8 @@ const DICT: &str = "きょう\t1\t1\t3000\t今日\n\
 とうきょう\t2\t2\t2000\t東京\n\
 ひょうj\t1\t1\t100\t表示\tSPELLING_CORRECTION\n";
 
+const ID_DEF: &str = "0 BOS/EOS,*,*,*,*,*,*\n1 名詞,一般,*,*,*,*,*\n2 助詞,格助詞,一般,*,*,*,*\n";
+
 const CONN: &str = "3\n0\n1\n2\n3\n4\n5\n6\n7\n8\n";
 
 #[test]
@@ -57,8 +59,31 @@ fn compile_is_reproducible() {
         std::fs::write(dir.join(name), text).unwrap();
     }
     std::fs::write(dir.join(MOZC_CONNECTION_FILE), CONN).unwrap();
+    std::fs::write(dir.join(MOZC_ID_DEF_FILE), ID_DEF).unwrap();
     let a = compile_mozc(&dir).unwrap();
     let b = compile_mozc(&dir).unwrap();
     assert_eq!(a, b);
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn pos_classification() {
+    use kotori_dict::PosClass::*;
+    for (name, want) in [
+        ("名詞,一般,*,*,*,*,*", Content),
+        ("動詞,自立,*,*,五段・カ行イ音便,基本形,書く", Content),
+        ("助詞,格助詞,一般,*,*,*,*", Function),
+        ("助動詞,*,*,*,特殊・デス,基本形,です", Function),
+        ("名詞,接尾,一般,*,*,*,*", Function),
+        ("動詞,非自立,*,*,一段,基本形,いる", Function),
+        ("記号,読点,*,*,*,*,*", Function),
+        ("接頭詞,名詞接続,*,*,*,*,*", Prefix),
+        ("記号,括弧開,*,*,*,*,*", Prefix),
+        ("名詞,非自立,一般,*,*,*,*", Content),
+    ] {
+        assert_eq!(classify_pos(name), want, "{name}");
+    }
+    let classes = parse_mozc_id_def(ID_DEF).unwrap();
+    assert_eq!(classes, [Content, Content, Function]);
+    assert!(parse_mozc_id_def("x 名詞").is_err());
 }

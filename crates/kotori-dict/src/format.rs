@@ -7,7 +7,7 @@
 //! 40  連接行列の行数 u32、列数 u32
 //! 48  予約(0)
 //! 64  セクション表: SECTIONS 個の (オフセット u64, 長さ u64)
-//!     順に トライ、読みの表、エントリ、文字列、連接行列
+//!     順に トライ、読みの表、エントリ、文字列、連接行列、品詞分類(文脈 ID ごとに u8)
 //! ```
 
 use std::ops::Range;
@@ -17,8 +17,8 @@ use sha2::{Digest, Sha256};
 use crate::DictError;
 
 pub const MAGIC: &[u8; 4] = b"KTRD";
-pub const FORMAT_VERSION: u32 = 1;
-pub(crate) const SECTIONS: usize = 5;
+pub const FORMAT_VERSION: u32 = 2;
+pub(crate) const SECTIONS: usize = 6;
 pub(crate) const HEADER_SIZE: usize = 64 + SECTIONS * 16;
 /// 読みの表の1件: 読みの (オフセット u32, 長さ u32)、先頭エントリ u32、件数 u32。
 pub(crate) const GROUP_SIZE: usize = 16;
@@ -34,6 +34,7 @@ pub(crate) struct Layout {
     pub conn: Range<usize>,
     pub conn_rows: usize,
     pub conn_cols: usize,
+    pub pos_classes: Range<usize>,
 }
 
 fn u32_at(data: &[u8], at: usize) -> u32 {
@@ -82,9 +83,10 @@ impl Layout {
             };
             sections.push(range);
         }
-        let [trie, groups, entries, strings, conn]: [Range<usize>; SECTIONS] = sections
-            .try_into()
-            .map_err(|_| DictError::Corrupt("セクション数"))?;
+        let [trie, groups, entries, strings, conn, pos_classes]: [Range<usize>; SECTIONS] =
+            sections
+                .try_into()
+                .map_err(|_| DictError::Corrupt("セクション数"))?;
         if groups.len() % GROUP_SIZE != 0 || entries.len() % ENTRY_SIZE != 0 {
             return Err(DictError::Corrupt("表の長さが件の大きさの倍数でない"));
         }
@@ -103,6 +105,7 @@ impl Layout {
             conn,
             conn_rows,
             conn_cols,
+            pos_classes,
         })
     }
 }

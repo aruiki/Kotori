@@ -20,6 +20,12 @@ fn sample() -> Vec<u8> {
         .unwrap();
     b.set_connection(4, 4, (0..16).map(|v| v * 10).collect())
         .unwrap();
+    b.set_pos_classes(vec![
+        PosClass::Content,
+        PosClass::Content,
+        PosClass::Function,
+        PosClass::Prefix,
+    ]);
     b.build().unwrap()
 }
 
@@ -142,4 +148,13 @@ fn build_errors() {
     let mut empty = DictBuilder::new();
     empty.set_connection(1, 1, vec![0]).unwrap();
     assert_eq!(empty.build(), Err(BuildError::Empty));
+}
+
+#[test]
+fn pos_classes_by_context_id() {
+    let dict = Dictionary::from_bytes(sample()).unwrap();
+    assert_eq!(dict.pos_class(1), PosClass::Content);
+    assert_eq!(dict.pos_class(2), PosClass::Function);
+    assert_eq!(dict.pos_class(3), PosClass::Prefix);
+    assert_eq!(dict.pos_class(999), PosClass::Content);
 }

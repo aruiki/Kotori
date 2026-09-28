@@ -352,6 +352,55 @@ impl Lattice {
     }
 }
 
+/// 文節(5.5)。読みの `start..end` を覆うノードの並び。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Segment<'a> {
+    pub start: usize,
+    pub end: usize,
+    pub nodes: Vec<&'a Node>,
+}
+
+impl Segment<'_> {
+    pub fn surface(&self) -> String {
+        self.nodes.iter().map(|n| n.surface.as_str()).collect()
+    }
+}
+
+/// 経路を「自立語1つ + 後続の付属語」の文節に区切る(5.5、docs/adr/0005)。
+///
+/// 自立語は新しい文節を始め、付属語は前の文節につながる。接頭辞は次の語と同じ文節になる。
+/// 未知語は自立語として扱う。
+pub fn segment<'a>(dict: &Dictionary, path: &[&'a Node]) -> Vec<Segment<'a>> {
+    use kotori_dict::PosClass;
+
+    let mut out: Vec<Segment<'a>> = Vec::new();
+    let mut after_prefix = false;
+    for &node in path {
+        let class = if node.unknown {
+            PosClass::Content
+        } else {
+            dict.pos_class(node.lid)
+        };
+        let joins = match out.last() {
+            None => false,
+            Some(_) => after_prefix || class == PosClass::Function,
+        };
+        match out.last_mut() {
+            Some(seg) if joins => {
+                seg.end = node.end;
+                seg.nodes.push(node);
+            }
+            _ => out.push(Segment {
+                start: node.start,
+                end: node.end,
+                nodes: vec![node],
+            }),
+        }
+        after_prefix = class == PosClass::Prefix;
+    }
+    out
+}
+
 fn to_hiragana(s: &str) -> String {
     s.chars()
         .map(|c| match c {
