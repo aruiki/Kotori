@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use kotori_proto::ipc::{self, request, response, ErrorCode, Request, Response};
 use kotori_proto::{protocol_version, read_message, write_message, FrameError, PROTOCOL_MAJOR};
@@ -117,7 +117,10 @@ fn reply(request_id: u64, body: response::Body) -> Response {
 /// 呼び出し元は `path` の親ディレクトリを専用にすること(0700 に変更する)。
 /// 単一インスタンスの保証(REQ-4-1)は後続の PR で入れる。
 #[cfg(unix)]
-pub fn listen_unix(path: &std::path::Path, server: Arc<Mutex<Server>>) -> std::io::Result<()> {
+pub fn listen_unix(
+    path: &std::path::Path,
+    server: std::sync::Arc<Mutex<Server>>,
+) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     use std::os::unix::net::UnixListener;
 
@@ -137,7 +140,7 @@ pub fn listen_unix(path: &std::path::Path, server: Arc<Mutex<Server>>) -> std::i
     std::fs::rename(&staging, path)?;
     for stream in listener.incoming() {
         let mut stream = stream?;
-        let server = Arc::clone(&server);
+        let server = std::sync::Arc::clone(&server);
         std::thread::spawn(move || {
             if let Err(e) = serve(&server, &mut stream) {
                 eprintln!("kotori-server: 接続エラー: {e}");

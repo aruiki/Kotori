@@ -4,7 +4,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::net::{TcpListener, TcpStream};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::thread::{self, JoinHandle};
 
 use kotori_client::{Client, ClientError};
@@ -126,7 +126,7 @@ fn unix_socket_roundtrip() {
 
     let dir = std::env::temp_dir().join(format!("kotori-test-{}", std::process::id()));
     let path = dir.join("server.sock");
-    let server = Arc::new(Mutex::new(Server::new()));
+    let server = std::sync::Arc::new(Mutex::new(Server::new()));
     {
         let path = path.clone();
         thread::spawn(move || kotori_server::listen_unix(&path, server));
