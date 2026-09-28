@@ -13,7 +13,19 @@ fn main() -> anyhow::Result<()> {
         .with_context(|| format!("{} で待ち受けできない", path.display()))
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
 fn main() -> anyhow::Result<()> {
-    anyhow::bail!("kotori-server: 名前付きパイプでの待ち受けは未実装(docs/adr/0002)")
+    use std::sync::{Arc, Mutex};
+
+    use anyhow::Context;
+
+    let name = kotori_client::default_pipe_name().context("パイプ名を決められない")?;
+    eprintln!("kotori-server: {name} で待ち受け");
+    let server = Arc::new(Mutex::new(kotori_server::Server::new()));
+    kotori_server::listen_pipe(&name, server).with_context(|| format!("{name} で待ち受けできない"))
+}
+
+#[cfg(not(any(unix, windows)))]
+fn main() -> anyhow::Result<()> {
+    anyhow::bail!("kotori-server: この OS のトランスポートは未実装")
 }

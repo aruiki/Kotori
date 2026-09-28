@@ -1,6 +1,7 @@
 //! IPC クライアントと C ABI(docs/SPEC.md 4.2)。
 //!
 //! M0 では Rust から使うクライアントだけを持つ。C ABI は Windows フロントエンド(M3)で追加する。
+//! Windows の名前付きパイプ(Win32 FFI)は `windows` モジュールにある(docs/adr/0003)。
 
 use std::io::{Read, Write};
 
@@ -73,3 +74,8 @@ pub fn connect_unix(
 ) -> std::io::Result<Client<std::os::unix::net::UnixStream>> {
     std::os::unix::net::UnixStream::connect(path).map(Client::new)
 }
+
+#[cfg(windows)]
+mod windows;
+#[cfg(windows)]
+pub use windows::{connect_pipe, current_user_sid, default_pipe_name, PipeListener, PipeStream};
