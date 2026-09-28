@@ -1,7 +1,7 @@
 //! ローマ字かな変換(docs/SPEC.md 5.2)。
 //!
 //! 変換規則は TSV(`入力 \t 出力 \t 保留`)で与え、実行時に差し替えられる(REQ-5-1)。
-//! 既定表は MS-IME 互換(`tables/ms-ime.tsv`)。読みはカタカナ(NFC)で持ち、
+//! 既定表は MS-IME 互換(`data/romaji/ms-ime.tsv`、17.1)。読みはカタカナ(NFC)で持ち、
 //! 各かなにそれを生んだ生キー列を残す(REQ-5-3)。
 
 use std::collections::{HashMap, HashSet};
@@ -10,7 +10,7 @@ use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
 
 /// 既定の MS-IME 互換ローマ字表。
-pub const MS_IME_TABLE: &str = include_str!("../tables/ms-ime.tsv");
+pub const MS_IME_TABLE: &str = include_str!("../../../data/romaji/ms-ime.tsv");
 
 /// 規則表の読み込みエラー。
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
