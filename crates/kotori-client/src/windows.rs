@@ -12,10 +12,11 @@ use std::os::windows::ffi::OsStrExt;
 use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
 use std::ptr;
+use std::sync::Arc;
 
 use windows_sys::Win32::Foundation::{
-    GetLastError, LocalFree, ERROR_ALREADY_EXISTS, ERROR_INSUFFICIENT_BUFFER, ERROR_PIPE_BUSY,
-    ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE,
+    GetLastError, LocalFree, ERROR_ALREADY_EXISTS, ERROR_BROKEN_PIPE, ERROR_INSUFFICIENT_BUFFER,
+    ERROR_IO_PENDING, ERROR_PIPE_BUSY, ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE,
 };
 use windows_sys::Win32::Security::Authorization::{
     ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
@@ -25,14 +26,17 @@ use windows_sys::Win32::Security::{
     TOKEN_USER,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    FlushFileBuffers, FILE_FLAG_FIRST_PIPE_INSTANCE, PIPE_ACCESS_DUPLEX, SECURITY_IDENTIFICATION,
+    FlushFileBuffers, ReadFile, WriteFile, FILE_FLAG_FIRST_PIPE_INSTANCE, FILE_FLAG_OVERLAPPED,
+    PIPE_ACCESS_DUPLEX, SECURITY_IDENTIFICATION,
 };
 use windows_sys::Win32::System::Pipes::{
     ConnectNamedPipe, CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS,
     PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
 };
-use windows_sys::Win32::System::Threading::{CreateMutexW, GetCurrentProcess, OpenProcessToken};
-use windows_sys::Win32::System::IO::CancelIoEx;
+use windows_sys::Win32::System::Threading::{
+    CreateEventW, CreateMutexW, GetCurrentProcess, OpenProcessToken,
+};
+use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
 
 use crate::{Client, Transport};
 
@@ -289,46 +293,106 @@ pub fn connect_pipe(name: &str) -> io::Result<Client<PipeClient>> {
             .read(true)
             .write(true)
             .security_qos_flags(SECURITY_IDENTIFICATION)
+            .custom_flags(FILE_FLAG_OVERLAPPED)
             .open(name);
         match result {
             Err(e) if e.raw_os_error() == Some(ERROR_PIPE_BUSY as i32) => {
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
-            other => return Client::new(PipeClient(other?)),
+            other => {
+                let handle = Arc::new(OwnedHandle::from(other?));
+                return Client::new(PipeClient::new(handle)?);
+            }
         }
     }
     Err(io::Error::from_raw_os_error(ERROR_PIPE_BUSY as i32))
 }
 
 /// クライアント側のパイプ接続。
+///
+/// 同期モードのハンドルでは、読み取りスレッドの `ReadFile` が終わるまで同じファイル
+/// オブジェクトへの `WriteFile` が止まり、デッドロックする。そのため overlapped モードで
+/// 開き、読みと書きを並行させる。複製は同じハンドルを共有し、イベントだけを別に持つ。
 #[derive(Debug)]
-pub struct PipeClient(File);
+pub struct PipeClient {
+    handle: Arc<OwnedHandle>,
+    event: OwnedHandle,
+}
+
+impl PipeClient {
+    fn new(handle: Arc<OwnedHandle>) -> io::Result<Self> {
+        // SAFETY: 引数はすべて省略可能な値で、名前なしの手動リセットイベントを作る。
+        let event = unsafe { CreateEventW(ptr::null(), 1, 0, ptr::null()) };
+        if event.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: CreateEventW が成功したので event は所有権を持つ有効なハンドル。
+        let event = unsafe { OwnedHandle::from_raw_handle(event as RawHandle) };
+        Ok(Self { handle, event })
+    }
+
+    /// overlapped I/O を1回行い、完了を待つ。相手が閉じていれば 0 バイトを返す。
+    fn io(&self, buf: *mut u8, len: usize, write: bool) -> io::Result<usize> {
+        let len = u32::try_from(len).unwrap_or(u32::MAX);
+        let handle = self.handle.as_raw_handle();
+        let mut ov = OVERLAPPED {
+            hEvent: self.event.as_raw_handle(),
+            ..Default::default()
+        };
+        // SAFETY: buf は len バイト有効で、ov とともに完了を待つまでこの関数内で生きている。
+        let ok = unsafe {
+            if write {
+                WriteFile(handle, buf, len, ptr::null_mut(), &mut ov)
+            } else {
+                ReadFile(handle, buf, len, ptr::null_mut(), &mut ov)
+            }
+        };
+        // SAFETY: 直前の Win32 呼び出しのエラー値を読むだけ。
+        if ok == 0 && unsafe { GetLastError() } != ERROR_IO_PENDING {
+            return closed_as_eof(io::Error::last_os_error());
+        }
+        let mut done = 0u32;
+        // SAFETY: ov は上で開始した I/O のもので、完了まで待つ。
+        if unsafe { GetOverlappedResult(handle, &ov, &mut done, 1) } == 0 {
+            return closed_as_eof(io::Error::last_os_error());
+        }
+        Ok(done as usize)
+    }
+}
+
+fn closed_as_eof(e: io::Error) -> io::Result<usize> {
+    if e.raw_os_error() == Some(ERROR_BROKEN_PIPE as i32) {
+        Ok(0)
+    } else {
+        Err(e)
+    }
+}
 
 impl Read for PipeClient {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.0.read(buf)
+        self.io(buf.as_mut_ptr(), buf.len(), false)
     }
 }
 
 impl Write for PipeClient {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.write(buf)
+        // WriteFile は書き込み元を読むだけなので、*mut への変換で書き換えは起きない。
+        self.io(buf.as_ptr().cast_mut(), buf.len(), true)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.0.flush()
+        Ok(())
     }
 }
 
 impl Transport for PipeClient {
     fn try_clone(&self) -> io::Result<Self> {
-        self.0.try_clone().map(PipeClient)
+        PipeClient::new(Arc::clone(&self.handle))
     }
 
     fn shutdown(&self) {
-        // 複製したハンドルは同じファイルオブジェクトを指すので、読み取りスレッドの
-        // 同期 ReadFile もここで取り消される。
-        // SAFETY: self.0 は有効なパイプのハンドルを所有し、OVERLAPPED は指定しない。
-        unsafe { CancelIoEx(self.0.as_raw_handle(), ptr::null()) };
+        // 共有しているハンドルの読み取り待ちを取り消し、読み取りスレッドを終わらせる。
+        // SAFETY: handle は有効なパイプのハンドルで、OVERLAPPED は指定しない(すべて取り消す)。
+        unsafe { CancelIoEx(self.handle.as_raw_handle(), ptr::null()) };
     }
 }
