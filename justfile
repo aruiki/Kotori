@@ -17,3 +17,7 @@ clippy:
 
 test:
     cargo test --workspace --locked
+
+# 辞書ソース(Mozc dictionary_oss)を取得し、SHA-256 を検証する(5.3)
+fetch-dict:
+    bash data/dict-src/fetch.sh
