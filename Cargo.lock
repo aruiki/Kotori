@@ -250,6 +250,12 @@ dependencies = [
 [[package]]
 name = "kotori-eval"
 version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "kotori-composer",
+ "kotori-dict",
+ "kotori-lattice",
+]
 
 [[package]]
 name = "kotori-imebench"
