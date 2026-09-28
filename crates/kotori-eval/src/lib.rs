@@ -9,7 +9,9 @@ use std::fmt::Write as _;
 
 use kotori_composer::Composer;
 use kotori_dict::Dictionary;
-use kotori_lattice::{segment, segment_candidates, Config, Lattice, DEFAULT_N_BEST};
+use kotori_lattice::{
+    segment, segment_candidates, special_candidates, Config, DateTime, Lattice, DEFAULT_N_BEST,
+};
 
 /// 1 行の入力を読み(カタカナ)と生キー列にする。ASCII はローマ字として Composer に通し、
 /// それ以外はかなとしてカタカナにする。
@@ -70,8 +72,12 @@ pub fn render(dict: &Dictionary, input: &str, top: usize) -> String {
             .skip(s.start)
             .take(s.end - s.start)
             .collect();
-        // 生キー列の英数字は文全体を1文節にしたときだけ意味を持つ。
-        let extra = if segs.len() == 1 { &extra[..] } else { &[] };
+        // 特殊変換(数字・日付・単位、5.3)。生キー列の英数字は文全体が1文節のときだけ加える。
+        let mut extra_here = special_candidates(&span, &now());
+        if segs.len() == 1 {
+            extra_here.extend(extra.iter().cloned());
+        }
+        let extra = &extra_here[..];
         let cands = segment_candidates(
             dict,
             Config::default(),
@@ -90,6 +96,14 @@ pub fn render(dict: &Dictionary, input: &str, top: usize) -> String {
         );
     }
     out
+}
+
+/// 現在の日時(UTC に日本標準時の 9 時間を足す)。時差の設定は後続で入れる。
+fn now() -> DateTime {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64);
+    DateTime::from_unix(secs + 9 * 3600)
 }
 
 #[cfg(test)]

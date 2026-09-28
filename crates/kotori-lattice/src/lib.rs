@@ -5,11 +5,13 @@
 //! その Viterbi の結果を再利用する(REQ-5-7)。
 
 mod candidates;
+mod special;
 
 pub use candidates::{
     segment_candidates, segment_with_boundaries, to_halfwidth_katakana, MAX_SEGMENT_CANDIDATES,
 };
 use kotori_dict::Dictionary;
+pub use special::{special_candidates, DateTime};
 
 /// ノードの最大の長さ(文字数)。これより長い辞書語は置かない。差分構築で探し直す範囲も
 /// 変更位置の手前この長さまでに限られる。Mozc の辞書で超えるのは 1 語だけ。
@@ -374,7 +376,7 @@ impl Segment<'_> {
 /// 経路を「自立語1つ + 後続の付属語」の文節に区切る(5.5、docs/adr/0005)。
 ///
 /// 自立語は新しい文節を始め、付属語は前の文節につながる。接頭辞は次の語と同じ文節になる。
-/// 未知語は自立語として扱う。
+/// 未知語は自立語として扱う。数字が続くノードは1つの文節にまとめる。
 pub fn segment<'a>(dict: &Dictionary, path: &[&'a Node]) -> Vec<Segment<'a>> {
     use kotori_dict::PosClass;
 
@@ -386,9 +388,14 @@ pub fn segment<'a>(dict: &Dictionary, path: &[&'a Node]) -> Vec<Segment<'a>> {
         } else {
             dict.pos_class(node.lid)
         };
+        // 数字が続くときは1つの数として同じ文節にする(特殊変換、5.3)。
+        let numeric_run = out
+            .last()
+            .and_then(|s| s.nodes.last())
+            .is_some_and(|prev| is_numeric(&prev.surface) && is_numeric(&node.surface));
         let joins = match out.last() {
             None => false,
-            Some(_) => after_prefix || class == PosClass::Function,
+            Some(_) => after_prefix || class == PosClass::Function || numeric_run,
         };
         match out.last_mut() {
             Some(seg) if joins => {
@@ -404,6 +411,12 @@ pub fn segment<'a>(dict: &Dictionary, path: &[&'a Node]) -> Vec<Segment<'a>> {
         after_prefix = class == PosClass::Prefix;
     }
     out
+}
+
+fn is_numeric(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_digit() || ('０'..='９').contains(&c))
 }
 
 fn to_hiragana(s: &str) -> String {
