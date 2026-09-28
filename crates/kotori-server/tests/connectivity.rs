@@ -187,6 +187,10 @@ fn named_pipe_roundtrip_with_multiple_clients() {
     let a = create_session(&mut first);
     let b = create_session(&mut second);
     assert_ne!(a, b, "接続をまたいで同じサーバー状態を共有する");
+    // 読み取りスレッドが ReadFile で待っている間にも書き込めること(同期ハンドルでは詰まる)。
+    thread::sleep(std::time::Duration::from_millis(50));
+    let c = create_session(&mut first);
+    assert!(c > b);
 }
 
 #[cfg(windows)]
