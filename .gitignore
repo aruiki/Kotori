@@ -1,2 +1,4 @@
 /target
 /data/dict-src/mozc/
+/eval/data/
+/eval/results/
