@@ -188,6 +188,20 @@ fn converts_with_system_dictionary() {
         let segs: Vec<String> = segment(&d, &path).iter().map(|s| s.surface()).collect();
         println!("{}", segs.join(" | "));
     }
+
+    let reading = "キョウハイイテンキデスネ";
+    let mut l = Lattice::new(Config::default());
+    l.set_reading(&d, reading);
+    let nbest = l.n_best(&d, DEFAULT_N_BEST);
+    let started = std::time::Instant::now();
+    let cands = segment_candidates(&d, Config::default(), reading, &nbest, 0, 3, &[]);
+    println!(
+        "キョウ の候補 {} 件 ({:?}): {:?}",
+        cands.len(),
+        started.elapsed(),
+        &cands[..10]
+    );
+    assert_eq!(cands[0], "今日");
 }
 
 #[test]
@@ -266,4 +280,95 @@ fn segments_are_content_word_plus_function_words() {
 fn prefix_joins_the_next_word() {
     let d = dict();
     assert_eq!(segments(&d, "オチャハ"), ["お茶は"]);
+}
+
+#[test]
+fn fixed_boundary_is_never_crossed() {
+    let d = dict();
+    let mut l = Lattice::new(config());
+    l.set_reading(&d, "キョウハ");
+    // 境界なしなら「今日/は」。2 文字目で切ると「巨」と「ウハ」側に分かれる。
+    let (path, _) = l.best_path_with_boundaries(&d, &[]).unwrap();
+    assert_eq!(
+        path.iter().map(|n| n.surface.as_str()).collect::<String>(),
+        "今日は"
+    );
+    let (path, _) = l.best_path_with_boundaries(&d, &[2]).unwrap();
+    assert!(path.iter().all(|n| !(n.start < 2 && 2 < n.end)));
+    assert!(path.iter().any(|n| n.end == 2));
+    let segs = segment_with_boundaries(&d, &path, &[2]);
+    assert_eq!(segs[0].end, 2);
+    assert_eq!(segs.last().unwrap().end, 4);
+}
+
+#[test]
+fn boundary_splits_function_words_too() {
+    let d = dict();
+    let mut l = Lattice::new(config());
+    l.set_reading(&d, "キョウハ");
+    let (path, _) = l.best_path_with_boundaries(&d, &[3]).unwrap();
+    let segs: Vec<String> = segment_with_boundaries(&d, &path, &[3])
+        .iter()
+        .map(|s| s.surface())
+        .collect();
+    assert_eq!(segs, ["今日", "は"]);
+}
+
+#[test]
+fn segment_candidates_follow_req_5_8_order() {
+    let d = dict();
+    let mut l = Lattice::new(config());
+    let reading = "キョウハイイテンキ";
+    l.set_reading(&d, reading);
+    let nbest = l.n_best(&d, 50);
+    let cands = segment_candidates(&d, config(), reading, &nbest, 0, 3, &["kyou".into()]);
+    // 文全体の N-best に出た表記が先。
+    assert_eq!(cands[0], "今日");
+    assert!(cands.contains(&"京".to_owned()));
+    // 文字種変換と extra が後ろに付く。
+    let tail: Vec<&str> = cands
+        .iter()
+        .rev()
+        .take(4)
+        .rev()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(tail, ["きょう", "キョウ", "ｷｮｳ", "kyou"]);
+    let mut dedup = cands.clone();
+    dedup.sort();
+    dedup.dedup();
+    assert_eq!(dedup.len(), cands.len());
+    assert!(cands.len() <= MAX_SEGMENT_CANDIDATES);
+    assert!(segment_candidates(&d, config(), reading, &nbest, 5, 99, &[]).is_empty());
+}
+
+#[test]
+fn halfwidth_katakana() {
+    assert_eq!(to_halfwidth_katakana("ガッコウ・パーティー"), "ｶﾞｯｺｳ･ﾊﾟｰﾃｨｰ");
+    assert_eq!(to_halfwidth_katakana("ヴァ漢a"), "ｳﾞｧ漢a");
+}
+
+proptest! {
+    /// 固定境界つきの最小経路は、どの境界もまたがず読み全体を覆う。
+    #[test]
+    fn boundaries_are_respected(
+        reading in "[キョウハイテンデス]{1,10}",
+        cuts in proptest::collection::vec(1usize..10, 0..3),
+    ) {
+        let d = dict();
+        let mut l = Lattice::new(config());
+        l.set_reading(&d, &reading);
+        let len = reading.chars().count();
+        let cuts: Vec<usize> = cuts.into_iter().filter(|&c| c < len).collect();
+        let (path, _) = l.best_path_with_boundaries(&d, &cuts).unwrap();
+        prop_assert_eq!(path.first().unwrap().start, 0);
+        prop_assert_eq!(path.last().unwrap().end, len);
+        for n in &path {
+            prop_assert!(cuts.iter().all(|&b| !(n.start < b && b < n.end)));
+        }
+        let segs = segment_with_boundaries(&d, &path, &cuts);
+        for &b in &cuts {
+            prop_assert!(segs.iter().any(|s| s.start == b));
+        }
+    }
 }
