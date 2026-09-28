@@ -258,6 +258,10 @@ version = "0.0.0"
 [[package]]
 name = "kotori-lattice"
 version = "0.0.0"
+dependencies = [
+ "kotori-dict",
+ "proptest",
+]
 
 [[package]]
 name = "kotori-learn"
