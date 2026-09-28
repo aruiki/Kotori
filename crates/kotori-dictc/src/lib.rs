@@ -109,6 +109,8 @@ pub fn classify_pos(name: &str) -> PosClass {
         ("動詞" | "形容詞", "非自立") => PosClass::Function,
         ("記号", "句点" | "読点" | "括弧閉") => PosClass::Function,
         ("接頭詞", _) | ("記号", "括弧開") => PosClass::Prefix,
+        ("名詞", "サ変接続") => PosClass::SahenNoun,
+        ("動詞", "自立") if name.contains(",サ変・スル,") => PosClass::SuruVerb,
         _ => PosClass::Content,
     }
 }

@@ -382,6 +382,7 @@ pub fn segment<'a>(dict: &Dictionary, path: &[&'a Node]) -> Vec<Segment<'a>> {
 
     let mut out: Vec<Segment<'a>> = Vec::new();
     let mut after_prefix = false;
+    let mut prev_class = None;
     for &node in path {
         let class = if node.unknown {
             PosClass::Content
@@ -393,9 +394,14 @@ pub fn segment<'a>(dict: &Dictionary, path: &[&'a Node]) -> Vec<Segment<'a>> {
             .last()
             .and_then(|s| s.nodes.last())
             .is_some_and(|prev| is_numeric(&prev.surface) && is_numeric(&node.surface));
+        // サ変名詞の直後の「する」は同じ文節にする(「帰社した」)。
+        let suru_after_sahen =
+            class == PosClass::SuruVerb && prev_class == Some(PosClass::SahenNoun);
         let joins = match out.last() {
             None => false,
-            Some(_) => after_prefix || class == PosClass::Function || numeric_run,
+            Some(_) => {
+                after_prefix || class == PosClass::Function || numeric_run || suru_after_sahen
+            }
         };
         match out.last_mut() {
             Some(seg) if joins => {
@@ -409,6 +415,7 @@ pub fn segment<'a>(dict: &Dictionary, path: &[&'a Node]) -> Vec<Segment<'a>> {
             }),
         }
         after_prefix = class == PosClass::Prefix;
+        prev_class = Some(class);
     }
     out
 }

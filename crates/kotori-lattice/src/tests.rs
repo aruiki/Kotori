@@ -5,7 +5,8 @@ use proptest::prelude::*;
 
 use super::*;
 
-/// 品詞は 0: BOS/EOS、1: 名詞、2: 助詞、3: 形容詞、4: 助動詞、5: 接頭辞(オ)。
+/// 品詞は 0: BOS/EOS、1: 名詞、2: 助詞、3: 形容詞、4: 助動詞、5: 接頭辞(オ)、
+/// 6: サ変名詞、7: サ変動詞「する」。
 fn dict() -> Dictionary {
     let mut b = DictBuilder::new();
     for (r, s, id, cost) in [
@@ -22,12 +23,14 @@ fn dict() -> Dictionary {
         ("キ", "木", 1, 2500),
         ("デス", "です", 4, 300),
         ("オ", "お", 5, 500),
+        ("キシャ", "帰社", 6, 1000),
+        ("シタ", "した", 7, 500),
         ("チャ", "茶", 1, 1500),
     ] {
         b.add(r, s, id, id, cost, 0).unwrap();
     }
     // 名詞→助詞、助詞→形容詞などを安く、名詞→名詞を高くする。
-    let mut conn = vec![500i16; 36];
+    let mut conn = vec![500i16; 64];
     for (rid, lid, c) in [
         (1, 2, 0),
         (2, 3, 0),
@@ -36,11 +39,13 @@ fn dict() -> Dictionary {
         (4, 0, 0),
         (1, 1, 1500),
     ] {
-        conn[rid * 6 + lid] = c;
+        conn[rid * 8 + lid] = c;
     }
-    b.set_connection(6, 6, conn).unwrap();
+    b.set_connection(8, 8, conn).unwrap();
     use kotori_dict::PosClass::*;
-    b.set_pos_classes(vec![Content, Content, Function, Content, Function, Prefix]);
+    b.set_pos_classes(vec![
+        Content, Content, Function, Content, Function, Prefix, SahenNoun, SuruVerb,
+    ]);
     Dictionary::from_bytes(b.build().unwrap()).unwrap()
 }
 
@@ -377,4 +382,11 @@ proptest! {
 fn digits_form_one_segment() {
     let d = dict();
     assert_eq!(segments(&d, "123キョウ"), ["123", "今日"]);
+}
+
+#[test]
+fn suru_joins_only_after_sahen_noun() {
+    let d = dict();
+    assert_eq!(segments(&d, "キシャシタ"), ["帰社した"]);
+    assert_eq!(segments(&d, "キョウハシタ"), ["今日は", "した"]);
 }
