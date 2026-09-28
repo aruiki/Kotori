@@ -372,3 +372,9 @@ proptest! {
         }
     }
 }
+
+#[test]
+fn digits_form_one_segment() {
+    let d = dict();
+    assert_eq!(segments(&d, "123キョウ"), ["123", "今日"]);
+}
