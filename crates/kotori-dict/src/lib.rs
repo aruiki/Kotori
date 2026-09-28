@@ -2,14 +2,17 @@
 //!
 //! 辞書は [`DictBuilder`] で作ったバイト列で、[`Dictionary`] がそれを検証して検索する。
 //! 読みの索引はダブル配列トライ(共通接頭辞検索)と、整列した読みの表(予測検索)。
+//! 読みは符号化して持つ([`encode_reading`])。
 
 mod builder;
 mod format;
 
 pub use builder::{BuildError, DictBuilder};
-pub use format::{FORMAT_VERSION, MAGIC};
+pub use format::{decode_reading, encode_reading, FORMAT_VERSION, MAGIC};
 
-use format::{Layout, ENTRY_SIZE, GROUP_SIZE};
+use std::borrow::Cow;
+
+use format::{Layout, ENTRY_SIZE, GROUP_SIZE, SURFACE_IS_HIRAGANA, SURFACE_IS_KATAKANA};
 
 /// 文節区切りのための品詞分類(5.5、docs/adr/0005)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -49,9 +52,10 @@ pub enum DictError {
 }
 
 /// 辞書の1エントリ。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry<'a> {
-    pub surface: &'a str,
+    /// 表記。読みと同じカタカナ・ひらがなの表記は辞書に持たず、読みから作る。
+    pub surface: Cow<'a, str>,
     /// 左文脈 ID。
     pub lid: u16,
     /// 右文脈 ID。
@@ -71,15 +75,21 @@ pub struct Match<'a> {
 
 impl<'a> Match<'a> {
     /// 一致した読み。
-    pub fn reading(&self) -> &'a str {
-        self.dict.group_reading(self.group)
+    pub fn reading(&self) -> String {
+        decode_reading(self.dict.group_key(self.group)).unwrap_or_default()
+    }
+
+    /// 一致した読みの文字数。
+    pub fn reading_chars(&self) -> usize {
+        self.reading().chars().count()
     }
 
     /// この読みを持つエントリ。辞書の構築時にコストの昇順に並べてある。
     pub fn entries(&self) -> impl Iterator<Item = Entry<'a>> + 'a {
         let dict = self.dict;
-        let (first, count) = dict.group_entries(self.group);
-        (first..first + count).map(move |i| dict.entry(i))
+        let group = self.group;
+        let (first, count) = dict.group_entries(group);
+        (first..first + count).map(move |i| dict.entry(group, i))
     }
 }
 
@@ -111,9 +121,10 @@ impl Dictionary {
 
     /// `reading` の先頭から一致する読みを、短い順に返す(共通接頭辞検索)。
     pub fn prefix_search(&self, reading: &str) -> Vec<Match<'_>> {
+        let key = encode_reading(reading);
         let groups = self.groups();
         yada::DoubleArray(self.section(self.layout.trie.clone()))
-            .common_prefix_search(reading)
+            .common_prefix_search(&key)
             .filter(|&(group, _)| (group as usize) < groups)
             .map(|(group, _)| Match {
                 dict: self,
@@ -124,8 +135,12 @@ impl Dictionary {
 
     /// 読みが完全に一致するエントリ。
     pub fn lookup(&self, reading: &str) -> Option<Match<'_>> {
+        self.lookup_key(&encode_reading(reading))
+    }
+
+    fn lookup_key(&self, key: &[u8]) -> Option<Match<'_>> {
         yada::DoubleArray(self.section(self.layout.trie.clone()))
-            .exact_match_search(reading)
+            .exact_match_search(key)
             .filter(|&group| (group as usize) < self.groups())
             .map(|group| Match {
                 dict: self,
@@ -133,21 +148,22 @@ impl Dictionary {
             })
     }
 
-    /// `prefix` で始まる読みを辞書順に返す(予測検索)。
-    pub fn predict<'a>(&'a self, prefix: &'a str) -> impl Iterator<Item = Match<'a>> + 'a {
+    /// `prefix` で始まる読みを、符号の順に返す(予測検索)。
+    pub fn predict(&self, prefix: &str) -> impl Iterator<Item = Match<'_>> + '_ {
+        let key = encode_reading(prefix);
         let groups = self.groups();
         let mut lo = 0;
         let mut hi = groups;
         while lo < hi {
             let mid = (lo + hi) / 2;
-            if self.group_reading(mid) < prefix {
+            if self.group_key(mid) < key.as_slice() {
                 lo = mid + 1;
             } else {
                 hi = mid;
             }
         }
         (lo..groups)
-            .take_while(move |&g| self.group_reading(g).starts_with(prefix))
+            .take_while(move |&g| self.group_key(g).starts_with(&key))
             .map(move |group| Match { dict: self, group })
     }
 
@@ -183,70 +199,96 @@ impl Dictionary {
         u16::from_le_bytes([self.data[at], self.data[at + 1]])
     }
 
-    fn string(&self, offset: usize, len: usize) -> &str {
-        let s = self.layout.strings.start + offset;
-        // validate で UTF-8 と範囲を確かめてある。
-        std::str::from_utf8(&self.data[s..s + len]).unwrap_or_default()
-    }
-
+    /// 番兵を除いた読みの数。
     fn groups(&self) -> usize {
-        self.layout.groups.len() / GROUP_SIZE
+        self.layout.groups.len() / GROUP_SIZE - 1
     }
 
-    fn group_reading(&self, g: usize) -> &str {
-        let at = self.layout.groups.start + g * GROUP_SIZE;
-        self.string(self.u32_at(at), self.u32_at(at + 4))
+    fn group_field(&self, g: usize, field: usize) -> usize {
+        self.u32_at(self.layout.groups.start + g * GROUP_SIZE + field * 4)
+    }
+
+    fn group_key(&self, g: usize) -> &[u8] {
+        let (start, end) = (self.group_field(g, 0), self.group_field(g + 1, 0));
+        &self.data[self.layout.readings.start + start..self.layout.readings.start + end]
     }
 
     fn group_entries(&self, g: usize) -> (usize, usize) {
-        let at = self.layout.groups.start + g * GROUP_SIZE;
-        (self.u32_at(at + 8), self.u32_at(at + 12))
+        let first = self.group_field(g, 1);
+        (first, self.group_field(g + 1, 1) - first)
     }
 
-    fn entry(&self, i: usize) -> Entry<'_> {
+    fn entry(&self, group: usize, i: usize) -> Entry<'_> {
         let at = self.layout.entries.start + i * ENTRY_SIZE;
+        let raw_flags = self.data[at + 5];
+        let surface = if raw_flags & SURFACE_IS_KATAKANA != 0 {
+            Cow::Owned(decode_reading(self.group_key(group)).unwrap_or_default())
+        } else if raw_flags & SURFACE_IS_HIRAGANA != 0 {
+            let kata = decode_reading(self.group_key(group)).unwrap_or_default();
+            Cow::Owned(
+                kata.chars()
+                    .map(|c| match c {
+                        '\u{30A1}'..='\u{30F6}' => char::from_u32(c as u32 - 0x60).unwrap_or(c),
+                        _ => c,
+                    })
+                    .collect(),
+            )
+        } else {
+            let off = self.layout.surfaces.start + self.u32_at(at);
+            let len = usize::from(self.data[at + 4]);
+            // validate で UTF-8 と範囲を確かめてある。
+            Cow::Borrowed(std::str::from_utf8(&self.data[off..off + len]).unwrap_or_default())
+        };
         Entry {
-            surface: self.string(self.u32_at(at), self.u32_at(at + 4)),
-            lid: self.u16_at(at + 8),
-            rid: self.u16_at(at + 10),
-            cost: self.u16_at(at + 12) as i16,
-            flags: self.u16_at(at + 14),
+            surface,
+            lid: self.u16_at(at + 6),
+            rid: self.u16_at(at + 8),
+            cost: self.u16_at(at + 10) as i16,
+            flags: u16::from(raw_flags & 0x0F),
         }
     }
 
-    /// 参照がすべて範囲内で、文字列が UTF-8 であることを確かめる。
+    /// 参照がすべて範囲内で、文字列が正しく、トライと読みの表が一致することを確かめる。
     fn validate(&self) -> Result<(), DictError> {
-        let strings = self.layout.strings.len();
-        let valid_str = |off: usize, len: usize| {
-            off.checked_add(len).is_some_and(|end| end <= strings) && {
-                let s = self.layout.strings.start + off;
-                std::str::from_utf8(&self.data[s..s + len]).is_ok()
-            }
-        };
+        let surfaces = self.layout.surfaces.len();
         for i in 0..self.len() {
             let at = self.layout.entries.start + i * ENTRY_SIZE;
-            if !valid_str(self.u32_at(at), self.u32_at(at + 4)) {
+            let (off, len) = (self.u32_at(at), usize::from(self.data[at + 4]));
+            let ok = off.checked_add(len).is_some_and(|end| end <= surfaces) && {
+                let s = self.layout.surfaces.start + off;
+                std::str::from_utf8(&self.data[s..s + len]).is_ok()
+            };
+            if !ok {
                 return Err(DictError::Corrupt("エントリの表記が範囲外"));
             }
         }
-        for g in 0..self.groups() {
-            let at = self.layout.groups.start + g * GROUP_SIZE;
-            if !valid_str(self.u32_at(at), self.u32_at(at + 4)) {
-                return Err(DictError::Corrupt("読みが範囲外"));
+        let groups = self.groups();
+        let readings = self.layout.readings.len();
+        if groups == 0 || self.group_field(0, 0) != 0 || self.group_field(0, 1) != 0 {
+            return Err(DictError::Corrupt("読みの表の先頭が不正"));
+        }
+        if self.group_field(groups, 0) != readings || self.group_field(groups, 1) != self.len() {
+            return Err(DictError::Corrupt("読みの表の番兵が不正"));
+        }
+        let mut prev_key: Option<&[u8]> = None;
+        for g in 0..groups {
+            let (off, next_off) = (self.group_field(g, 0), self.group_field(g + 1, 0));
+            let (first, next_first) = (self.group_field(g, 1), self.group_field(g + 1, 1));
+            // 番兵が範囲の上限なので、昇順なら全件が範囲内に収まる。
+            if off >= next_off || first >= next_first {
+                return Err(DictError::Corrupt("読みの表が昇順でない"));
             }
-            let (first, count) = self.group_entries(g);
-            if first
-                .checked_add(count)
-                .map_or(true, |end| end > self.len())
-            {
-                return Err(DictError::Corrupt("エントリの範囲が不正"));
+            let key = self.group_key(g);
+            if decode_reading(key).is_none() || prev_key.is_some_and(|p| p >= key) {
+                return Err(DictError::Corrupt("読みが不正、または整列していない"));
             }
+            prev_key = Some(key);
         }
         yada::DoubleArray::new(self.section(self.layout.trie.clone()))
             .map_err(|_| DictError::Corrupt("トライが壊れている"))?;
-        // トライの値は読みの表の添字なので、すべての読みを引いて範囲を確かめる。
-        for g in 0..self.groups() {
-            if self.lookup(self.group_reading(g)).map(|m| m.group) != Some(g) {
+        // トライの値は読みの表の添字なので、すべての読みを引いて対応を確かめる。
+        for g in 0..groups {
+            if self.lookup_key(self.group_key(g)).map(|m| m.group) != Some(g) {
                 return Err(DictError::Corrupt("トライと読みの表が一致しない"));
             }
         }

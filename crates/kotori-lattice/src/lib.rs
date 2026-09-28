@@ -159,12 +159,12 @@ impl Lattice {
         let rest: String = self.reading[start..limit].iter().collect();
         let mut out = Vec::new();
         for m in dict.prefix_search(&rest) {
-            let end = start + m.reading().chars().count();
+            let end = start + m.reading_chars();
             for e in m.entries() {
                 out.push(Node {
                     start,
                     end,
-                    surface: e.surface.to_owned(),
+                    surface: e.surface.into_owned(),
                     lid: e.lid,
                     rid: e.rid,
                     cost: i32::from(e.cost),

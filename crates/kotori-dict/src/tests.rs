@@ -29,8 +29,8 @@ fn sample() -> Vec<u8> {
     b.build().unwrap()
 }
 
-fn surfaces(m: Match<'_>) -> Vec<&str> {
-    m.entries().map(|e| e.surface).collect()
+fn surfaces(m: Match<'_>) -> Vec<String> {
+    m.entries().map(|e| e.surface.into_owned()).collect()
 }
 
 #[test]
@@ -45,7 +45,7 @@ fn exact_lookup_orders_by_cost() {
     assert_eq!(
         tokyo,
         Entry {
-            surface: "東京",
+            surface: "東京".into(),
             lid: 3,
             rid: 3,
             cost: 1000,
@@ -57,7 +57,7 @@ fn exact_lookup_orders_by_cost() {
 #[test]
 fn common_prefix_search_returns_shorter_first() {
     let dict = Dictionary::from_bytes(sample()).unwrap();
-    let readings: Vec<&str> = dict
+    let readings: Vec<String> = dict
         .prefix_search("キョウトエ")
         .into_iter()
         .map(|m| m.reading())
@@ -69,7 +69,7 @@ fn common_prefix_search_returns_shorter_first() {
 #[test]
 fn predictive_search_lists_readings_with_prefix() {
     let dict = Dictionary::from_bytes(sample()).unwrap();
-    let readings: Vec<&str> = dict.predict("キョウ").map(|m| m.reading()).collect();
+    let readings: Vec<String> = dict.predict("キョウ").map(|m| m.reading()).collect();
     assert_eq!(readings, ["キョウ", "キョウカイ", "キョウト"]);
     assert_eq!(dict.predict("ン").count(), 0);
     assert_eq!(dict.predict("").count(), 6);
@@ -157,4 +157,47 @@ fn pos_classes_by_context_id() {
     assert_eq!(dict.pos_class(2), PosClass::Function);
     assert_eq!(dict.pos_class(3), PosClass::Prefix);
     assert_eq!(dict.pos_class(999), PosClass::Content);
+}
+
+#[test]
+fn reading_codec_roundtrip_and_order() {
+    for r in ["キョウ", "ヴァー", "ABC", "キョウ1バン", "ゐ", "ー・"] {
+        let key = encode_reading(r);
+        assert_eq!(decode_reading(&key).as_deref(), Some(r));
+    }
+    assert_eq!(encode_reading("キョウ").len(), 3, "カタカナは1文字1バイト");
+    assert!(decode_reading(&[0]).is_none());
+    assert!(decode_reading(&[0xFF]).is_none());
+    // 符号の前方一致は読みの前方一致と同じ。
+    assert!(encode_reading("キョウト").starts_with(&encode_reading("キョウ")));
+}
+
+#[test]
+fn katakana_and_hiragana_surfaces_are_rebuilt_from_reading() {
+    let mut b = DictBuilder::new();
+    b.add("カタカナ", "カタカナ", 0, 0, 10, 0).unwrap();
+    b.add("カタカナ", "かたかな", 0, 0, 20, flags::PERSON_NAME)
+        .unwrap();
+    b.add("カタカナ", "片仮名", 0, 0, 5, 0).unwrap();
+    b.add("ABC", "abc", 0, 0, 5, 0).unwrap();
+    b.set_connection(1, 1, vec![0]).unwrap();
+    let dict = Dictionary::from_bytes(b.build().unwrap()).unwrap();
+    let m = dict.lookup("カタカナ").unwrap();
+    assert_eq!(surfaces(m), ["片仮名", "カタカナ", "かたかな"]);
+    assert_eq!(m.entries().last().unwrap().flags, flags::PERSON_NAME);
+    assert_eq!(surfaces(dict.lookup("ABC").unwrap()), ["abc"]);
+    assert_eq!(dict.prefix_search("カタカナダ")[0].reading_chars(), 4);
+}
+
+#[test]
+fn rejects_invalid_entries() {
+    let mut b = DictBuilder::new();
+    assert!(matches!(
+        b.add("ア", &"x".repeat(256), 0, 0, 0, 0),
+        Err(BuildError::SurfaceTooLong(_))
+    ));
+    assert_eq!(
+        b.add("ア", "亜", 0, 0, 0, 0x10),
+        Err(BuildError::InvalidFlags(0x10))
+    );
 }
