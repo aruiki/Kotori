@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use crate::format::{checksum, FORMAT_VERSION, HEADER_SIZE, MAGIC, SECTIONS};
+use crate::PosClass;
 
 /// 辞書の構築エラー。
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -40,6 +41,7 @@ struct RawEntry {
 pub struct DictBuilder {
     entries: Vec<RawEntry>,
     conn: Option<(usize, usize, Vec<i16>)>,
+    pos_classes: Vec<PosClass>,
 }
 
 impl DictBuilder {
@@ -87,6 +89,12 @@ impl DictBuilder {
         }
         self.conn = Some((rows, cols, costs));
         Ok(())
+    }
+
+    /// 文脈 ID ごとの品詞分類を設定する(5.5 の文節区切りに使う)。添字が文脈 ID。
+    /// 設定しない ID は自立語とみなす。
+    pub fn set_pos_classes(&mut self, classes: Vec<PosClass>) {
+        self.pos_classes = classes;
     }
 
     /// バイト列を作る。エントリは読み・コスト・品詞・表記の順に並べ、完全な重複は除く。
@@ -143,7 +151,8 @@ impl DictBuilder {
             .map_err(|e| BuildError::Trie(e.to_string()))?;
         let conn: Vec<u8> = costs.iter().flat_map(|c| c.to_le_bytes()).collect();
 
-        let sections: [&[u8]; SECTIONS] = [&trie, &groups, &entries, &strings, &conn];
+        let classes: Vec<u8> = self.pos_classes.iter().map(|&c| c as u8).collect();
+        let sections: [&[u8]; SECTIONS] = [&trie, &groups, &entries, &strings, &conn, &classes];
         let mut out = vec![0u8; HEADER_SIZE];
         out[0..4].copy_from_slice(MAGIC);
         out[4..8].copy_from_slice(&FORMAT_VERSION.to_le_bytes());

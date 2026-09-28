@@ -11,6 +11,18 @@ pub use format::{FORMAT_VERSION, MAGIC};
 
 use format::{Layout, ENTRY_SIZE, GROUP_SIZE};
 
+/// 文節区切りのための品詞分類(5.5、docs/adr/0005)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum PosClass {
+    /// 自立語。新しい文節を始める。
+    Content = 0,
+    /// 付属語(助詞・助動詞・接尾辞など)。前の文節につなげる。
+    Function = 1,
+    /// 接頭辞。次の語と同じ文節にする。
+    Prefix = 2,
+}
+
 /// 属性フラグ(5.3)。
 pub mod flags {
     /// 固有名詞。
@@ -147,6 +159,15 @@ impl Dictionary {
         }
         let at = self.layout.conn.start + (usize::from(rid) * cols + usize::from(lid)) * 2;
         i16::from_le_bytes([self.data[at], self.data[at + 1]])
+    }
+
+    /// 文脈 ID の品詞分類。分類表にない ID は自立語。
+    pub fn pos_class(&self, id: u16) -> PosClass {
+        match self.data[self.layout.pos_classes.clone()].get(usize::from(id)) {
+            Some(1) => PosClass::Function,
+            Some(2) => PosClass::Prefix,
+            _ => PosClass::Content,
+        }
     }
 
     fn section(&self, range: std::ops::Range<usize>) -> &[u8] {
