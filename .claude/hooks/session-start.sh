@@ -14,6 +14,9 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> "$CLAUDE_ENV_FILE"
 fi
 
+# third_party/llama.cpp(kotori-lm がビルドする)。
+git submodule update --init --recursive
+
 # rust-toolchain.toml の stable と rustfmt・clippy。
 rustup toolchain install
 
