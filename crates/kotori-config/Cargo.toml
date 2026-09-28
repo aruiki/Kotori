@@ -1,0 +1,12 @@
+[package]
+name = "kotori-config"
+description = "Kotori IME: 設定GUI(12章)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true

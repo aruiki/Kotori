@@ -1,0 +1,12 @@
+[package]
+name = "kotori-lm"
+description = "Kotori IME: llama.cpp FFI とリランク・制約付き生成(6章)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true

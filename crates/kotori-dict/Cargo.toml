@@ -1,0 +1,12 @@
+[package]
+name = "kotori-dict"
+description = "Kotori IME: 辞書の読み込み・検索(5.3)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true

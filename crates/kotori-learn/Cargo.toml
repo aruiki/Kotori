@@ -1,0 +1,12 @@
+[package]
+name = "kotori-learn"
+description = "Kotori IME: ユーザー学習・ユーザー辞書(8章)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true

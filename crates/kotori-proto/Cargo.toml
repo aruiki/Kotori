@@ -1,0 +1,12 @@
+[package]
+name = "kotori-proto"
+description = "Kotori IME: IPC の .proto と生成コード(4.2)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
