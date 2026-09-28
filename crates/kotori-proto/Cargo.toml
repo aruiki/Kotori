@@ -10,3 +10,11 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+prost = "0.13"
+thiserror = "2"
+
+[build-dependencies]
+prost-build = "0.13"
+protox = "0.7"

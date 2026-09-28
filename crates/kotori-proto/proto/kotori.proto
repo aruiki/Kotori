@@ -1,0 +1,174 @@
+// Kotori IME の IPC プロトコル(docs/SPEC.md 4.2)。
+// フレームは「u32 リトルエンディアンの長さ + 本体」。全メッセージに protocol_version を含める。
+syntax = "proto3";
+
+package kotori.ipc.v1;
+
+message ProtocolVersion {
+  uint32 major = 1;
+  uint32 minor = 2;
+}
+
+// フロントエンドからサーバーへの要求。
+message Request {
+  ProtocolVersion protocol_version = 1;
+  // 応答との対応付けに使う。フロントエンドが単調増加で振る。
+  uint64 request_id = 2;
+  oneof body {
+    CreateSession create_session = 10;
+    DeleteSession delete_session = 11;
+    SendKey send_key = 12;
+    SendCommand send_command = 13;
+    SetContext set_context = 14;
+    GetConfig get_config = 15;
+    SetConfig set_config = 16;
+    Reload reload = 17;
+  }
+}
+
+// サーバーからフロントエンドへの応答。
+message Response {
+  ProtocolVersion protocol_version = 1;
+  uint64 request_id = 2;
+  oneof body {
+    SessionCreated session_created = 10;
+    Output output = 11;
+    Config config = 12;
+    Ack ack = 13;
+    Error error = 14;
+  }
+}
+
+enum InputScope {
+  INPUT_SCOPE_DEFAULT = 0;
+  INPUT_SCOPE_PASSWORD = 1;
+  INPUT_SCOPE_URL = 2;
+  INPUT_SCOPE_EMAIL = 3;
+  INPUT_SCOPE_NUMBER = 4;
+}
+
+message CreateSession {
+  // アプリ識別子(Windows では実行ファイル名など)。
+  string app_id = 1;
+  InputScope input_scope = 2;
+}
+
+message SessionCreated {
+  uint64 session_id = 1;
+}
+
+message DeleteSession {
+  uint64 session_id = 1;
+}
+
+message Modifiers {
+  bool shift = 1;
+  bool ctrl = 2;
+  bool alt = 3;
+  bool meta = 4;
+}
+
+message SendKey {
+  uint64 session_id = 1;
+  // 仮想キーコード(Windows の VK_* を共通表現とする)。
+  uint32 virtual_key = 2;
+  // キーが生成する文字。なければ空。
+  string text = 3;
+  Modifiers modifiers = 4;
+  bool key_up = 5;
+}
+
+enum CommandKind {
+  COMMAND_KIND_UNSPECIFIED = 0;
+  COMMAND_KIND_SELECT_CANDIDATE = 1;
+  COMMAND_KIND_COMMIT = 2;
+  COMMAND_KIND_CANCEL = 3;
+  COMMAND_KIND_EXPAND_SEGMENT = 4;
+  COMMAND_KIND_SHRINK_SEGMENT = 5;
+  COMMAND_KIND_RECONVERT = 6;
+  COMMAND_KIND_SWITCH_MODE = 7;
+}
+
+message SendCommand {
+  uint64 session_id = 1;
+  CommandKind kind = 2;
+  // SELECT_CANDIDATE の候補番号など、コマンドごとの引数。
+  uint32 argument = 3;
+}
+
+message SetContext {
+  uint64 session_id = 1;
+  // 確定済みの左文脈。最大256文字。
+  string left_context = 2;
+  string selection = 3;
+  string surrounding_text = 4;
+}
+
+enum SegmentAttribute {
+  SEGMENT_ATTRIBUTE_INPUT = 0;
+  SEGMENT_ATTRIBUTE_CONVERTED = 1;
+  SEGMENT_ATTRIBUTE_FOCUSED = 2;
+}
+
+message PreeditSegment {
+  string text = 1;
+  SegmentAttribute attribute = 2;
+}
+
+message Candidate {
+  string text = 1;
+  string annotation = 2;
+}
+
+message CandidateWindow {
+  repeated Candidate candidates = 1;
+  uint32 focused_index = 2;
+  bool visible = 3;
+}
+
+enum InputMode {
+  INPUT_MODE_DIRECT = 0;
+  INPUT_MODE_HIRAGANA = 1;
+  INPUT_MODE_FULL_KATAKANA = 2;
+  INPUT_MODE_HALF_KATAKANA = 3;
+  INPUT_MODE_FULL_ASCII = 4;
+}
+
+message Output {
+  // false のときフロントエンドはキーをアプリへ渡す。
+  bool consumed = 1;
+  repeated PreeditSegment preedit = 2;
+  uint32 cursor = 3;
+  string committed_text = 4;
+  CandidateWindow candidate_window = 5;
+  InputMode input_mode = 6;
+}
+
+message GetConfig {}
+
+message SetConfig {
+  // config.toml(12.2)の全文。
+  string toml = 1;
+}
+
+message Config {
+  string toml = 1;
+}
+
+message Reload {}
+
+message Ack {}
+
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+  // メジャーバージョン不一致。フロントエンドは接続を閉じ、サーバーの再起動を促す。
+  ERROR_CODE_VERSION_MISMATCH = 1;
+  ERROR_CODE_UNKNOWN_SESSION = 2;
+  ERROR_CODE_INVALID_REQUEST = 3;
+  ERROR_CODE_UNIMPLEMENTED = 4;
+}
+
+message Error {
+  ErrorCode code = 1;
+  string message = 2;
+}

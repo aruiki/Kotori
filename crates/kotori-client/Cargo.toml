@@ -13,3 +13,7 @@ crate-type = ["rlib", "cdylib", "staticlib"]
 
 [lints]
 workspace = true
+
+[dependencies]
+kotori-proto = { path = "../kotori-proto" }
+thiserror = "2"
