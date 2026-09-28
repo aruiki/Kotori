@@ -10,3 +10,9 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+anyhow = "1"
+kotori-composer = { path = "../kotori-composer" }
+kotori-dict = { path = "../kotori-dict" }
+kotori-lattice = { path = "../kotori-lattice" }
