@@ -10,3 +10,8 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+anyhow = "1"
+kotori-dict = { path = "../kotori-dict" }
+unicode-normalization = "0.1.25"

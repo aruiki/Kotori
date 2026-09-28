@@ -21,3 +21,7 @@ test:
 # 辞書ソース(Mozc dictionary_oss)を取得し、SHA-256 を検証する(5.3)
 fetch-dict:
     bash data/dict-src/fetch.sh
+
+# システム辞書を作る(5.3、REQ-5-5)。出力は target/kotori/system.dict
+dict: fetch-dict
+    cargo run --release --locked -p kotori-dictc -- data/dict-src/mozc target/kotori/system.dict
