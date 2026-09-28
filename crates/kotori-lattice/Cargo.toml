@@ -10,3 +10,9 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+kotori-dict = { path = "../kotori-dict" }
+
+[dev-dependencies]
+proptest = "1.8.0"
