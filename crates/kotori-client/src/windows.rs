@@ -32,8 +32,9 @@ use windows_sys::Win32::System::Pipes::{
     PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
 };
 use windows_sys::Win32::System::Threading::{CreateMutexW, GetCurrentProcess, OpenProcessToken};
+use windows_sys::Win32::System::IO::CancelIoEx;
 
-use crate::Client;
+use crate::{Client, Transport};
 
 const PIPE_BUFFER_SIZE: u32 = 64 * 1024;
 
@@ -282,7 +283,7 @@ impl Drop for PipeStream {
 ///
 /// サーバーが偽装されていてもクライアントの権限を使わせないよう、偽装レベルは識別のみにする。
 /// すべてのインスタンスが使用中なら少し待って再試行する。
-pub fn connect_pipe(name: &str) -> io::Result<Client<File>> {
+pub fn connect_pipe(name: &str) -> io::Result<Client<PipeClient>> {
     for _ in 0..50 {
         let result = std::fs::OpenOptions::new()
             .read(true)
@@ -293,8 +294,41 @@ pub fn connect_pipe(name: &str) -> io::Result<Client<File>> {
             Err(e) if e.raw_os_error() == Some(ERROR_PIPE_BUSY as i32) => {
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
-            other => return other.map(Client::new),
+            other => return Client::new(PipeClient(other?)),
         }
     }
     Err(io::Error::from_raw_os_error(ERROR_PIPE_BUSY as i32))
+}
+
+/// クライアント側のパイプ接続。
+#[derive(Debug)]
+pub struct PipeClient(File);
+
+impl Read for PipeClient {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.0.read(buf)
+    }
+}
+
+impl Write for PipeClient {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.0.flush()
+    }
+}
+
+impl Transport for PipeClient {
+    fn try_clone(&self) -> io::Result<Self> {
+        self.0.try_clone().map(PipeClient)
+    }
+
+    fn shutdown(&self) {
+        // 複製したハンドルは同じファイルオブジェクトを指すので、読み取りスレッドの
+        // 同期 ReadFile もここで取り消される。
+        // SAFETY: self.0 は有効なパイプのハンドルを所有し、OVERLAPPED は指定しない。
+        unsafe { CancelIoEx(self.0.as_raw_handle(), ptr::null()) };
+    }
 }
