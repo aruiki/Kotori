@@ -4,6 +4,11 @@
 //! 未知語ノードで埋める(REQ-5-6)。読みを変えたときは、変わらない先頭部分で終わるノードと
 //! その Viterbi の結果を再利用する(REQ-5-7)。
 
+mod candidates;
+
+pub use candidates::{
+    segment_candidates, segment_with_boundaries, to_halfwidth_katakana, MAX_SEGMENT_CANDIDATES,
+};
 use kotori_dict::Dictionary;
 
 /// ノードの最大の長さ(文字数)。これより長い辞書語は置かない。差分構築で探し直す範囲も
