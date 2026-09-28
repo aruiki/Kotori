@@ -6,6 +6,9 @@
 
 mod ffi;
 pub mod rerank;
+mod score;
+
+pub use score::Context;
 
 use std::ffi::CString;
 use std::path::Path;
@@ -21,6 +24,16 @@ pub enum LmError {
     Load(String),
     #[error("トークン化に失敗した")]
     Tokenize,
+    #[error("推論コンテキストを作れない")]
+    Context,
+    #[error("前置きが空")]
+    EmptyPrefix,
+    #[error("候補が多すぎる")]
+    TooManyCandidates,
+    #[error("トークン数がコンテキスト長を超える")]
+    TooLong,
+    #[error("推論に失敗した")]
+    Decode,
 }
 
 static INIT: Once = Once::new();
@@ -53,6 +66,16 @@ impl Model {
         ffi::load(&c, vocab_only)
             .map(|raw| Self { raw })
             .ok_or_else(|| LmError::Load(path.display().to_string()))
+    }
+
+    /// 文頭トークン。
+    pub fn bos(&self) -> i32 {
+        ffi::bos(self.raw)
+    }
+
+    /// 文末トークン。
+    pub fn eos(&self) -> i32 {
+        ffi::eos(self.raw)
     }
 
     /// 語彙の大きさ。
@@ -95,4 +118,8 @@ impl Drop for Model {
 #[cfg(test)]
 mod rerank_tests;
 #[cfg(test)]
+mod score_tests;
+#[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tiny_model;

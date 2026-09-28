@@ -42,3 +42,59 @@ int32_t kotori_lm_tokenize(const struct llama_model * model, const char * text, 
 int32_t kotori_lm_meta(const struct llama_model * model, const char * key, char * buf, size_t buf_size) {
     return llama_model_meta_val_str(model, key, buf, buf_size);
 }
+
+/* 推論(6.2 モード A)。候補は前置きを共有するので、KV を1つの領域で持つ。 */
+struct llama_context * kotori_lm_ctx_new(struct llama_model * model, uint32_t n_ctx, uint32_t n_seq,
+                                         int32_t n_threads) {
+    struct llama_context_params params = llama_context_default_params();
+    params.n_ctx = n_ctx;
+    params.n_batch = n_ctx;
+    params.n_ubatch = n_ctx;
+    params.n_seq_max = n_seq;
+    params.n_threads = n_threads;
+    params.n_threads_batch = n_threads;
+    params.kv_unified = true;
+    return llama_init_from_model(model, params);
+}
+
+void kotori_lm_ctx_free(struct llama_context * ctx) {
+    llama_free(ctx);
+}
+
+void kotori_lm_clear(struct llama_context * ctx) {
+    llama_memory_clear(llama_get_memory(ctx), true);
+}
+
+void kotori_lm_seq_cp(struct llama_context * ctx, int32_t src, int32_t dst) {
+    llama_memory_seq_cp(llama_get_memory(ctx), src, dst, -1, -1);
+}
+
+/* 1 トークンに 1 シーケンスを割り当てたバッチを作って評価する。0 なら成功。 */
+int32_t kotori_lm_decode(struct llama_context * ctx, int32_t n, const int32_t * tokens,
+                         const int32_t * pos, const int32_t * seq, const int8_t * want_logits) {
+    struct llama_batch batch = llama_batch_init(n, 0, 1);
+    for (int32_t i = 0; i < n; i++) {
+        batch.token[i] = tokens[i];
+        batch.pos[i] = pos[i];
+        batch.n_seq_id[i] = 1;
+        batch.seq_id[i][0] = seq[i];
+        batch.logits[i] = want_logits[i];
+    }
+    batch.n_tokens = n;
+    int32_t ret = llama_decode(ctx, batch);
+    llama_batch_free(batch);
+    return ret;
+}
+
+/* 直前のバッチの i 番目のトークンのロジット(語彙数ぶん)。なければ NULL。 */
+const float * kotori_lm_logits(struct llama_context * ctx, int32_t i) {
+    return llama_get_logits_ith(ctx, i);
+}
+
+int32_t kotori_lm_bos(const struct llama_model * model) {
+    return llama_vocab_bos(llama_model_get_vocab(model));
+}
+
+int32_t kotori_lm_eos(const struct llama_model * model) {
+    return llama_vocab_eos(llama_model_get_vocab(model));
+}
