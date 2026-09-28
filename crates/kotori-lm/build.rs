@@ -60,6 +60,8 @@ fn main() {
             println!("cargo:rustc-link-lib=dylib=m");
         }
         "macos" => println!("cargo:rustc-link-lib=dylib=c++"),
+        // ggml-cpu が CPU の情報をレジストリから読む。
+        "windows" => println!("cargo:rustc-link-lib=dylib=advapi32"),
         _ => {}
     }
 }
