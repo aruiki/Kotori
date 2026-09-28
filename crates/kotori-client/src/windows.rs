@@ -14,8 +14,8 @@ use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
 use std::ptr;
 
 use windows_sys::Win32::Foundation::{
-    GetLastError, LocalFree, ERROR_INSUFFICIENT_BUFFER, ERROR_PIPE_BUSY, ERROR_PIPE_CONNECTED,
-    INVALID_HANDLE_VALUE,
+    GetLastError, LocalFree, ERROR_ALREADY_EXISTS, ERROR_INSUFFICIENT_BUFFER, ERROR_PIPE_BUSY,
+    ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE,
 };
 use windows_sys::Win32::Security::Authorization::{
     ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
@@ -31,7 +31,7 @@ use windows_sys::Win32::System::Pipes::{
     ConnectNamedPipe, CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS,
     PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
 };
-use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+use windows_sys::Win32::System::Threading::{CreateMutexW, GetCurrentProcess, OpenProcessToken};
 
 use crate::Client;
 
@@ -118,6 +118,69 @@ pub fn default_pipe_name() -> io::Result<String> {
     Ok(format!(r"\\.\pipe\kotori-{}", current_user_sid()?))
 }
 
+/// 保護付き DACL で現在のユーザーにだけ全権を与えるセキュリティ記述子を作る。
+fn user_only_descriptor() -> io::Result<LocalBox> {
+    let sddl = wide(&format!("D:P(A;;GA;;;{})", current_user_sid()?));
+    let mut sd: PSECURITY_DESCRIPTOR = ptr::null_mut();
+    // SAFETY: sddl は NUL 終端、sd は有効な出力先。
+    let ok = unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl.as_ptr(),
+            SDDL_REVISION_1,
+            &mut sd,
+            ptr::null_mut(),
+        )
+    };
+    if ok == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(LocalBox(sd))
+}
+
+fn security_attributes(descriptor: &LocalBox) -> SECURITY_ATTRIBUTES {
+    SECURITY_ATTRIBUTES {
+        nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+        lpSecurityDescriptor: descriptor.0,
+        bInheritHandle: 0,
+    }
+}
+
+/// ユーザーごとの単一インスタンスを保証する名前付きミューテックス(REQ-4-1)。
+///
+/// 値を持っている間だけ所有する。プロセスが終われば OS が解放する。
+#[derive(Debug)]
+pub struct InstanceMutex(#[allow(dead_code)] OwnedHandle);
+
+impl InstanceMutex {
+    /// `Local\kotori-<SID>` を作る。既に存在すれば `ErrorKind::AlreadyExists` を返す。
+    pub fn acquire() -> io::Result<Self> {
+        Self::acquire_named(&format!(r"Local\kotori-{}", current_user_sid()?))
+    }
+
+    /// 名前を指定して作る。テスト用に名前を変えられるようにしている。
+    pub fn acquire_named(name: &str) -> io::Result<Self> {
+        let descriptor = user_only_descriptor()?;
+        let attrs = security_attributes(&descriptor);
+        let name = wide(name);
+        // SAFETY: attrs と記述子、NUL 終端の name は呼び出しの間生きている。
+        let handle = unsafe { CreateMutexW(&attrs, 0, name.as_ptr()) };
+        // SAFETY: 直前の Win32 呼び出しのエラー値を読むだけ。
+        let last = unsafe { GetLastError() };
+        if handle.is_null() {
+            return Err(io::Error::from_raw_os_error(last as i32));
+        }
+        // SAFETY: CreateMutexW が成功したので handle は所有権を持つ有効なハンドル。
+        let handle = unsafe { OwnedHandle::from_raw_handle(handle as RawHandle) };
+        if last == ERROR_ALREADY_EXISTS {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "kotori-server は既に起動している",
+            ));
+        }
+        Ok(Self(handle))
+    }
+}
+
 /// サーバー側の名前付きパイプ。[`PipeListener::accept`] で1本ずつ接続を受ける。
 pub struct PipeListener {
     name: Vec<u16>,
@@ -132,23 +195,9 @@ impl PipeListener {
     ///
     /// 同名のパイプが既にあれば、最初のインスタンスの作成が失敗する(乗っ取りの防止)。
     pub fn bind(name: &str) -> io::Result<Self> {
-        let sddl = wide(&format!("D:P(A;;GA;;;{})", current_user_sid()?));
-        let mut sd: PSECURITY_DESCRIPTOR = ptr::null_mut();
-        // SAFETY: sddl は NUL 終端、sd は有効な出力先。
-        let ok = unsafe {
-            ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                sddl.as_ptr(),
-                SDDL_REVISION_1,
-                &mut sd,
-                ptr::null_mut(),
-            )
-        };
-        if ok == 0 {
-            return Err(io::Error::last_os_error());
-        }
         let mut listener = Self {
             name: wide(name),
-            descriptor: LocalBox(sd),
+            descriptor: user_only_descriptor()?,
             first: true,
             pending: None,
         };
@@ -159,11 +208,7 @@ impl PipeListener {
     }
 
     fn create_instance(&mut self) -> io::Result<OwnedHandle> {
-        let attrs = SECURITY_ATTRIBUTES {
-            nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
-            lpSecurityDescriptor: self.descriptor.0,
-            bInheritHandle: 0,
-        };
+        let attrs = security_attributes(&self.descriptor);
         let mut open_mode = PIPE_ACCESS_DUPLEX;
         if self.first {
             open_mode |= FILE_FLAG_FIRST_PIPE_INSTANCE;
