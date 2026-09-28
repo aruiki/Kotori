@@ -16,8 +16,13 @@ fn tokenize_matches_llama_cpp_reference() {
     for name in ["ggml-vocab-llama-spm.gguf", "ggml-vocab-gpt-2.gguf"] {
         let model = Model::load_vocab_only(&vocab(name)).unwrap();
         assert!(model.n_vocab() > 1000, "{name}");
-        let inp = std::fs::read_to_string(vocab(&format!("{name}.inp"))).unwrap();
-        let out = std::fs::read_to_string(vocab(&format!("{name}.out"))).unwrap();
+        // Windows の checkout では改行が CRLF になる。元のファイルは \r を含まないので戻す。
+        let read = |ext: &str| {
+            std::fs::read_to_string(vocab(&format!("{name}.{ext}")))
+                .unwrap()
+                .replace("\r\n", "\n")
+        };
+        let (inp, out) = (read("inp"), read("out"));
         let cases: Vec<&str> = inp.split("\n__ggml_vocab_test__\n").collect();
         let expected: Vec<&str> = out.lines().collect();
         assert!(cases.len() > 10);
