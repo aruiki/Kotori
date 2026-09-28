@@ -5,6 +5,7 @@
 //! (17.2、docs/adr/0006)。
 
 mod ffi;
+pub mod rerank;
 
 use std::ffi::CString;
 use std::path::Path;
@@ -91,5 +92,7 @@ impl Drop for Model {
     }
 }
 
+#[cfg(test)]
+mod rerank_tests;
 #[cfg(test)]
 mod tests;
