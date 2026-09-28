@@ -1,0 +1,12 @@
+[package]
+name = "kotori-imebench"
+description = "Kotori IME: 商用IME比較計測(14.2)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
