@@ -10,3 +10,8 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+sha2 = "0.10.9"
+thiserror = "2"
+yada = "0.7.0"
