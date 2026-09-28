@@ -163,4 +163,64 @@ fn converts_with_system_dictionary() {
     let (s, _) = best(&l, &d);
     println!("{s} ({per_key:?}/キー)");
     assert_eq!(s.replace('/', ""), "今日はいい天気ですね");
+
+    let started = std::time::Instant::now();
+    let cands = l.n_best(&d, DEFAULT_N_BEST);
+    println!("N-best {} 件 ({:?})", cands.len(), started.elapsed());
+    for c in cands.iter().take(5) {
+        println!("  {} {}", c.cost, c.surface());
+    }
+    assert_eq!(cands.len(), DEFAULT_N_BEST);
+    assert_eq!(cands[0].surface(), "今日はいい天気ですね");
+}
+
+#[test]
+fn n_best_is_sorted_unique_and_starts_with_best_path() {
+    let d = dict();
+    let mut l = Lattice::new(config());
+    l.set_reading(&d, "キョウハイイテンキ");
+    let cands = l.n_best(&d, 10);
+    assert_eq!(cands.len(), 10);
+    let (best_nodes, best_cost) = l.best_path(&d).unwrap();
+    assert_eq!(cands[0].cost, best_cost);
+    assert_eq!(cands[0].nodes, best_nodes);
+    assert!(cands.windows(2).all(|w| w[0].cost <= w[1].cost));
+    let mut surfaces: Vec<_> = cands.iter().map(|c| c.surface()).collect();
+    surfaces.sort();
+    surfaces.dedup();
+    assert_eq!(surfaces.len(), 10, "表記の重複を除く");
+    assert!(cands.iter().any(|c| c.surface() == "京はいい天気"));
+    for c in &cands {
+        // 経路は読み全体を隙間なく覆う。
+        assert_eq!(c.nodes.first().unwrap().start, 0);
+        assert_eq!(c.nodes.last().unwrap().end, 9);
+        assert!(c.nodes.windows(2).all(|w| w[0].end == w[1].start));
+    }
+}
+
+#[test]
+fn n_best_of_empty_reading_is_empty() {
+    let d = dict();
+    let l = Lattice::new(config());
+    assert!(l.n_best(&d, 5).is_empty());
+}
+
+proptest! {
+    /// N-best のコストは、その経路を実際に数え直したコストと一致する。
+    #[test]
+    fn n_best_costs_are_exact(reading in "[キョウハイテンデス]{1,8}") {
+        let d = dict();
+        let mut l = Lattice::new(config());
+        l.set_reading(&d, &reading);
+        for c in l.n_best(&d, 20) {
+            let mut cost = 0i64;
+            let mut prev_rid = BOS_EOS_ID;
+            for n in &c.nodes {
+                cost += i64::from(d.connection_cost(prev_rid, n.lid)) + i64::from(n.cost);
+                prev_rid = n.rid;
+            }
+            cost += i64::from(d.connection_cost(prev_rid, BOS_EOS_ID));
+            prop_assert_eq!(cost, c.cost);
+        }
+    }
 }

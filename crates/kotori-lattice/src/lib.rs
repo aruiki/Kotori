@@ -256,6 +256,102 @@ impl Lattice {
     }
 }
 
+/// N-best の1件。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Candidate<'a> {
+    pub nodes: Vec<&'a Node>,
+    /// 経路の総コスト(EOS への連接を含む)。
+    pub cost: i64,
+}
+
+impl Candidate<'_> {
+    /// 経路の表記をつないだ文字列。
+    pub fn surface(&self) -> String {
+        self.nodes.iter().map(|n| n.surface.as_str()).collect()
+    }
+}
+
+/// 既定の N-best の件数(5.1)。
+pub const DEFAULT_N_BEST: usize = 50;
+
+/// A* で取り出す部分経路の上限。長い読みで探索が膨らむのを防ぐ。
+const MAX_EXPANSIONS: usize = 100_000;
+
+impl Lattice {
+    /// 総コストの小さい順に、表記が異なる経路を最大 `n` 件返す(後ろ向き A*、5.4)。
+    ///
+    /// 前向き Viterbi の累積コストは BOS 側の残りの厳密な下限なので、最初に完成した経路から
+    /// 順に最小になる。表記が同じ経路は最初の1件だけを残す。
+    pub fn n_best(&self, dict: &Dictionary, n: usize) -> Vec<Candidate<'_>> {
+        use std::cmp::Reverse;
+        use std::collections::{BinaryHeap, HashSet};
+
+        let len = self.reading.len();
+        let Some(ends) = self.by_end.get(len) else {
+            return Vec::new();
+        };
+        // 部分経路: (ノード, EOS 側の親, ノードより後ろのコスト)。
+        let mut paths: Vec<(usize, Option<usize>, i64)> = Vec::new();
+        let mut heap = BinaryHeap::new();
+        for &i in ends {
+            let s = &self.nodes[i];
+            if s.best == i64::MAX {
+                continue;
+            }
+            let g = i64::from(dict.connection_cost(s.node.rid, BOS_EOS_ID));
+            paths.push((i, None, g));
+            heap.push(Reverse((g + s.best, self.order_key(i), paths.len() - 1)));
+        }
+
+        let mut out = Vec::new();
+        let mut seen = HashSet::new();
+        let mut expansions = 0;
+        while let Some(Reverse((f, _, p))) = heap.pop() {
+            if out.len() >= n || expansions >= MAX_EXPANSIONS {
+                break;
+            }
+            expansions += 1;
+            let (i, _, g) = paths[p];
+            let node = &self.nodes[i].node;
+            if node.start == 0 {
+                let mut nodes = Vec::new();
+                let mut cur = Some(p);
+                while let Some(q) = cur {
+                    nodes.push(&self.nodes[paths[q].0].node);
+                    cur = paths[q].1;
+                }
+                let cand = Candidate { nodes, cost: f };
+                if seen.insert(cand.surface()) {
+                    out.push(cand);
+                }
+                continue;
+            }
+            for &prev in &self.by_end[node.start] {
+                let ps = &self.nodes[prev];
+                if ps.best == i64::MAX {
+                    continue;
+                }
+                let g2 = g
+                    + i64::from(node.cost)
+                    + i64::from(dict.connection_cost(ps.node.rid, node.lid));
+                paths.push((prev, Some(p), g2));
+                heap.push(Reverse((
+                    g2 + ps.best,
+                    self.order_key(prev),
+                    paths.len() - 1,
+                )));
+            }
+        }
+        out
+    }
+
+    /// 同じコストの部分経路の順序を、ノードの中身で決めるための鍵。
+    fn order_key(&self, i: usize) -> (usize, usize, String, u16, u16) {
+        let n = &self.nodes[i].node;
+        (n.start, n.end, n.surface.clone(), n.lid, n.rid)
+    }
+}
+
 fn to_hiragana(s: &str) -> String {
     s.chars()
         .map(|c| match c {
