@@ -10,3 +10,10 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+anyhow = "1"
+kotori-proto = { path = "../kotori-proto" }
+
+[dev-dependencies]
+kotori-client = { path = "../kotori-client" }
