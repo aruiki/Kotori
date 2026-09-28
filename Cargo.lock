@@ -241,6 +241,11 @@ dependencies = [
 [[package]]
 name = "kotori-dictc"
 version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "kotori-dict",
+ "unicode-normalization",
+]
 
 [[package]]
 name = "kotori-eval"
