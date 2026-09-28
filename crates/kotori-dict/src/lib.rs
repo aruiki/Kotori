@@ -24,6 +24,10 @@ pub enum PosClass {
     Function = 1,
     /// 接頭辞。次の語と同じ文節にする。
     Prefix = 2,
+    /// サ変名詞(「帰社」など)。自立語として文節を始める。
+    SahenNoun = 3,
+    /// サ変動詞「する」。直前がサ変名詞ならその文節につなげ、そうでなければ文節を始める。
+    SuruVerb = 4,
 }
 
 /// 属性フラグ(5.3)。
@@ -182,6 +186,8 @@ impl Dictionary {
         match self.data[self.layout.pos_classes.clone()].get(usize::from(id)) {
             Some(1) => PosClass::Function,
             Some(2) => PosClass::Prefix,
+            Some(3) => PosClass::SahenNoun,
+            Some(4) => PosClass::SuruVerb,
             _ => PosClass::Content,
         }
     }

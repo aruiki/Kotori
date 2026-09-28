@@ -83,6 +83,9 @@ fn pos_classification() {
         ("接頭詞,名詞接続,*,*,*,*,*", Prefix),
         ("記号,括弧開,*,*,*,*,*", Prefix),
         ("名詞,非自立,一般,*,*,*,*", Content),
+        ("名詞,サ変接続,*,*,*,*,*", SahenNoun),
+        ("動詞,自立,*,*,サ変・スル,連用形,する", SuruVerb),
+        ("動詞,自立,*,*,五段・カ行促音便,連用タ接続,行く", Content),
     ] {
         assert_eq!(classify_pos(name), want, "{name}");
     }
