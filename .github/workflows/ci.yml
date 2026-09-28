@@ -23,6 +23,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          # third_party/llama.cpp(kotori-lm がビルドする、6.4)
+          submodules: true
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -36,6 +39,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          # third_party/llama.cpp(kotori-lm がビルドする、6.4)
+          submodules: true
       - uses: dtolnay/rust-toolchain@1.80
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace --all-targets --locked
