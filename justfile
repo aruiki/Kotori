@@ -29,3 +29,8 @@ dict: fetch-dict
 # 読みを入れて変換結果と候補を見る(M1)。先に just dict で辞書を作る
 repl:
     cargo run --release --locked -p kotori-eval -- repl target/kotori/system.dict
+
+# 評価セットを取得して一括評価する(14.1、REQ-14-1)。結果は eval/results/ に JSON と Markdown で出る
+eval: dict
+    bash eval/fetch.sh
+    cargo run --release --locked -p kotori-eval -- run target/kotori/system.dict eval/results ajimee-bench=eval/data/ajimee-bench.json
