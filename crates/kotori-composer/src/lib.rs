@@ -125,11 +125,14 @@ struct Slot {
 }
 
 /// ローマ字入力を読みに組み立てる。
+///
+/// カーソルは確定したかなの間(`units` の添字)にあり、保留中のキーはカーソルの位置にだけある。
 #[derive(Debug, Clone)]
 pub struct Composer {
     table: Arc<RomajiTable>,
     units: Vec<Unit>,
     pending: Vec<Slot>,
+    cursor: usize,
 }
 
 impl Default for Composer {
@@ -144,6 +147,7 @@ impl Composer {
             table,
             units: Vec::new(),
             pending: Vec::new(),
+            cursor: 0,
         }
     }
 
@@ -152,7 +156,7 @@ impl Composer {
         self.table = table;
     }
 
-    /// キーを1つ入れる。
+    /// キーを1つカーソルの位置に入れる。
     pub fn push(&mut self, key: char) {
         self.pending.push(Slot {
             ch: key,
@@ -166,39 +170,73 @@ impl Composer {
         self.resolve(true);
     }
 
-    /// 最後の1文字を消す。保留中のキーがあればそれを、なければ最後のかなを消す。
+    /// カーソルの前の1文字を消す。保留中のキーがあればそれを、なければカーソルの前のかなを消す。
     pub fn backspace(&mut self) {
-        if self.pending.pop().is_none() {
-            self.units.pop();
+        if self.pending.pop().is_none() && self.cursor > 0 {
+            self.cursor -= 1;
+            self.units.remove(self.cursor);
         }
+    }
+
+    /// カーソルをかな1つ分左へ動かす。保留中のキーは先に確定する。
+    pub fn move_left(&mut self) {
+        self.flush();
+        self.cursor = self.cursor.saturating_sub(1);
+    }
+
+    /// カーソルをかな1つ分右へ動かす。保留中のキーは先に確定する。
+    pub fn move_right(&mut self) {
+        self.flush();
+        self.cursor = (self.cursor + 1).min(self.units.len());
+    }
+
+    /// 表示用の読み([`Composer::reading`])の中のカーソルの位置(文字数)。
+    /// 保留中の文字の後ろにある。
+    pub fn cursor(&self) -> usize {
+        let before: usize = self.units[..self.cursor]
+            .iter()
+            .map(|u| u.kana.chars().count())
+            .sum();
+        before + self.pending.len()
     }
 
     pub fn clear(&mut self) {
         self.units.clear();
         self.pending.clear();
+        self.cursor = 0;
     }
 
     pub fn is_empty(&self) -> bool {
         self.units.is_empty() && self.pending.is_empty()
     }
 
-    /// 確定したかな。
+    /// 確定したかな(カーソルの位置に関係なく、読みの順)。保留中のキーは含まない。
     pub fn units(&self) -> &[Unit] {
         &self.units
     }
 
     /// 表示用の読み。確定したかなに、保留中の文字をそのまま続ける。
     pub fn reading(&self) -> String {
-        let mut s: String = self.units.iter().map(|u| u.kana.as_str()).collect();
+        let (before, after) = self.units.split_at(self.cursor);
+        let mut s: String = before.iter().map(|u| u.kana.as_str()).collect();
         s.extend(self.pending.iter().map(|p| p.ch));
+        s.extend(after.iter().map(|u| u.kana.as_str()));
         s
     }
 
     /// 入力された生キー列の全体(「ローマ字のまま確定」、F10 変換に使う)。
     pub fn raw_keys(&self) -> String {
-        let mut s: String = self.units.iter().map(|u| u.keys.as_str()).collect();
+        let (before, after) = self.units.split_at(self.cursor);
+        let mut s: String = before.iter().map(|u| u.keys.as_str()).collect();
         s.extend(self.pending.iter().map(|p| p.keys.as_str()));
+        s.extend(after.iter().map(|u| u.keys.as_str()));
         s
+    }
+
+    /// かなをカーソルの位置に入れ、カーソルをその後ろへ動かす。
+    fn insert_unit(&mut self, unit: Unit) {
+        self.units.insert(self.cursor, unit);
+        self.cursor += 1;
     }
 
     fn pending_str(&self, n: usize) -> String {
@@ -222,7 +260,7 @@ impl Composer {
                 None => {
                     // どの規則にも当たらない先頭の1文字は、そのまま確定する。
                     let slot = self.pending.remove(0);
-                    self.units.push(Unit {
+                    self.insert_unit(Unit {
                         kana: slot.ch.to_string(),
                         keys: slot.keys,
                     });
@@ -253,7 +291,7 @@ impl Composer {
                 })
                 .collect()
         };
-        self.units.push(Unit {
+        self.insert_unit(Unit {
             kana: rule.output.clone(),
             keys,
         });

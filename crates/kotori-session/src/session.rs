@@ -261,9 +261,11 @@ impl Session {
             | Command::ToHalfKatakana
             | Command::ToFullAscii
             | Command::ToHalfAscii => self.change_script(command),
+            Command::CursorLeft => self.composer.move_left(),
+            Command::CursorRight => self.composer.move_right(),
             Command::ShrinkSegment => self.resize_focused(-1, converter),
             Command::ExpandSegment => self.resize_focused(1, converter),
-            // カーソル移動、予測、学習の削除、確定アンドゥは
+            // 予測、学習の削除、確定アンドゥは
             // 後続の変更で入れる。キーは飲み込む。
             _ => {}
         }
@@ -429,7 +431,7 @@ impl Session {
             }
             None if !self.composer.is_empty() => {
                 let text = to_hiragana(&self.composer.reading());
-                out.cursor = text.chars().count();
+                out.cursor = self.composer.cursor();
                 out.preedit.push((text, Attribute::Input));
             }
             None => {}
