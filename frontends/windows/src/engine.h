@@ -11,6 +11,7 @@
 #include "text.h"
 
 struct KotoriClient;
+struct KotoriRenderer;
 
 namespace kotori {
 
@@ -20,6 +21,13 @@ struct EngineOutput {
   std::vector<Segment> preedit;
   uint32_t cursor = 0;
   std::wstring committed;
+  // 候補ウィンドウ。visible なら出す。
+  struct Candidates {
+    std::vector<std::string> texts;  // UTF-8(renderer へそのまま渡す)
+    std::vector<std::string> annotations;
+    uint32_t focused = 0;
+    bool visible = false;
+  } candidates;
 };
 
 // 1つのスレッドのテキストサービスが持つ接続とセッション。サーバーがなければ起動し、
@@ -38,11 +46,16 @@ class Engine {
   void SetContext(const std::wstring& left_context);
   // LM のリランクが遅れて終わり表示が変わっていれば、その表示(docs/adr/0008)。
   std::optional<EngineOutput> PollUpdate();
-  // 確定・取消(IPC の CommandKind の値)。
-  std::optional<EngineOutput> SendCommand(uint32_t kind);
+  // 確定・取消・候補の選択(IPC の CommandKind の値)。
+  std::optional<EngineOutput> SendCommand(uint32_t kind, uint32_t argument = 0);
+  // 候補ウィンドウを出す・隠す(kotori-renderer、docs/adr/0010)。届かなくても入力は続けられる。
+  void ShowCandidates(const EngineOutput::Candidates& candidates, const RECT& caret, HWND owner,
+                      HWND notify);
+  void HideCandidates();
 
  private:
   KotoriClient* client_ = nullptr;
+  KotoriRenderer* renderer_ = nullptr;
   uint64_t session_ = 0;
 };
 

@@ -51,6 +51,7 @@ pub struct KotoriOutput {
     cursor: u32,
     committed: CString,
     candidates: Vec<CString>,
+    annotations: Vec<CString>,
     focused: u32,
     window_visible: bool,
     input_mode: u32,
@@ -79,6 +80,11 @@ impl From<ipc::Output> for KotoriOutput {
             committed: c_string(o.committed_text),
             focused: window.focused_index,
             window_visible: window.visible,
+            annotations: window
+                .candidates
+                .iter()
+                .map(|c| c_string(c.annotation.clone()))
+                .collect(),
             candidates: window
                 .candidates
                 .into_iter()
@@ -449,6 +455,22 @@ pub unsafe extern "C" fn kotori_output_candidate(
     // SAFETY: 関数の前提どおり。
     unsafe { output_ref(out) }
         .and_then(|o| o.candidates.get(i))
+        .map_or(std::ptr::null(), |s| s.as_ptr())
+}
+
+/// `i` 番目の候補の注釈(5.6)。注釈がなければ空文字列、範囲外なら NULL。文字列は `out` を
+/// 解放するまで有効。
+///
+/// # Safety
+/// `out` は NULL か有効な `KotoriOutput` を指すこと。
+#[no_mangle]
+pub unsafe extern "C" fn kotori_output_candidate_annotation(
+    out: *const KotoriOutput,
+    i: usize,
+) -> *const c_char {
+    // SAFETY: 関数の前提どおり。
+    unsafe { output_ref(out) }
+        .and_then(|o| o.annotations.get(i))
         .map_or(std::ptr::null(), |s| s.as_ptr())
 }
 

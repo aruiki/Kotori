@@ -87,11 +87,11 @@ fn engine(body: request::Body) -> Option<response::Body> {
                 ],
                 cursor: 3,
                 candidate_window: Some(ipc::CandidateWindow {
-                    candidates: ["今日", "京"]
+                    candidates: [("今日", "日付"), ("京", "")]
                         .iter()
-                        .map(|t| ipc::Candidate {
+                        .map(|(t, a)| ipc::Candidate {
                             text: (*t).into(),
-                            annotation: String::new(),
+                            annotation: (*a).into(),
                         })
                         .collect(),
                     focused_index: 1,
@@ -165,6 +165,9 @@ fn session_key_and_output_accessors() {
         assert_eq!(kotori_output_candidate_count(out), 2);
         assert_eq!(text(kotori_output_candidate(out, 1)), "京");
         assert!(kotori_output_candidate(out, 2).is_null());
+        assert_eq!(text(kotori_output_candidate_annotation(out, 0)), "日付");
+        assert_eq!(text(kotori_output_candidate_annotation(out, 1)), "");
+        assert!(kotori_output_candidate_annotation(out, 2).is_null());
         assert_eq!(kotori_output_candidate_focused(out), 1);
         assert_eq!(kotori_output_input_mode(out), 1);
         kotori_output_free(out);

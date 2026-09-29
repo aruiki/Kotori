@@ -48,6 +48,15 @@ std::optional<EngineOutput> TakeOutput(int32_t status, KotoriOutput* out) {
   o.cursor = kotori_output_cursor(out);
   const char* committed = kotori_output_committed(out);
   o.committed = Utf8ToWide(committed != nullptr ? committed : "");
+  o.candidates.visible = kotori_output_candidate_visible(out) != 0;
+  o.candidates.focused = kotori_output_candidate_focused(out);
+  const size_t count = kotori_output_candidate_count(out);
+  for (size_t i = 0; i < count; ++i) {
+    const char* text = kotori_output_candidate(out, i);
+    const char* note = kotori_output_candidate_annotation(out, i);
+    o.candidates.texts.emplace_back(text != nullptr ? text : "");
+    o.candidates.annotations.emplace_back(note != nullptr ? note : "");
+  }
   kotori_output_free(out);
   return o;
 }
@@ -68,7 +77,15 @@ std::wstring ServerPath() {
 }
 
 Engine::Engine() {
-  const std::string server = WideToUtf8(ServerPath());
+  const std::wstring server_path = ServerPath();
+  // renderer はサーバーと同じフォルダに置く。
+  const size_t slash = server_path.find_last_of(L'\\');
+  const std::string renderer =
+      slash == std::wstring::npos
+          ? std::string()
+          : WideToUtf8(server_path.substr(0, slash) + L"\\kotori-renderer.exe");
+  renderer_ = kotori_renderer_open(nullptr, renderer.empty() ? nullptr : renderer.c_str());
+  const std::string server = WideToUtf8(server_path);
   client_ = kotori_client_open(nullptr, server.empty() ? nullptr : server.c_str());
   if (client_ != nullptr) {
     const std::string app = ProcessName();
@@ -81,6 +98,10 @@ Engine::Engine() {
 }
 
 Engine::~Engine() {
+  if (renderer_ != nullptr) {
+    kotori_renderer_hide(renderer_);
+    kotori_renderer_free(renderer_);
+  }
   if (client_ != nullptr) {
     kotori_delete_session(client_, session_);
     kotori_client_free(client_);
@@ -118,13 +139,37 @@ std::optional<EngineOutput> Engine::PollUpdate() {
   return TakeOutput(kotori_poll_update(client_, session_, &out), out);
 }
 
-std::optional<EngineOutput> Engine::SendCommand(uint32_t kind) {
+std::optional<EngineOutput> Engine::SendCommand(uint32_t kind, uint32_t argument) {
   if (client_ == nullptr) {
     return std::nullopt;
   }
   KotoriOutput* out = nullptr;
-  const int32_t status = kotori_send_command(client_, session_, kind, 0, &out);
+  const int32_t status = kotori_send_command(client_, session_, kind, argument, &out);
   return TakeOutput(status, out);
+}
+
+void Engine::ShowCandidates(const EngineOutput::Candidates& candidates, const RECT& caret,
+                            HWND owner, HWND notify) {
+  if (renderer_ == nullptr) {
+    return;
+  }
+  std::vector<const char*> texts;
+  std::vector<const char*> notes;
+  for (size_t i = 0; i < candidates.texts.size(); ++i) {
+    texts.push_back(candidates.texts[i].c_str());
+    notes.push_back(i < candidates.annotations.size() ? candidates.annotations[i].c_str()
+                                                      : nullptr);
+  }
+  const KotoriRect rect = {caret.left, caret.top, caret.right, caret.bottom};
+  kotori_renderer_show(renderer_, texts.data(), notes.data(), texts.size(), candidates.focused,
+                       &rect, reinterpret_cast<uint64_t>(owner),
+                       reinterpret_cast<uint64_t>(notify));
+}
+
+void Engine::HideCandidates() {
+  if (renderer_ != nullptr) {
+    kotori_renderer_hide(renderer_);
+  }
 }
 
 }  // namespace kotori

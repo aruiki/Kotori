@@ -18,6 +18,8 @@ namespace {
 constexpr UINT_PTR kPollTimer = 1;
 constexpr UINT kPollIntervalMs = 50;
 constexpr int kMaxPollTicks = 100;
+// renderer が候補のクリックを知らせるメッセージ(wParam = 候補の番号、docs/adr/0010)。
+constexpr UINT kCandidateClicked = WM_APP + 1;
 
 // 関数を実行するだけの編集セッション。非同期で実行されてもテキストサービスが生きているよう、
 // 参照を持つ。
@@ -195,6 +197,8 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_mgr, TfClientId client
   notify_ = NotifyWindow::Create([this](UINT message, WPARAM wparam, LPARAM) {
     if (message == WM_TIMER && wparam == kPollTimer) {
       OnPollTimer();
+    } else if (message == kCandidateClicked) {
+      OnCandidateClicked(static_cast<uint32_t>(wparam));
     }
   });
   // 切り替えたときは日本語入力をオンにする。半角/全角キーでオフにできる。
@@ -204,6 +208,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_mgr, TfClientId client
 
 STDMETHODIMP TextService::Deactivate() {
   StopPolling();
+  HideCandidateWindow();
   notify_.reset();
   ReleaseComposition();
   if (thread_mgr_ != nullptr && key_sink_advised_) {
@@ -553,6 +558,7 @@ HRESULT TextService::UpdateComposition(TfEditCookie cookie, ITfContext* context,
       composition_->EndComposition(cookie);
       ReleaseComposition();
     }
+    HideCandidateWindow();
     return S_OK;
   }
   if (composition_ == nullptr) {
@@ -587,6 +593,7 @@ HRESULT TextService::UpdateComposition(TfEditCookie cookie, ITfContext* context,
   hr = range->SetText(cookie, 0, comp.text.c_str(), static_cast<LONG>(comp.text.size()));
   if (SUCCEEDED(hr)) {
     SetAttributes(cookie, context, range, comp);
+    UpdateCandidateWindow(cookie, context, range, comp, out);
     // カーソルをプリエディットの中の位置に置く。
     ITfRange* caret = nullptr;
     if (SUCCEEDED(range->Clone(&caret))) {
@@ -610,6 +617,7 @@ STDMETHODIMP TextService::OnCompositionTerminated(TfEditCookie cookie,
     ClearAttributes(cookie, composition_);
     ReleaseComposition();
     StopPolling();
+    HideCandidateWindow();
     if (engine_ != nullptr) {
       engine_->SendCommand(KOTORI_COMMAND_CANCEL);
     }
@@ -696,6 +704,81 @@ void TextService::OnPollTimer() {
     ITfContext* context = poll_context_;
     context->AddRef();
     StopPolling();
+    Apply(context, *out);
+    context->Release();
+  }
+}
+
+void TextService::UpdateCandidateWindow(TfEditCookie cookie, ITfContext* context,
+                                        ITfRange* range, const Composition& comp,
+                                        const EngineOutput& out) {
+  if (engine_ == nullptr || !out.candidates.visible || out.candidates.texts.empty()) {
+    HideCandidateWindow();
+    return;
+  }
+  // 注目文節の画面上の矩形を取り、アプリの DPI から物理座標に直す(REQ-10-7)。
+  const auto [begin, end] = FocusedRange(comp);
+  ITfRange* part = nullptr;
+  ITfContextView* view = nullptr;
+  RECT rect = {};
+  HWND hwnd = nullptr;
+  bool ok = SUCCEEDED(range->Clone(&part)) && SUCCEEDED(context->GetActiveView(&view));
+  if (ok) {
+    LONG moved = 0;
+    part->Collapse(cookie, TF_ANCHOR_START);
+    part->ShiftEnd(cookie, end, &moved, nullptr);
+    part->ShiftStart(cookie, begin, &moved, nullptr);
+    BOOL clipped = FALSE;
+    // レイアウトがまだなければ失敗する。その時は次のキーで出す。
+    ok = SUCCEEDED(view->GetTextExt(cookie, part, &rect, &clipped)) &&
+         SUCCEEDED(view->GetWnd(&hwnd)) && hwnd != nullptr;
+  }
+  if (view != nullptr) {
+    view->Release();
+  }
+  if (part != nullptr) {
+    part->Release();
+  }
+  if (!ok) {
+    return;
+  }
+  POINT top_left = {rect.left, rect.top};
+  POINT bottom_right = {rect.right, rect.bottom};
+  LogicalToPhysicalPointForPerMonitorDPI(hwnd, &top_left);
+  LogicalToPhysicalPointForPerMonitorDPI(hwnd, &bottom_right);
+  const RECT physical = {top_left.x, top_left.y, bottom_right.x, bottom_right.y};
+  engine_->ShowCandidates(out.candidates, physical, GetAncestor(hwnd, GA_ROOT),
+                          notify_ != nullptr ? notify_->hwnd() : nullptr);
+  candidates_shown_ = true;
+  if (candidate_context_ != context) {
+    if (candidate_context_ != nullptr) {
+      candidate_context_->Release();
+    }
+    context->AddRef();
+    candidate_context_ = context;
+  }
+}
+
+void TextService::HideCandidateWindow() {
+  if (candidates_shown_ && engine_ != nullptr) {
+    engine_->HideCandidates();
+  }
+  candidates_shown_ = false;
+  if (candidate_context_ != nullptr) {
+    candidate_context_->Release();
+    candidate_context_ = nullptr;
+  }
+}
+
+void TextService::OnCandidateClicked(uint32_t index) {
+  if (engine_ == nullptr || candidate_context_ == nullptr) {
+    return;
+  }
+  const std::optional<EngineOutput> out =
+      engine_->SendCommand(KOTORI_COMMAND_SELECT_CANDIDATE, index);
+  if (out.has_value()) {
+    ITfContext* context = candidate_context_;
+    context->AddRef();
     Apply(context, *out);
     context->Release();
   }
