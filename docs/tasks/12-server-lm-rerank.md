@@ -17,7 +17,8 @@
 1. (済)**proto と client**: `kotori.proto` に `PollUpdate { session_id }` 要求を足し、応答は `Output`
    (変化がなければ `consumed=false` で空)にする。メジャーバージョンは変えない(フィールドの追加)。
    `kotori-client` の `Managed` と C ABI に `kotori_poll_update` を足す。
-2. **server**: `Engine` に `Reranker` を持たせ、起動時に `Reranker::spawn(|| ZenzScorer::open(...))`
+2. (前半済: 状態機械の `just_converted` / `untouched_reading` / `apply_sentence`、`Converter::sentences`、
+   `ScoreWeights::order`)**server**: `Engine` に `Reranker` を持たせ、起動時に `Reranker::spawn(|| ZenzScorer::open(...))`
    でモデルを読む(モデルの場所は辞書と同じく exe の隣の `data/`)。モデルがなければラティス単体
    (REQ-6-4)。変換(`Convert`)のとき、文全体の N-best の上位 K 件を `submit` し、`DEFAULT_DEADLINE`
    だけ待つ。間に合えば並べ替えて返し、間に合わなければラティスの順で返して、`PollUpdate` で後から返す。

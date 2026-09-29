@@ -16,6 +16,22 @@ fn parses_and_combines() {
 }
 
 #[test]
+fn order_sorts_by_combined_score_and_keeps_ties() {
+    let w = ScoreWeights {
+        lambda_lm: 1.0,
+        lambda_lattice: 1.0,
+        temperature: 1000.0,
+        lambda_user: 0.0,
+    };
+    // S = logp - cost / 1000: [-1 - 1, -0.5 - 2, -2 - 0] = [-2, -2.5, -2]
+    assert_eq!(
+        w.order(&[-1.0, -0.5, -2.0], &[1000, 2000, 0]),
+        Some(vec![0, 2, 1])
+    );
+    assert_eq!(w.order(&[-1.0], &[0, 1]), None);
+}
+
+#[test]
 fn rejects_bad_weights() {
     for bad in [
         "",

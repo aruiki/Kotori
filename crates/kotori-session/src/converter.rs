@@ -16,6 +16,22 @@ pub struct SegmentCandidates {
     pub candidates: Vec<String>,
 }
 
+/// 文全体の候補(LM のリランクの単位、6.2 モード A)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sentence {
+    /// 文節ごとの読みの文字数と表記。
+    pub segments: Vec<(usize, String)>,
+    /// ラティスの経路のコスト。
+    pub cost: i64,
+}
+
+impl Sentence {
+    /// 文全体の表記。
+    pub fn surface(&self) -> String {
+        self.segments.iter().map(|(_, s)| s.as_str()).collect()
+    }
+}
+
 /// 読みを文節に分けて候補を出すもの。
 pub trait Converter {
     /// 読み(カタカナ)を変換する。文節の読みの長さの和は読みの文字数と等しい。
@@ -30,6 +46,13 @@ pub trait Converter {
     ) -> Vec<SegmentCandidates> {
         let _ = boundaries;
         self.convert(reading)
+    }
+
+    /// 文全体の上位 `k` 件(コストの昇順)。LM のリランクに使う。既定の実装は空を返す
+    /// (リランクしない)。
+    fn sentences(&self, reading: &str, k: usize) -> Vec<Sentence> {
+        let _ = (reading, k);
+        Vec::new()
     }
 }
 
@@ -76,6 +99,23 @@ impl LatticeConverter {
 impl Converter for LatticeConverter {
     fn convert(&self, reading: &str) -> Vec<SegmentCandidates> {
         self.convert_with_boundaries(reading, &[])
+    }
+
+    fn sentences(&self, reading: &str, k: usize) -> Vec<Sentence> {
+        let dict = &*self.dict;
+        let mut lattice = Lattice::new(Config::default());
+        lattice.set_reading(dict, reading);
+        lattice
+            .n_best(dict, k)
+            .iter()
+            .map(|c| Sentence {
+                segments: segment(dict, &c.nodes)
+                    .iter()
+                    .map(|s| (s.end - s.start, s.surface()))
+                    .collect(),
+                cost: c.cost,
+            })
+            .collect()
     }
 
     fn convert_with_boundaries(
