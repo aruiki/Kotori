@@ -1,6 +1,8 @@
 # Windows 版のリリース(docs/SPEC.md 16.2 の「未署名バイナリ」)。
-# Actions の画面から手で実行する(バージョンを入れる)か、v で始まるタグを push すると動く。
-# サーバー・x64 と x86 の TIP・辞書・ライセンスを zip にまとめ、プレリリースとして公開する。
+# Actions の画面から手で実行するか、v で始まるタグを push すると動く。手で実行するときに
+# バージョンを省くと、ワークスペースの版(0.x.y-beta)の beta の番号を既にあるタグの次にする。
+# サーバー・x64 と x86 の TIP・辞書・ライセンスを zip にまとめ、最新のリリース(Latest)として
+# 公開する。リリースの名前は日本時間の日時と版(例 2026.929.151234 (v0.1.0-beta.2))にする。
 # 配布物に関わるファイルを変える PR では、zip を作って Actions の成果物に置くだけにする(公開しない)。
 name: Release
 
@@ -8,8 +10,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: バージョン(例 0.1.0-beta.1。先頭の v は付けない)
-        required: true
+        description: バージョン(例 0.1.0-beta.2。先頭の v は付けない。空なら beta の番号を1つ進める)
+        required: false
   push:
     tags: ['v*']
   pull_request:
@@ -34,13 +36,42 @@ jobs:
     name: Windows の zip
     runs-on: windows-latest
     timeout-minutes: 60
-    env:
-      VERSION: ${{ inputs.version || (github.event_name == 'pull_request' && format('0.0.0-pr{0}', github.event.number)) || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
         with:
           # third_party/llama.cpp(サーバーが静的リンクする)
           submodules: true
+      - name: 版とリリースの名前を決める(SPEC 16.3)
+        shell: pwsh
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          # 次の beta の番号(PR でもここまで動かして確かめる)。
+          $base = (Select-String -Path Cargo.toml -Pattern '^version = "(\d+\.\d+\.\d+)-beta' |
+            Select-Object -First 1).Matches[0].Groups[1].Value
+          if (-not $base) { throw 'Cargo.toml に 0.x.y-beta の版がない' }
+          $pattern = "refs/tags/v$([regex]::Escape($base))-beta\.(\d+)$"
+          $last = git ls-remote --tags origin "refs/tags/v$base-beta.*" |
+            ForEach-Object { if ($_ -match $pattern) { [int]$Matches[1] } } |
+            Measure-Object -Maximum
+          $next = "$base-beta.$([int]$last.Maximum + 1)"
+          Write-Host "次の beta: v$next"
+          if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
+            $v = "0.0.0-pr$env:PR_NUMBER"
+          } elseif ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $v = $env:GITHUB_REF_NAME.TrimStart('v')
+          } elseif ($env:INPUT_VERSION) {
+            $v = $env:INPUT_VERSION.Trim().TrimStart('v')
+          } else {
+            $v = $next
+          }
+          $now = [TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]::UtcNow, 'Tokyo Standard Time')
+          $stamp = $now.ToString('yyyy.Mdd.HHmmss', [Globalization.CultureInfo]::InvariantCulture)
+          Write-Host "版 v$v、名前 $stamp (v$v)"
+          "VERSION=$v" >> $env:GITHUB_ENV
+          "TAG=v$v" >> $env:GITHUB_ENV
+          "RELEASE_NAME=$stamp (v$v)" >> $env:GITHUB_ENV
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc,i686-pc-windows-msvc
@@ -64,7 +95,7 @@ jobs:
       - name: zip にまとめる
         shell: pwsh
         run: |
-          $v = $env:VERSION.TrimStart('v')
+          $v = $env:VERSION
           Copy-Item frontends/windows/install.ps1, frontends/windows/uninstall.ps1 dist
           Copy-Item frontends/windows/install.cmd, frontends/windows/uninstall.cmd dist
           Copy-Item frontends/windows/README.release.txt dist/README.txt
@@ -79,7 +110,6 @@ jobs:
           $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
           Set-Content -Encoding ascii "$zip.sha256" "$hash  $zip"
           "ZIP=$zip" >> $env:GITHUB_ENV
-          "TAG=v$v" >> $env:GITHUB_ENV
       - if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
@@ -91,9 +121,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
-          name: Kotori ${{ env.TAG }}
+          name: ${{ env.RELEASE_NAME }}
           target_commitish: ${{ github.sha }}
-          prerelease: true
+          prerelease: false
+          make_latest: true
           body_path: frontends/windows/release-notes.md
           files: |
             ${{ env.ZIP }}
