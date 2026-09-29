@@ -15,7 +15,8 @@ Linux では TSF を動かせないので、確認は Windows の CI で行う(A
 - ソースは `frontends/windows/` に置き、CMake でビルドする。`kotori-client` は Rust の
   静的ライブラリ(`staticlib`)として DLL にリンクする。ビルドする側が `cargo build` で
   対象のターゲット(`x86_64-pc-windows-msvc`、`i686-pc-windows-msvc`)の静的ライブラリを作り、
-  CMake に `KOTORI_CLIENT_LIB` で場所を渡す。
+  CMake に `KOTORI_CLIENT_LIB` で場所を渡す。DLL は VC ランタイムを静的にリンクする(`/MT`)ので、
+  Rust 側も `-C target-feature=+crt-static` で作ってそろえる。
 - 段階的に入れる。最初は COM DLL の骨格(クラスファクトリ、登録・解除、TSF のプロファイルと
   カテゴリの登録、`ITfTextInputProcessorEx` の起動・終了)だけにする。キー処理と
   プリエディット、表示属性、候補ウィンドウ、フォーカスの追跡は後続の変更で足す。
