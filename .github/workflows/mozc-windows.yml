@@ -1,0 +1,77 @@
+# Mozc ベースの Windows 版を作る(docs/adr/0012 の段階 1)。
+# google/mozc をコミットで固定して取得し、mozc/patches/ のパッチを当てて Mozc64.msi を作る。
+# 手順は Mozc の公式 CI(.github/workflows/windows.yaml)と docs/build_mozc_in_windows.md に合わせる。
+name: Mozc (Windows)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/mozc-windows.yml
+      - mozc/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # data/dict-src/fetch.sh の辞書と同じコミット。
+  MOZC_COMMIT: a069a88d4cb5c011de0f9aebb6c149a1c808d904
+
+jobs:
+  build:
+    name: Mozc64.msi (x64)
+    runs-on: windows-2025
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: kotori
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: google/mozc
+          ref: ${{ env.MOZC_COMMIT }}
+          path: mozc-src
+          submodules: false
+          persist-credentials: false
+      - name: パッチを当てる
+        shell: pwsh
+        run: |
+          $patches = Get-ChildItem kotori/mozc/patches/*.patch -ErrorAction SilentlyContinue | Sort-Object Name
+          foreach ($p in $patches) {
+            Write-Host "当てる: $($p.Name)"
+            git -C mozc-src apply --whitespace=nowarn $p.FullName
+            if ($LASTEXITCODE -ne 0) { throw "$($p.Name) を当てられない" }
+          }
+      - uses: actions/cache@v4
+        with:
+          path: mozc-src/src/third_party_cache
+          key: mozc-update_deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mozc-src/src/build_tools/update_deps.py') }}
+      - name: 依存を取得する
+        shell: cmd
+        working-directory: .\mozc-src\src
+        run: python build_tools/update_deps.py
+      - name: Qt を作る
+        shell: cmd
+        working-directory: .\mozc-src\src
+        run: python build_tools/build_qt.py --release --confirm_license
+      # GitHub Actions はディスクが少ないので、Qt のソースを消す(公式の CI と同じ)。
+      - name: Qt のソースを消す
+        shell: cmd
+        working-directory: .\mozc-src\src
+        run: rmdir third_party\qt_src /s /q
+      - name: ビルドする
+        shell: cmd
+        working-directory: .\mozc-src\src
+        env:
+          ANDROID_NDK_HOME: ""
+        run: bazelisk build package --config release_build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mozc64.msi
+          path: mozc-src/src/bazel-bin/win32/installer/Mozc64.msi
+          if-no-files-found: error
