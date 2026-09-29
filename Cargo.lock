@@ -351,6 +351,9 @@ dependencies = [
 name = "kotori-session"
 version = "0.0.0"
 dependencies = [
+ "kotori-composer",
+ "kotori-dict",
+ "kotori-lattice",
  "thiserror 2.0.21",
 ]
 
