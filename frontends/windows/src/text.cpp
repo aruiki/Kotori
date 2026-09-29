@@ -15,6 +15,20 @@ const GUID& AttributeGuid(uint32_t attribute) {
   }
 }
 
+bool IsPrivateInputScope(const std::vector<int32_t>& scopes) {
+  // InputScope.h の IS_PASSWORD、IS_PRIVATE、IS_NUMERIC_PASSWORD、IS_NUMERIC_PIN、
+  // IS_ALPHANUMERIC_PIN。
+  constexpr int32_t kPrivate[] = {31, 61, 63, 64, 65};
+  for (const int32_t scope : scopes) {
+    for (const int32_t p : kPrivate) {
+      if (scope == p) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 std::wstring Utf8ToWide(std::string_view s) {
   std::wstring out;
   out.reserve(s.size());

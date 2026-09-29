@@ -20,7 +20,8 @@ namespace kotori {
 class TextService final : public ITfTextInputProcessorEx,
                           public ITfKeyEventSink,
                           public ITfCompositionSink,
-                          public ITfDisplayAttributeProvider {
+                          public ITfDisplayAttributeProvider,
+                          public ITfThreadMgrEventSink {
  public:
   TextService();
   TextService(const TextService&) = delete;
@@ -49,6 +50,13 @@ class TextService final : public ITfTextInputProcessorEx,
   // ITfCompositionSink
   STDMETHODIMP OnCompositionTerminated(TfEditCookie cookie, ITfComposition* composition) override;
 
+  // ITfThreadMgrEventSink
+  STDMETHODIMP OnInitDocumentMgr(ITfDocumentMgr* doc) override;
+  STDMETHODIMP OnUninitDocumentMgr(ITfDocumentMgr* doc) override;
+  STDMETHODIMP OnSetFocus(ITfDocumentMgr* focus, ITfDocumentMgr* previous) override;
+  STDMETHODIMP OnPushContext(ITfContext* context) override;
+  STDMETHODIMP OnPopContext(ITfContext* context) override;
+
   // ITfDisplayAttributeProvider
   STDMETHODIMP EnumDisplayAttributeInfo(IEnumTfDisplayAttributeInfo** out) override;
   STDMETHODIMP GetDisplayAttributeInfo(REFGUID guid, ITfDisplayAttributeInfo** out) override;
@@ -61,7 +69,8 @@ class TextService final : public ITfTextInputProcessorEx,
 
   bool IsKeyboardOpen() const;
   void SetKeyboardOpen(bool open);
-  std::optional<EngineOutput> Send(WPARAM wparam, LPARAM lparam);
+  std::optional<EngineOutput> Send(ITfContext* context, WPARAM wparam, LPARAM lparam);
+  bool IsPrivateField(ITfContext* context);
   void Apply(ITfContext* context, const EngineOutput& out);
   void ReleaseComposition();
   void RegisterAttributeAtoms();
@@ -73,6 +82,9 @@ class TextService final : public ITfTextInputProcessorEx,
   ITfThreadMgr* thread_mgr_ = nullptr;
   TfClientId client_id_ = TF_CLIENTID_NULL;
   bool key_sink_advised_ = false;
+  DWORD thread_mgr_sink_cookie_ = TF_INVALID_COOKIE;
+  // フォーカスのある入力欄がパスワードなどの欄か。まだ調べていなければ nullopt。
+  std::optional<bool> private_field_;
   ITfComposition* composition_ = nullptr;
   std::unique_ptr<Engine> engine_;
   // 表示属性の GUID を TSF に登録した番号。属性番号(0〜2)の順。
