@@ -53,4 +53,4 @@
 | 13 | renderer のプロトコルと、TIP から送る C ABI | proto/client/renderer | 16 |
 | 14 | renderer の候補ウィンドウを描く | renderer | 13。描画は Issue #54 の判断待ち |
 | 15 | TIP から候補ウィンドウを出す | windows | 13 |
-| 16 | パイプの ACL を AppContainer と低整合性に広げ、接続元を検証する | client/server | なし |
+| 16 | パイプの ACL を AppContainer と低整合性に広げ、接続元を検証する(済、実機の確認待ち) | client/server | なし |
