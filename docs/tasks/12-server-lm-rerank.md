@@ -14,7 +14,7 @@
 - `crates/kotori-session/src/converter.rs`
 
 ## 手順(PR ごと)
-1. **proto と client**: `kotori.proto` に `PollUpdate { session_id }` 要求を足し、応答は `Output`
+1. (済)**proto と client**: `kotori.proto` に `PollUpdate { session_id }` 要求を足し、応答は `Output`
    (変化がなければ `consumed=false` で空)にする。メジャーバージョンは変えない(フィールドの追加)。
    `kotori-client` の `Managed` と C ABI に `kotori_poll_update` を足す。
 2. **server**: `Engine` に `Reranker` を持たせ、起動時に `Reranker::spawn(|| ZenzScorer::open(...))`

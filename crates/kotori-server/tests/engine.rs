@@ -246,3 +246,24 @@ fn select_candidate_command_moves_the_selection() {
     let out = select(&mut server, 5);
     assert_eq!(out.candidate_window.unwrap().focused_index, 0);
 }
+
+#[test]
+fn poll_update_reports_no_change_until_rerank_is_wired() {
+    let mut server = Server::with_engine(engine());
+    let id = create(&mut server, ipc::InputScope::Default);
+    let poll = |server: &mut Server, id: u64| {
+        server.handle(Some(request::Body::PollUpdate(ipc::PollUpdate {
+            session_id: id,
+        })))
+    };
+    type_text(&mut server, id, "kyou");
+    key(&mut server, id, SPACE, "");
+    assert!(matches!(
+        poll(&mut server, id),
+        response::Body::Output(o) if !o.consumed && o.preedit.is_empty()
+    ));
+    assert!(matches!(
+        poll(&mut server, 999),
+        response::Body::Error(e) if e.code() == ErrorCode::UnknownSession
+    ));
+}

@@ -23,6 +23,7 @@ message Request {
     GetConfig get_config = 15;
     SetConfig set_config = 16;
     Reload reload = 17;
+    PollUpdate poll_update = 18;
   }
 }
 
@@ -94,6 +95,13 @@ message SendCommand {
   CommandKind kind = 2;
   // SELECT_CANDIDATE の候補番号など、コマンドごとの引数。
   uint32 argument = 3;
+}
+
+// 遅れて終わった処理(LM のリランク、REQ-4-4、REQ-6-2)で表示が変わったかを尋ねる
+// (docs/adr/0008)。変わっていれば consumed = true の Output で新しい表示を返し、
+// 変わっていなければ consumed = false の空の Output を返す。
+message PollUpdate {
+  uint64 session_id = 1;
 }
 
 message SetContext {

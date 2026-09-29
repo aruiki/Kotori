@@ -274,6 +274,32 @@ pub unsafe extern "C" fn kotori_send_key(
     })
 }
 
+/// 遅れて終わった処理(LM のリランク)で表示が変わったかを尋ねる(docs/adr/0008)。
+/// 変わっていれば `KOTORI_OK` で `*out` に新しい表示を書く。変わっていない・つながっていない
+/// ときは `KOTORI_PASS_THROUGH`(接続もサーバーの起動もしない)。
+///
+/// # Safety
+/// `client` は有効な接続、`out` は書き込める位置を指すこと。
+#[no_mangle]
+pub unsafe extern "C" fn kotori_poll_update(
+    client: *mut KotoriClient,
+    session_id: u64,
+    out: *mut *mut KotoriOutput,
+) -> i32 {
+    guard(|| {
+        // SAFETY: 関数の前提どおり。
+        let Some(c) = (unsafe { client.as_mut() }) else {
+            return KOTORI_ERR_ARGUMENT;
+        };
+        if out.is_null() {
+            return KOTORI_ERR_ARGUMENT;
+        }
+        let reply = c.managed.poll_update(session_id);
+        // SAFETY: out は NULL でないことを確かめた。
+        unsafe { write_reply(reply, out) }
+    })
+}
+
 /// コマンド(確定・取消など、IPC の CommandKind の値)を送る。戻り値と `*out` は
 /// `kotori_send_key` と同じ。
 ///
