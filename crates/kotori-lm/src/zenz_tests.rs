@@ -8,11 +8,17 @@ use super::tiny_model;
 use super::zenz::{prompt, ZenzScorer, VOCAB_HASH};
 use super::*;
 
+/// `dir` に `name` という名前でモデルを書いて読む。Windows では読み込み中(マップ中)の
+/// ファイルを上書きできないので、1つのテストで複数作るときは名前を変える。
+fn tiny_in(dir: &tempdir::Dir, name: &str, extra: &[(&str, &str)]) -> Model {
+    let path = dir.0.join(name);
+    tiny_model::write_with(&path, extra);
+    Model::load(&path).unwrap()
+}
+
 fn tiny_with(extra: &[(&str, &str)]) -> (tempdir::Dir, Model) {
     let dir = tempdir::Dir::new("zenz");
-    let path = dir.0.join("tiny.gguf");
-    tiny_model::write_with(&path, extra);
-    let model = Model::load(&path).unwrap();
+    let model = tiny_in(&dir, "tiny.gguf", extra);
     (dir, model)
 }
 
@@ -53,16 +59,17 @@ fn vocab_hash_covers_tokens_in_id_order() {
 
 #[test]
 fn check_vocab_rejects_mismatch() {
+    let dir = tempdir::Dir::new("zenz-vocab");
     // メタデータがない。
-    let (_d, model) = tiny_with(&[]);
+    let model = tiny_in(&dir, "plain.gguf", &[]);
     let actual = model.vocab_hash().unwrap();
     assert_eq!(model.check_vocab(&actual), Err(LmError::VocabMismatch));
     // メタデータと実際の語彙は一致するが、エンジンの想定(zenz)と違う。
-    let (_d, model) = tiny_with(&[("kotori.vocab_hash", &actual)]);
+    let model = tiny_in(&dir, "own.gguf", &[("kotori.vocab_hash", &actual)]);
     assert_eq!(model.check_vocab(&actual), Ok(()));
     assert_eq!(model.check_vocab(VOCAB_HASH), Err(LmError::VocabMismatch));
     // メタデータだけが想定と一致し、実際の語彙は違う。
-    let (_d, model) = tiny_with(&[("kotori.vocab_hash", VOCAB_HASH)]);
+    let model = tiny_in(&dir, "fake.gguf", &[("kotori.vocab_hash", VOCAB_HASH)]);
     assert_eq!(model.check_vocab(VOCAB_HASH), Err(LmError::VocabMismatch));
 }
 
