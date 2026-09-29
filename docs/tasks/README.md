@@ -49,7 +49,7 @@
 | 09 | 入力中のカーソル移動(←/→)(済) | composer/session | なし |
 | 10 | SendCommand の候補選択(済) | server/session | なし |
 | 11 | 候補ウィンドウの方式を決める(ADR)(済、docs/adr/0010) | docs | なし |
-| 12 | LM リランクをサーバーに組み込む(2段階応答)(2/3 済: PollUpdate、サーバー) | proto/server/client | 判断待ち(Issue #32)。ADR 0008 のとおり進めてよい |
+| 12 | LM リランクをサーバーに組み込む(2段階応答)(済) | proto/server/client | 判断待ち(Issue #32)。ADR 0008 のとおり進めてよい |
 | 13 | renderer のプロトコルと、TIP から送る C ABI(済) | proto/client/renderer | 16 |
 | 14 | renderer の候補ウィンドウを描く(位置の計算は済) | renderer | 13。描画は Issue #54 の判断待ち |
 | 15 | TIP から候補ウィンドウを出す | windows | 13 |
