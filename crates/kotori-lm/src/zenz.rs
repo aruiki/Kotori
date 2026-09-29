@@ -81,6 +81,11 @@ impl ZenzScorer {
         Ok(Self { model, ctx })
     }
 
+    /// 読み込んだモデル(メタデータの参照に使う)。
+    pub fn model(&self) -> &Model {
+        &self.model
+    }
+
     /// 候補ごとの log P(候補 `</s>` | プロンプト)。
     pub fn score_all(
         &mut self,

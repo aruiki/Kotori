@@ -7,9 +7,11 @@
 mod ffi;
 pub mod rerank;
 mod score;
+mod weights;
 pub mod zenz;
 
 pub use score::Context;
+pub use weights::ScoreWeights;
 
 use std::ffi::CString;
 use std::path::Path;
@@ -39,6 +41,8 @@ pub enum LmError {
     Decode,
     #[error("モデルの語彙がエンジンの想定と一致しない")]
     VocabMismatch,
+    #[error("スコア統合の重み(kotori.score_weights)がない、または不正")]
+    Weights,
 }
 
 static INIT: Once = Once::new();
@@ -163,5 +167,7 @@ mod score_tests;
 mod tests;
 #[cfg(test)]
 mod tiny_model;
+#[cfg(test)]
+mod weights_tests;
 #[cfg(test)]
 mod zenz_tests;

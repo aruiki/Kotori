@@ -286,6 +286,7 @@ dependencies = [
  "kotori-composer",
  "kotori-dict",
  "kotori-lattice",
+ "kotori-lm",
  "serde",
  "serde_json",
 ]
@@ -312,6 +313,8 @@ version = "0.0.0"
 dependencies = [
  "cc",
  "cmake",
+ "serde",
+ "serde_json",
  "sha2",
  "thiserror 2.0.21",
 ]
