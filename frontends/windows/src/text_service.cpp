@@ -141,6 +141,8 @@ STDMETHODIMP TextService::QueryInterface(REFIID riid, void** ppv) {
     *ppv = static_cast<ITfDisplayAttributeProvider*>(this);
   } else if (IsEqualIID(riid, IID_ITfThreadMgrEventSink)) {
     *ppv = static_cast<ITfThreadMgrEventSink*>(this);
+  } else if (IsEqualIID(riid, IID_ITfCompartmentEventSink)) {
+    *ppv = static_cast<ITfCompartmentEventSink*>(this);
   }
   if (*ppv == nullptr) {
     return E_NOINTERFACE;
@@ -203,10 +205,14 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_mgr, TfClientId client
   });
   // 切り替えたときは日本語入力をオンにする。半角/全角キーでオフにできる。
   SetKeyboardOpen(true);
+  AdviseOpenCloseSink();
+  AddModeItem();
   return S_OK;
 }
 
 STDMETHODIMP TextService::Deactivate() {
+  RemoveModeItem();
+  UnadviseOpenCloseSink();
   StopPolling();
   HideCandidateWindow();
   notify_.reset();
@@ -322,14 +328,112 @@ void TextService::ToggleOpenClose(ITfContext* context) {
   const bool open = IsKeyboardOpen();
   // オフにするときは、入力中・変換中の文字を確定してから閉じる(MS-IME と同じ)。
   if (open && composition_ != nullptr && engine_ != nullptr) {
+    // タスクバーのクリックから来たときは、コンポジションのある入力欄に書く。
+    ITfContext* target = context;
+    ITfRange* range = nullptr;
+    if (target == nullptr && SUCCEEDED(composition_->GetRange(&range))) {
+      range->GetContext(&target);
+      range->Release();
+    } else if (target != nullptr) {
+      target->AddRef();
+    }
     std::optional<EngineOutput> out = engine_->SendCommand(KOTORI_COMMAND_COMMIT);
-    if (out.has_value() && context != nullptr) {
-      Apply(context, *out);
+    if (out.has_value() && target != nullptr) {
+      Apply(target, *out);
+    }
+    if (target != nullptr) {
+      target->Release();
     }
     StopPolling();
     HideCandidateWindow();
   }
   SetKeyboardOpen(!open);
+}
+
+void TextService::AddModeItem() {
+  ITfLangBarItemMgr* mgr = nullptr;
+  if (thread_mgr_ == nullptr ||
+      FAILED(thread_mgr_->QueryInterface(IID_ITfLangBarItemMgr, reinterpret_cast<void**>(&mgr)))) {
+    return;  // 表示が出ないだけで、入力はできる。
+  }
+  auto* item = new (std::nothrow)
+      InputModeItem([this] { return IsKeyboardOpen(); }, [this] { ToggleOpenClose(nullptr); });
+  if (item != nullptr) {
+    if (SUCCEEDED(mgr->AddItem(item))) {
+      mode_item_ = item;
+    } else {
+      item->Detach();
+      item->Release();
+    }
+  }
+  mgr->Release();
+}
+
+void TextService::RemoveModeItem() {
+  if (mode_item_ == nullptr) {
+    return;
+  }
+  ITfLangBarItemMgr* mgr = nullptr;
+  if (thread_mgr_ != nullptr &&
+      SUCCEEDED(thread_mgr_->QueryInterface(IID_ITfLangBarItemMgr, reinterpret_cast<void**>(&mgr)))) {
+    mgr->RemoveItem(mode_item_);
+    mgr->Release();
+  }
+  // 言語バーがまだ持っていても、止まったテキストサービスを呼び返さないようにする。
+  mode_item_->Detach();
+  mode_item_->Release();
+  mode_item_ = nullptr;
+}
+
+void TextService::AdviseOpenCloseSink() {
+  ITfCompartmentMgr* mgr = nullptr;
+  if (thread_mgr_ == nullptr ||
+      FAILED(thread_mgr_->QueryInterface(IID_ITfCompartmentMgr, reinterpret_cast<void**>(&mgr)))) {
+    return;
+  }
+  ITfCompartment* compartment = nullptr;
+  if (SUCCEEDED(mgr->GetCompartment(GUID_COMPARTMENT_KEYBOARD_OPENCLOSE, &compartment))) {
+    ITfSource* source = nullptr;
+    if (SUCCEEDED(compartment->QueryInterface(IID_ITfSource, reinterpret_cast<void**>(&source)))) {
+      if (FAILED(source->AdviseSink(IID_ITfCompartmentEventSink,
+                                    static_cast<ITfCompartmentEventSink*>(this),
+                                    &open_close_sink_cookie_))) {
+        open_close_sink_cookie_ = TF_INVALID_COOKIE;
+      }
+      source->Release();
+    }
+    compartment->Release();
+  }
+  mgr->Release();
+}
+
+void TextService::UnadviseOpenCloseSink() {
+  if (open_close_sink_cookie_ == TF_INVALID_COOKIE) {
+    return;
+  }
+  ITfCompartmentMgr* mgr = nullptr;
+  if (thread_mgr_ != nullptr &&
+      SUCCEEDED(thread_mgr_->QueryInterface(IID_ITfCompartmentMgr, reinterpret_cast<void**>(&mgr)))) {
+    ITfCompartment* compartment = nullptr;
+    if (SUCCEEDED(mgr->GetCompartment(GUID_COMPARTMENT_KEYBOARD_OPENCLOSE, &compartment))) {
+      ITfSource* source = nullptr;
+      if (SUCCEEDED(compartment->QueryInterface(IID_ITfSource, reinterpret_cast<void**>(&source)))) {
+        source->UnadviseSink(open_close_sink_cookie_);
+        source->Release();
+      }
+      compartment->Release();
+    }
+    mgr->Release();
+  }
+  open_close_sink_cookie_ = TF_INVALID_COOKIE;
+}
+
+STDMETHODIMP TextService::OnChange(REFGUID guid) {
+  // 半角/全角キー、タスクバーのクリック、ほかのプログラムのどれで変わっても表示を合わせる。
+  if (IsEqualGUID(guid, GUID_COMPARTMENT_KEYBOARD_OPENCLOSE) && mode_item_ != nullptr) {
+    mode_item_->Update();
+  }
+  return S_OK;
 }
 
 bool TextService::IsPrivateField(ITfContext* context) {

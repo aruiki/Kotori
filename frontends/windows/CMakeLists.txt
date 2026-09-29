@@ -31,6 +31,7 @@ add_library(kotori_tip SHARED
   src/dllmain.cpp
   src/display_attribute.cpp
   src/engine.cpp
+  src/mode_item.cpp
   src/notify_window.cpp
   src/register.cpp
   src/text.cpp

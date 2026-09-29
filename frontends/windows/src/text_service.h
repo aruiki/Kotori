@@ -12,6 +12,7 @@
 
 #include "display_attribute.h"
 #include "engine.h"
+#include "mode_item.h"
 #include "notify_window.h"
 
 namespace kotori {
@@ -22,7 +23,8 @@ class TextService final : public ITfTextInputProcessorEx,
                           public ITfKeyEventSink,
                           public ITfCompositionSink,
                           public ITfDisplayAttributeProvider,
-                          public ITfThreadMgrEventSink {
+                          public ITfThreadMgrEventSink,
+                          public ITfCompartmentEventSink {
  public:
   TextService();
   TextService(const TextService&) = delete;
@@ -58,6 +60,9 @@ class TextService final : public ITfTextInputProcessorEx,
   STDMETHODIMP OnPushContext(ITfContext* context) override;
   STDMETHODIMP OnPopContext(ITfContext* context) override;
 
+  // ITfCompartmentEventSink(日本語入力のオン/オフが変わった)
+  STDMETHODIMP OnChange(REFGUID guid) override;
+
   // ITfDisplayAttributeProvider
   STDMETHODIMP EnumDisplayAttributeInfo(IEnumTfDisplayAttributeInfo** out) override;
   STDMETHODIMP GetDisplayAttributeInfo(REFGUID guid, ITfDisplayAttributeInfo** out) override;
@@ -71,6 +76,10 @@ class TextService final : public ITfTextInputProcessorEx,
   bool IsKeyboardOpen() const;
   void SetKeyboardOpen(bool open);
   void ToggleOpenClose(ITfContext* context);
+  void AddModeItem();
+  void RemoveModeItem();
+  void AdviseOpenCloseSink();
+  void UnadviseOpenCloseSink();
   std::optional<EngineOutput> Send(ITfContext* context, WPARAM wparam, LPARAM lparam);
   bool IsPrivateField(ITfContext* context);
   void SendLeftContext(ITfContext* context);
@@ -108,6 +117,9 @@ class TextService final : public ITfTextInputProcessorEx,
   ITfContext* candidate_context_ = nullptr;
   // OnTestKeyDown で送ったキーの結果。直後の OnKeyDown で使う。
   std::optional<WPARAM> tested_key_;
+  // タスクバーの「あ / A」(11.4)と、オン/オフの変化を受けるシンクの番号。
+  InputModeItem* mode_item_ = nullptr;
+  DWORD open_close_sink_cookie_ = TF_INVALID_COOKIE;
   std::optional<EngineOutput> tested_output_;
 };
 
