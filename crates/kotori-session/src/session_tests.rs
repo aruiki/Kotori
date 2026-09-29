@@ -8,7 +8,8 @@ use super::keymap::parse_key;
 use super::*;
 
 /// 「キョウハ」を「今日|は」の2文節に、それ以外を読みのひらがな1文節にする偽の変換器。
-/// 「コウホ」は候補を 12 件出す(ページ送りの確認用)。
+/// 「コウホ」は候補を 12 件出す(ページ送りの確認用)。境界があれば、読みを境界で切って
+/// それぞれをひらがなとカタカナの候補にする。
 struct Fake;
 
 impl Converter for Fake {
@@ -22,12 +23,38 @@ impl Converter for Fake {
                 seg(3, &["今日", "京", "強", "きょう"]),
                 seg(1, &["は", "ハ"]),
             ],
+            "キョウハテンキ" => {
+                vec![seg(3, &["今日", "京"]), seg(1, &["は"]), seg(3, &["天気"])]
+            }
             "コウホ" => vec![SegmentCandidates {
                 len: 3,
                 candidates: (1..=12).map(|i| format!("候補{i}")).collect(),
             }],
             r => vec![seg(r.chars().count(), &[&converter::to_hiragana(r)])],
         }
+    }
+
+    fn convert_with_boundaries(
+        &self,
+        reading: &str,
+        boundaries: &[usize],
+    ) -> Vec<SegmentCandidates> {
+        let chars: Vec<char> = reading.chars().collect();
+        let mut cuts: Vec<usize> = boundaries.to_vec();
+        cuts.push(chars.len());
+        cuts.sort_unstable();
+        cuts.dedup();
+        let mut start = 0;
+        let mut out = Vec::new();
+        for end in cuts.into_iter().filter(|&e| e > 0) {
+            let kata: String = chars[start..end].iter().collect();
+            out.push(SegmentCandidates {
+                len: end - start,
+                candidates: vec![converter::to_hiragana(&kata), kata],
+            });
+            start = end;
+        }
+        out
     }
 }
 
@@ -226,6 +253,16 @@ fn lattice_converter_splits_segments_with_candidates() {
     assert_eq!(segs[0].candidates[0], "今日は");
     assert!(segs[0].candidates.contains(&"京は".to_owned()));
     assert_eq!(segs[1].candidates[0], "天気");
+    // 固定の境界では必ず文節を分ける。
+    let segs = conv.convert_with_boundaries("キョウハテンキ", &[5]);
+    assert_eq!(segs.iter().map(|s| s.len).sum::<usize>(), 7);
+    assert!(segs
+        .iter()
+        .scan(0, |pos, s| {
+            *pos += s.len;
+            Some(*pos)
+        })
+        .any(|end| end == 5));
 
     let mut s = session();
     for c in "kyouhatenki".chars() {
@@ -260,4 +297,49 @@ fn left_context_keeps_the_last_256_chars_and_grows_on_commit() {
     type_text(&mut s, "i");
     press(&mut s, "Escape");
     assert_eq!(s.left_context(), "天気は今日はあ");
+}
+
+#[test]
+fn shift_arrows_resize_the_focused_segment() {
+    let mut s = session();
+    type_text(&mut s, "kyouha");
+    press(&mut s, "Space");
+    // 縮める: 「キョウ」の終わり(3)を 2 にして、境界 2 で変換し直す。
+    let out = press(&mut s, "Shift+Left");
+    assert_eq!(s.state(), State::Converting);
+    assert_eq!(
+        preedit(&out),
+        [("きょ", Attribute::Focused), ("うは", Attribute::Converted)]
+    );
+    // 伸ばす: 次の文節から1文字もらう。
+    let out = press(&mut s, "Shift+Right");
+    assert_eq!(
+        preedit(&out),
+        [("きょう", Attribute::Focused), ("は", Attribute::Converted)]
+    );
+    // 1文字の文節は縮めず、最後の文節は伸ばさない。
+    press(&mut s, "Right");
+    let before = press(&mut s, "Shift+Left");
+    assert_eq!(press(&mut s, "Shift+Right"), before);
+    assert_eq!(before.preedit[1], ("は".to_owned(), Attribute::Focused));
+
+    // 前の文節は長さが変わらなければ選んだ候補を保つ。候補ウィンドウは閉じる。
+    press(&mut s, "Escape");
+    press(&mut s, "Escape");
+    type_text(&mut s, "kyouhatenki");
+    press(&mut s, "Space");
+    press(&mut s, "Space");
+    assert_eq!(s.state(), State::Selecting);
+    press(&mut s, "Right");
+    let out = press(&mut s, "Shift+Right");
+    assert_eq!(
+        preedit(&out),
+        [
+            ("京", Attribute::Converted),
+            ("はて", Attribute::Focused),
+            ("んき", Attribute::Converted)
+        ]
+    );
+    assert_eq!(out.candidate_window, None);
+    assert_eq!(press(&mut s, "Enter").committed, "京はてんき");
 }

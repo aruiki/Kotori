@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use kotori_composer::{Composer, RomajiTable};
 
-use crate::converter::{to_hiragana, Converter};
+use crate::converter::{to_hiragana, Converter, SegmentCandidates};
 use crate::keymap::{Command, Key, Keymap, State};
 
 /// 候補ウィンドウの1ページの件数(11.3)。
@@ -60,8 +60,20 @@ pub struct Output {
 
 #[derive(Debug, Clone)]
 struct Segment {
+    /// 読みの文字数。
+    len: usize,
     candidates: Vec<String>,
     selected: usize,
+}
+
+impl From<SegmentCandidates> for Segment {
+    fn from(s: SegmentCandidates) -> Self {
+        Self {
+            len: s.len,
+            candidates: s.candidates,
+            selected: 0,
+        }
+    }
 }
 
 impl Segment {
@@ -75,6 +87,8 @@ impl Segment {
 
 #[derive(Debug, Clone)]
 struct Conversion {
+    /// 変換した読み(カタカナ)。文節を伸縮するときに変換し直す。
+    reading: String,
     segments: Vec<Segment>,
     focus: usize,
     window_open: bool,
@@ -188,12 +202,10 @@ impl Session {
                 let segments = converter
                     .convert(&reading)
                     .into_iter()
-                    .map(|s| Segment {
-                        candidates: s.candidates,
-                        selected: 0,
-                    })
+                    .map(Segment::from)
                     .collect();
                 self.conversion = Some(Conversion {
+                    reading,
                     segments,
                     focus: 0,
                     window_open: false,
@@ -243,7 +255,9 @@ impl Session {
                     c.window_open = false;
                 }
             }
-            // 文節の伸縮、カーソル移動、予測、文字種変換、学習の削除、確定アンドゥは
+            Command::ShrinkSegment => self.resize_focused(-1, converter),
+            Command::ExpandSegment => self.resize_focused(1, converter),
+            // カーソル移動、予測、文字種変換、学習の削除、確定アンドゥは
             // 後続の変更で入れる。キーは飲み込む。
             _ => {}
         }
@@ -261,6 +275,58 @@ impl Session {
                 seg.selected = (seg.selected as isize + delta).rem_euclid(n) as usize;
             }
         }
+    }
+
+    /// 注目文節の読みを `delta` 文字だけ伸縮し、読み全体を変換し直す(11.2、REQ-5-9)。
+    ///
+    /// 注目文節より前の文節の境界と、注目文節の新しい終わりを固定の境界にする。
+    /// 前の文節は長さが変わらなければ選んだ候補を保つ。注目文節の位置は保ち、
+    /// 候補ウィンドウは閉じる。1文字の文節は縮めず、最後の文節は伸ばさない。
+    fn resize_focused(&mut self, delta: isize, converter: &dyn Converter) {
+        let Some(c) = &mut self.conversion else {
+            return;
+        };
+        let Some(focused) = c.segments.get(c.focus) else {
+            return;
+        };
+        let start: usize = c.segments[..c.focus].iter().map(|s| s.len).sum();
+        let total = c.reading.chars().count();
+        let end = start + focused.len;
+        let new_end = end.saturating_add_signed(delta);
+        let is_last = c.focus + 1 == c.segments.len();
+        if new_end <= start || new_end > total || (is_last && delta > 0) {
+            return;
+        }
+        let mut boundaries: Vec<usize> = c.segments[..c.focus]
+            .iter()
+            .scan(0, |pos, s| {
+                *pos += s.len;
+                Some(*pos)
+            })
+            .collect();
+        boundaries.push(new_end);
+        let mut segments: Vec<Segment> = converter
+            .convert_with_boundaries(&c.reading, &boundaries)
+            .into_iter()
+            .map(Segment::from)
+            .collect();
+        for (new, old) in segments.iter_mut().zip(&c.segments[..c.focus]) {
+            if new.len == old.len {
+                *new = old.clone();
+            }
+        }
+        // 注目文節の始まりから始まる文節に注目を置く。
+        let mut pos = 0;
+        c.focus = segments
+            .iter()
+            .position(|s| {
+                let at = pos;
+                pos += s.len;
+                at == start
+            })
+            .unwrap_or(0);
+        c.segments = segments;
+        c.window_open = false;
     }
 
     fn commit(&mut self, committed: &mut String) {

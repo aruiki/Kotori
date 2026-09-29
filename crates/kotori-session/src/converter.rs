@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use kotori_dict::Dictionary;
 use kotori_lattice::{
-    segment, segment_candidates, special_candidates, Config, DateTime, Lattice, DEFAULT_N_BEST,
+    segment, segment_candidates, segment_with_boundaries, special_candidates, Config, DateTime,
+    Lattice, DEFAULT_N_BEST,
 };
 
 /// 1文節の読みの長さと候補。候補の先頭が第1候補。
@@ -19,6 +20,17 @@ pub struct SegmentCandidates {
 pub trait Converter {
     /// 読み(カタカナ)を変換する。文節の読みの長さの和は読みの文字数と等しい。
     fn convert(&self, reading: &str) -> Vec<SegmentCandidates>;
+
+    /// `boundaries`(読みの文字位置)で必ず文節を分けて変換する(文節の伸縮、REQ-5-9)。
+    /// 既定の実装は境界を無視して [`Converter::convert`] を呼ぶ。
+    fn convert_with_boundaries(
+        &self,
+        reading: &str,
+        boundaries: &[usize],
+    ) -> Vec<SegmentCandidates> {
+        let _ = boundaries;
+        self.convert(reading)
+    }
 }
 
 /// カタカナをひらがなにする。
@@ -63,11 +75,24 @@ impl LatticeConverter {
 
 impl Converter for LatticeConverter {
     fn convert(&self, reading: &str) -> Vec<SegmentCandidates> {
+        self.convert_with_boundaries(reading, &[])
+    }
+
+    fn convert_with_boundaries(
+        &self,
+        reading: &str,
+        boundaries: &[usize],
+    ) -> Vec<SegmentCandidates> {
         let dict = &*self.dict;
         let chars: Vec<char> = reading.chars().collect();
         let mut lattice = Lattice::new(Config::default());
         lattice.set_reading(dict, reading);
-        let Some((path, _)) = lattice.best_path(dict) else {
+        let best = if boundaries.is_empty() {
+            lattice.best_path(dict)
+        } else {
+            lattice.best_path_with_boundaries(dict, boundaries)
+        };
+        let Some((path, _)) = best else {
             // 未知語ノードがあるので経路は必ずあるが、念のため読みのまま返す。
             return vec![SegmentCandidates {
                 len: chars.len(),
@@ -76,7 +101,12 @@ impl Converter for LatticeConverter {
         };
         let nbest = lattice.n_best(dict, DEFAULT_N_BEST);
         let now = (self.now)();
-        segment(dict, &path)
+        let segments = if boundaries.is_empty() {
+            segment(dict, &path)
+        } else {
+            segment_with_boundaries(dict, &path, boundaries)
+        };
+        segments
             .iter()
             .map(|s| {
                 let span: String = chars[s.start..s.end].iter().collect();
