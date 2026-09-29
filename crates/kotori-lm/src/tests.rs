@@ -49,3 +49,64 @@ fn metadata_and_errors() {
         Err(LmError::Load(_))
     ));
 }
+
+/// training/zenz/convert.py で変換した zenz-v2.5 の GGUF を確かめる。モデルは CI に置かないので、
+/// `KOTORI_ZENZ_GGUF` にパスを渡して `cargo test -p kotori-lm -- --ignored` で動かす(docs/adr/0007)。
+#[test]
+#[ignore = "変換した zenz-v2.5 の GGUF が要る"]
+fn converted_zenz_matches_hf_tokenizer() {
+    let path = PathBuf::from(std::env::var("KOTORI_ZENZ_GGUF").unwrap());
+    let model = Model::load(&path).unwrap();
+    assert_eq!(model.n_vocab(), 6000);
+    assert_eq!(model.eos(), 3);
+    assert_eq!(
+        model.meta("kotori.model_version").as_deref(),
+        Some("zenz-v2.5-small@1e408d69a7e284efa4e4d63e456f50e363a82953")
+    );
+    for key in [
+        "kotori.vocab_hash",
+        "kotori.score_weights",
+        "kotori.license",
+    ] {
+        assert!(model.meta(key).is_some(), "{key}");
+    }
+    // 期待値は Hugging Face の transformers(4.57.6)の AutoTokenizer で得た。
+    let cases: [(&str, &[i32]); 3] = [
+        (
+            "\u{EE00}キョウハイイテンキ\u{EE01}今日はいい天気",
+            &[
+                172, 120, 202, 436, 504, 400, 623, 280, 280, 367, 259, 436, 172, 120, 203, 490,
+                304, 253, 242, 242, 865, 442,
+            ],
+        ),
+        (
+            "\u{EE00}ワタシ\u{EE02}こんにちは\u{EE01}私",
+            &[
+                172, 120, 202, 628, 327, 330, 172, 120, 204, 268, 285, 243, 344, 253, 172, 120,
+                203, 607,
+            ],
+        ),
+        (
+            "今日は良い天気です。abc 123",
+            &[
+                490, 304, 253, 674, 242, 865, 442, 246, 255, 248, 68, 69, 70, 20, 21, 22,
+            ],
+        ),
+    ];
+    for (text, want) in cases {
+        assert_eq!(model.tokenize(text, false).unwrap(), want, "{text:?}");
+    }
+    // 対数確率が transformers の GPT2LMHeadModel(float32)と f16 の誤差の範囲で一致する。
+    let mut ctx = Context::new(&model, 256, 2, 2).unwrap();
+    let prefix = model
+        .tokenize("\u{EE00}キョウハイイテンキ\u{EE01}", false)
+        .unwrap();
+    let cands: Vec<Vec<i32>> = ["今日はいい天気", "教派異意転機"]
+        .iter()
+        .map(|c| model.tokenize(c, false).unwrap())
+        .collect();
+    let scores = ctx.score_candidates(&prefix, &cands).unwrap();
+    for (got, want) in scores.iter().zip([-0.344, -33.72]) {
+        assert!((got - want).abs() < 0.1, "{scores:?}");
+    }
+}
