@@ -5,3 +5,5 @@
 # シェルスクリプトとそれが読むハッシュの一覧は、Windows(Git Bash)でも LF のまま使う。
 *.sh text eol=lf
 *.sha256 text eol=lf
+# Mozc へのパッチは改行を変えずにそのまま当てる。
+*.patch -text

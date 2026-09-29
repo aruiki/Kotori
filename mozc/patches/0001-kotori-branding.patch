@@ -1,0 +1,363 @@
+diff --git a/src/base/const.h b/src/base/const.h
+index 30a5013..20c649d 100644
+--- a/src/base/const.h
++++ b/src/base/const.h
+@@ -35,8 +35,8 @@ namespace mozc {
+ inline constexpr char kProductNameInEnglish[] = "Google Japanese Input";
+ #define kProductPrefix "GoogleJapaneseInput"
+ #else  // GOOGLE_JAPANESE_INPUT_BUILD
+-inline constexpr char kProductNameInEnglish[] = "Mozc";
+-#define kProductPrefix "Mozc"
++inline constexpr char kProductNameInEnglish[] = "Kotori";
++#define kProductPrefix "Kotori"
+ #endif  // GOOGLE_JAPANESE_INPUT_BUILD
+ 
+ inline constexpr char kVersionRewriterVersionPrefix[] = kProductPrefix "-";
+@@ -98,10 +98,10 @@ inline constexpr wchar_t kMozcRegKey[] =
+ inline constexpr wchar_t kElevatedProcessDisabledKey[] =
+     L"Software\\Policies\\Google\\Google Japanese Input\\Preferences";
+ #else   // !GOOGLE_JAPANESE_INPUT_BUILD
+-inline constexpr char kCompanyNameInEnglish[] = "Mozc Project";
++inline constexpr char kCompanyNameInEnglish[] = "Kotori Project";
+ // Use Local prefix so that modules running under AppContainer can access.
+-inline constexpr char kEventPathPrefix[] = "Local\\Mozc.event.";
+-inline constexpr char kMutexPathPrefix[] = "Local\\Mozc.mutex.";
++inline constexpr char kEventPathPrefix[] = "Local\\Kotori.event.";
++inline constexpr char kMutexPathPrefix[] = "Local\\Kotori.mutex.";
+ inline constexpr char kMozcServerName[] = "mozc_server.exe";
+ inline constexpr char kIMEFile[] = "mozc_ja.ime";
+ inline constexpr char kMozcTIP32[] = "mozc_tip32.dll";
+@@ -111,22 +111,22 @@ inline constexpr char kMozcBroker[] = "mozc_broker.exe";
+ inline constexpr char kMozcTool[] = "mozc_tool.exe";
+ inline constexpr char kMozcRenderer[] = "mozc_renderer.exe";
+ inline constexpr char kMozcCacheServiceExeName[] = "mozc_cache_service.exe";
+-inline constexpr wchar_t kMozcCacheServiceName[] = L"MozcCacheService";
++inline constexpr wchar_t kMozcCacheServiceName[] = L"KotoriCacheService";
+ inline constexpr wchar_t kMessageReceiverMessageName[] =
+-    L"mozc.renderer.message";
+-inline constexpr wchar_t kMessageReceiverClassName[] = L"mozc.renderer.window";
+-inline constexpr wchar_t kCandidateWindowClassName[] = L"MozcCandidateWindow";
++    L"kotori.renderer.message";
++inline constexpr wchar_t kMessageReceiverClassName[] = L"kotori.renderer.window";
++inline constexpr wchar_t kCandidateWindowClassName[] = L"KotoriCandidateWindow";
+ inline constexpr wchar_t kCompositionWindowClassName[] =
+-    L"MozcCompositionWindow";
+-inline constexpr wchar_t kIndicatorWindowClassName[] = L"MozcIndicatorWindow";
+-inline constexpr wchar_t kInfolistWindowClassName[] = L"MozcInfolistWindow";
+-inline constexpr wchar_t kIMEUIWndClassName[] = L"MozcUIWindow";
+-inline constexpr char kIPCPrefix[] = "\\\\.\\pipe\\mozc.";
+-inline constexpr wchar_t kCandidateUIDescription[] = L"MozcCandidateUI";
+-inline constexpr wchar_t kConfigurationDisplayname[] = L"Mozc Configuration";
+-inline constexpr wchar_t kMozcRegKey[] = L"Software\\Mozc Project\\Mozc";
++    L"KotoriCompositionWindow";
++inline constexpr wchar_t kIndicatorWindowClassName[] = L"KotoriIndicatorWindow";
++inline constexpr wchar_t kInfolistWindowClassName[] = L"KotoriInfolistWindow";
++inline constexpr wchar_t kIMEUIWndClassName[] = L"KotoriUIWindow";
++inline constexpr char kIPCPrefix[] = "\\\\.\\pipe\\kotori.";
++inline constexpr wchar_t kCandidateUIDescription[] = L"KotoriCandidateUI";
++inline constexpr wchar_t kConfigurationDisplayname[] = L"Kotori Configuration";
++inline constexpr wchar_t kMozcRegKey[] = L"Software\\Kotori Project\\Kotori";
+ inline constexpr wchar_t kElevatedProcessDisabledKey[] =
+-    L"Software\\Policies\\Mozc Project\\Mozc\\Preferences";
++    L"Software\\Policies\\Kotori Project\\Kotori\\Preferences";
+ #endif  // GOOGLE_JAPANESE_INPUT_BUILD
+ #elif defined(__APPLE__)
+ inline constexpr char kMozcServerName[] = kProductPrefix "Converter.app";
+diff --git a/src/build_tools/mozc_win32_resource_template.rc b/src/build_tools/mozc_win32_resource_template.rc
+index deec834..ccb3def 100644
+--- a/src/build_tools/mozc_win32_resource_template.rc
++++ b/src/build_tools/mozc_win32_resource_template.rc
+@@ -25,7 +25,7 @@
+   #if defined(GOOGLE_JAPANESE_INPUT_BUILD)
+     #define MOZC_RES_PRODUCT_NAME "Google 日本語入力"
+   #elif defined(MOZC_BUILD)
+-    #define MOZC_RES_PRODUCT_NAME "Mozc"
++    #define MOZC_RES_PRODUCT_NAME "Kotori"
+   #endif
+ #endif
+ #ifndef MOZC_RES_FILE_VERSION_NUMBER
+diff --git a/src/gui/base/util.cc b/src/gui/base/util.cc
+index a1ef2fb..b1af98c 100644
+--- a/src/gui/base/util.cc
++++ b/src/gui/base/util.cc
+@@ -131,7 +131,7 @@ QString GuiUtil::ProductName() {
+ #ifdef GOOGLE_JAPANESE_INPUT_BUILD
+   const QString name = QObject::tr("Google Japanese Input");
+ #else   // GOOGLE_JAPANESE_INPUT_BUILD
+-  const QString name = QObject::tr("Mozc");
++  const QString name = QObject::tr("Kotori");
+ #endif  // GOOGLE_JAPANESE_INPUT_BUILD
+   return name;
+ }
+diff --git a/src/win32/base/tsf_profile.cc b/src/win32/base/tsf_profile.cc
+index 120e6dc..d44b19f 100644
+--- a/src/win32/base/tsf_profile.cc
++++ b/src/win32/base/tsf_profile.cc
+@@ -54,19 +54,19 @@ static const GUID kGoogleJapaneseInputProfile = {
+ 
+ #else  // GOOGLE_JAPANESE_INPUT_BUILD
+ 
+-// {10A67BC8-22FA-4A59-90DC-2546652C56BF}
++// {2A1ADAE4-8061-4AC0-A7D4-713BF8DCB591} (Kotori)
+ static const GUID kMozcTextService = {
+-    0x10a67bc8,
+-    0x22fa,
+-    0x4a59,
+-    {0x90, 0xdc, 0x25, 0x46, 0x65, 0x2c, 0x56, 0xbf}};
++    0x2a1adae4,
++    0x8061,
++    0x4ac0,
++    {0xa7, 0xd4, 0x71, 0x3b, 0xf8, 0xdc, 0xb5, 0x91}};
+ 
+-// {186F700C-71CF-43FE-A00E-AACB1D9E6D3D}
++// {455A87E7-275F-4582-92CB-6600917A436D} (Kotori)
+ static const GUID kMozcProfile = {
+-    0x186f700c,
+-    0x71cf,
+-    0x43fe,
+-    {0xa0, 0x0e, 0xaa, 0xcb, 0x1d, 0x9e, 0x6d, 0x3d}};
++    0x455a87e7,
++    0x275f,
++    0x4582,
++    {0x92, 0xcb, 0x66, 0x00, 0x91, 0x7a, 0x43, 0x6d}};
+ 
+ #endif  // GOOGLE_JAPANESE_INPUT_BUILD
+ 
+diff --git a/src/win32/installer/build_installer.py b/src/win32/installer/build_installer.py
+index 4bccad8..c2e71a0 100644
+--- a/src/win32/installer/build_installer.py
++++ b/src/win32/installer/build_installer.py
+@@ -131,7 +131,7 @@ def run_wix4(args) -> None:
+         f'Software\\Google\\Update\\ClientState\\{{{omaha_guid}}}'
+     )
+   elif branding == 'Mozc':
+-    upgrade_code = 'DD94B570-B5E2-4100-9D42-61930C611D8A'
++    upgrade_code = '45FB8DEB-0CFE-4924-96FB-9022888112E1'  # Kotori
+ 
+   omaha_channel_type = 'dev' if version.IsDevChannel() else 'stable'
+   vs_configuration_name = 'Debug' if args.debug_build else 'Release'
+diff --git a/src/win32/installer/installer_oss_64bit.wxs b/src/win32/installer/installer_oss_64bit.wxs
+index b3b308e..e30c37a 100644
+--- a/src/win32/installer/installer_oss_64bit.wxs
++++ b/src/win32/installer/installer_oss_64bit.wxs
+@@ -57,8 +57,8 @@
+     http://msdn.microsoft.com/en-us/library/aa367850.aspx.
+     So we change the product ID for every new version.
+   -->
+-  <Package Name="Mozc" Language="1041" Codepage="932" Version="$(var.MozcVersion)" Manufacturer="Google LLC" UpgradeCode="$(var.UpgradeCode)" InstallerVersion="500">
+-    <SummaryInformation Keywords="Installer" Description="Mozc インストーラー" Manufacturer="Google LLC" Codepage="932" />
++  <Package Name="Kotori" Language="1041" Codepage="932" Version="$(var.MozcVersion)" Manufacturer="Kotori Project" UpgradeCode="$(var.UpgradeCode)" InstallerVersion="500">
++    <SummaryInformation Keywords="Installer" Description="Kotori インストーラー" Manufacturer="Kotori Project" Codepage="932" />
+ 
+     <!--
+        While obtaining the OS build number from the registry does not seem to be officially
+@@ -101,11 +101,11 @@
+     <Property Id="OS_BUILD_NUMBER" Secure="yes">
+       <RegistrySearch Id="CurrentBuildNumberValue" Type="raw" Root="HKLM" Key="SOFTWARE\Microsoft\Windows NT\CurrentVersion" Name="CurrentBuildNumber" />
+     </Property>
+-    <Launch Condition="(OS_BUILD_NUMBER AND (OS_BUILD_NUMBER &gt;= 17763)) OR (REMOVE=&quot;ALL&quot;)" Message="Mozc をインストールするには Windows 10 1809 以降にアップグレードする必要があります。" />
++    <Launch Condition="(OS_BUILD_NUMBER AND (OS_BUILD_NUMBER &gt;= 17763)) OR (REMOVE=&quot;ALL&quot;)" Message="Kotori をインストールするには Windows 10 1809 以降にアップグレードする必要があります。" />
+ 
+     <!-- Check if the user have the administrative privileges. -->
+-    <Launch Condition="Privileged" Message="Mozc をインストールするには管理者権限が必要です。" />
+-    <Media Id="1" Cabinet="Mozc.cab" EmbedCab="yes" CompressionLevel="high" />
++    <Launch Condition="Privileged" Message="Kotori をインストールするには管理者権限が必要です。" />
++    <Media Id="1" Cabinet="Kotori.cab" EmbedCab="yes" CompressionLevel="high" />
+ 
+     <?if $(var.MozcTIP64ArmPath) == "" and $(var.MozcTIP64XPath) == "" and $(var.MozcUniversalInstaller) == "" ?>
+       <!--
+@@ -136,10 +136,10 @@
+     </Upgrade>
+ 
+     <UI>
+-      <Error Id="4000" Message="新しいバージョンの Mozc が既にインストールされています。" />
++      <Error Id="4000" Message="新しいバージョンの Kotori が既にインストールされています。" />
+     </UI>
+ 
+-    <Feature Id="MozcInstall" Title="Mozc" Level="1">
++    <Feature Id="MozcInstall" Title="Kotori" Level="1">
+       <ComponentRef Id="MozcTIP32" />
+       <ComponentRef Id="MozcTIP64" />
+       <?if $(var.MozcTIP64ArmPath) != "" and $(var.MozcTIP64XPath) != "" ?>
+@@ -241,7 +241,7 @@
+     </InstallExecuteSequence>
+ 
+     <StandardDirectory Id="ProgramFilesFolder">
+-      <Directory Id="MozcDir" Name="Mozc">
++      <Directory Id="MozcDir" Name="Kotori">
+         <Component Id="MozcConverter">
+           <File Id="mozc_server.exe" Name="mozc_server.exe" DiskId="1" Checksum="yes" Source="$(var.MozcServer64Path)" Vital="yes" />
+         </Component>
+@@ -260,7 +260,7 @@
+             |mozc::kMozcCacheServiceName| defined in base/const.h.
+             TODO(yukawa): Share these parameters. http://b/2357270
+           -->
+-          <ServiceInstall Id="MozcCacheService" Name="MozcCacheService" DisplayName="@[#mozc_cache_service.exe],-100" Description="@[#mozc_cache_service.exe],-101" Type="ownProcess" Start="auto" ErrorControl="normal" />
++          <ServiceInstall Id="MozcCacheService" Name="KotoriCacheService" DisplayName="@[#mozc_cache_service.exe],-100" Description="@[#mozc_cache_service.exe],-101" Type="ownProcess" Start="auto" ErrorControl="normal" />
+           <!--
+             The following entry which stops our cache service both on
+             installation and uninstallation should be the first entry in
+@@ -268,7 +268,7 @@
+             recognise that the specified service will be stopped during the
+             instalaltion.  See http://b/2440272 for details.
+           -->
+-          <ServiceControl Id="StopMozcCacheService" Name="MozcCacheService" Stop="both" Remove="uninstall" Wait="yes" />
++          <ServiceControl Id="StopMozcCacheService" Name="KotoriCacheService" Stop="both" Remove="uninstall" Wait="yes" />
+         </Component>
+         <Component Id="MozcTIP32" Permanent="no" Bitness="always32">
+           <File Id="mozc_tip32.dll" Name="mozc_tip32.dll" DiskId="1" Checksum="yes" Source="$(var.MozcTIP32Path)" Vital="yes" />
+@@ -379,7 +379,7 @@
+       mozc_renderer.exe automatically after user logon.
+     -->
+     <Component Id="PrelaunchProcesses" Directory="TARGETDIR">
+-      <RegistryValue Id="RunBroker" Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="Mozc Prelauncher" Action="write" Type="string" Value="&quot;[MozcDir]mozc_broker.exe&quot; --mode=prelaunch_processes" />
++      <RegistryValue Id="RunBroker" Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="Kotori Prelauncher" Action="write" Type="string" Value="&quot;[MozcDir]mozc_broker.exe&quot; --mode=prelaunch_processes" />
+     </Component>
+   </Package>
+ </Wix>
+diff --git a/src/win32/tip/tip_linguistic_alternates.cc b/src/win32/tip/tip_linguistic_alternates.cc
+index ddf965d..5652677 100644
+--- a/src/win32/tip/tip_linguistic_alternates.cc
++++ b/src/win32/tip/tip_linguistic_alternates.cc
+@@ -63,7 +63,7 @@ namespace {
+ constexpr std::wstring_view kSearchCandidateProviderName =
+     L"Google Japanese Input";
+ #else   // GOOGLE_JAPANESE_INPUT_BUILD
+-constexpr std::wstring_view kSearchCandidateProviderName = L"Mozc";
++constexpr std::wstring_view kSearchCandidateProviderName = L"Kotori";
+ #endif  // GOOGLE_JAPANESE_INPUT_BUILD
+ 
+ }  // namespace
+diff --git a/src/win32/tip/tip_preferred_touch_keyboard.cc b/src/win32/tip/tip_preferred_touch_keyboard.cc
+index 982a5de..a7811ac 100644
+--- a/src/win32/tip/tip_preferred_touch_keyboard.cc
++++ b/src/win32/tip/tip_preferred_touch_keyboard.cc
+@@ -54,7 +54,7 @@ constexpr wchar_t kGetPreferredTouchKeyboardLayoutDisplayName[] =
+     L"Google Japanese Input: GetPreferredTouchKeyboardLayout Function";
+ #else   // GOOGLE_JAPANESE_INPUT_BUILD
+ constexpr wchar_t kGetPreferredTouchKeyboardLayoutDisplayName[] =
+-    L"Mozc: GetPreferredTouchKeyboardLayout Function";
++    L"Kotori: GetPreferredTouchKeyboardLayout Function";
+ #endif  // GOOGLE_JAPANESE_INPUT_BUILD
+ 
+ class GetPreferredTouchKeyboardLayoutImpl final
+diff --git a/src/win32/tip/tip_reconvert_function.cc b/src/win32/tip/tip_reconvert_function.cc
+index e78c7b6..f4e527e 100644
+--- a/src/win32/tip/tip_reconvert_function.cc
++++ b/src/win32/tip/tip_reconvert_function.cc
+@@ -57,7 +57,7 @@ constexpr std::wstring_view kReconvertFunctionDisplayName =
+     L"Google Japanese Input: Reconversion Function";
+ #else   // GOOGLE_JAPANESE_INPUT_BUILD
+ constexpr std::wstring_view kReconvertFunctionDisplayName =
+-    L"Mozc: Reconversion Function";
++    L"Kotori: Reconversion Function";
+ #endif  // GOOGLE_JAPANESE_INPUT_BUILD
+ 
+ }  // namespace
+diff --git a/src/win32/tip/tip_resource.rc b/src/win32/tip/tip_resource.rc
+index ea09b14..f6f2c38 100644
+--- a/src/win32/tip/tip_resource.rc
++++ b/src/win32/tip/tip_resource.rc
+@@ -123,7 +123,7 @@ END
+   #if defined(GOOGLE_JAPANESE_INPUT_BUILD)
+     #define MOZC_RES_FILE_DESCRIPTION "Google 日本語入力 TIP モジュール"
+   #elif defined(MOZC_BUILD)
+-    #define MOZC_RES_FILE_DESCRIPTION "Mozc TIP Module"
++    #define MOZC_RES_FILE_DESCRIPTION "Kotori TIP Module"
+   #endif
+ #endif
+ #ifndef MOZC_RES_FILETYPE
+@@ -145,8 +145,8 @@ BEGIN
+     IDS_IME_DISPLAYNAME     "Google 日本語入力"
+     IDS_TEXTSERVICE_DISPLAYNAME_SYNONYM  "Google 日本語入力"
+ #else
+-    IDS_IME_DISPLAYNAME     "Mozc"
+-    IDS_TEXTSERVICE_DISPLAYNAME_SYNONYM  "Mozc"
++    IDS_IME_DISPLAYNAME     "Kotori"
++    IDS_TEXTSERVICE_DISPLAYNAME_SYNONYM  "Kotori"
+ #endif
+     IDS_INPUTMODE           "入力モード"
+     IDS_WIN8_TRAY_ITEM      "右クリックで IME のオプションを表示します"
+@@ -161,7 +161,7 @@ BEGIN
+ #if defined(GOOGLE_JAPANESE_INPUT_BUILD)
+     IDS_ABOUT               "Google 日本語入力について"
+ #else
+-    IDS_ABOUT               "Mozc について"
++    IDS_ABOUT               "Kotori について"
+ #endif
+     IDS_FULL_KATAKANA       "全角カタカナ"
+     IDS_HALF_ALPHANUMERIC   "半角英数"
+@@ -175,10 +175,10 @@ BEGIN
+     IDS_CANDIDATE_WINDOW             "Google 日本語入力 候補ウィンドウ"
+     IDS_INDICATOR_WINDOW             "Google 日本語入力 インジケータ ウィンドウ"
+ #else
+-    IDS_UNOBSERVABLE_SUGGEST_WINDOW  "Mozc サジェストウィンドウ"
+-    IDS_OBSERVABLE_SUGGEST_WINDOW    "Mozc サジェスト候補ウィンドウ"
+-    IDS_CANDIDATE_WINDOW             "Mozc 候補ウィンドウ"
+-    IDS_INDICATOR_WINDOW             "Mozc インジケータ ウィンドウ"
++    IDS_UNOBSERVABLE_SUGGEST_WINDOW  "Kotori サジェストウィンドウ"
++    IDS_OBSERVABLE_SUGGEST_WINDOW    "Kotori サジェスト候補ウィンドウ"
++    IDS_CANDIDATE_WINDOW             "Kotori 候補ウィンドウ"
++    IDS_INDICATOR_WINDOW             "Kotori インジケータ ウィンドウ"
+ #endif
+ END
+ 
+@@ -188,8 +188,8 @@ BEGIN
+     IDS_IME_DISPLAYNAME     "Google Japanese Input"
+     IDS_TEXTSERVICE_DISPLAYNAME_SYNONYM  "Google Japanese Input"
+ #else
+-    IDS_IME_DISPLAYNAME     "Mozc"
+-    IDS_TEXTSERVICE_DISPLAYNAME_SYNONYM  "Mozc"
++    IDS_IME_DISPLAYNAME     "Kotori"
++    IDS_TEXTSERVICE_DISPLAYNAME_SYNONYM  "Kotori"
+ #endif
+     IDS_INPUTMODE           "Input Mode"
+     IDS_WIN8_TRAY_ITEM      "Right click to show IME options"
+@@ -204,7 +204,7 @@ BEGIN
+ #if defined(GOOGLE_JAPANESE_INPUT_BUILD)
+     IDS_ABOUT               "About Google Japanese Input"
+ #else
+-    IDS_ABOUT               "About Mozc"
++    IDS_ABOUT               "About Kotori"
+ #endif
+     IDS_FULL_KATAKANA       "Full-width Katakana"
+     IDS_HALF_ALPHANUMERIC   "Half-width Alphanumeric"
+@@ -217,9 +217,9 @@ BEGIN
+     IDS_OBSERVABLE_SUGGEST_WINDOW    "Google Japanese Input Suggestion Candidate Window"
+     IDS_CANDIDATE_WINDOW             "Google Japanese Input Candidate Window"
+ #else
+-    IDS_UNOBSERVABLE_SUGGEST_WINDOW  "Mozc Suggestion Window"
+-    IDS_OBSERVABLE_SUGGEST_WINDOW    "Mozc Suggestion Candidate Window"
+-    IDS_CANDIDATE_WINDOW             "Mozc Candidate Window"
++    IDS_UNOBSERVABLE_SUGGEST_WINDOW  "Kotori Suggestion Window"
++    IDS_OBSERVABLE_SUGGEST_WINDOW    "Kotori Suggestion Candidate Window"
++    IDS_CANDIDATE_WINDOW             "Kotori Candidate Window"
+ #endif
+ END
+ 
+diff --git a/src/win32/tip/tip_search_candidate_provider.cc b/src/win32/tip/tip_search_candidate_provider.cc
+index b08cce1..684d46e 100644
+--- a/src/win32/tip/tip_search_candidate_provider.cc
++++ b/src/win32/tip/tip_search_candidate_provider.cc
+@@ -62,7 +62,7 @@ namespace {
+ constexpr std::wstring_view kSearchCandidateProviderName =
+     L"Google Japanese Input";
+ #else   // GOOGLE_JAPANESE_INPUT_BUILD
+-constexpr std::wstring_view kSearchCandidateProviderName = L"Mozc";
++constexpr std::wstring_view kSearchCandidateProviderName = L"Kotori";
+ #endif  // GOOGLE_JAPANESE_INPUT_BUILD
+ 
+ }  // namespace
+diff --git a/src/win32/tip/tip_text_service.cc b/src/win32/tip/tip_text_service.cc
+index 23c62a9..beaef1a 100644
+--- a/src/win32/tip/tip_text_service.cc
++++ b/src/win32/tip/tip_text_service.cc
+@@ -150,7 +150,7 @@ constexpr GUID kTipFunctionProvider = {
+ 
+ constexpr char kHelpUrl[] = "https://github.com/google/mozc";
+ constexpr wchar_t kTaskWindowClassName[] =
+-    L"Mozc Immersive Task Message Window";
++    L"Kotori Immersive Task Message Window";
+ 
+ // {F16B7D92-84B0-4AC6-A35B-06EA77180A18}
+ constexpr GUID kTipPreservedKey_Kanji = {
