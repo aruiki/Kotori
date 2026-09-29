@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Mozc(//converter:converter_main)で AJIMEE-Bench の Acc@1 を測る(docs/adr/0012 段階 3)。
 
-使い方: python3 mozc/eval_baseline.py <converter_main> [--out report.json] [--whole]
+使い方: python3 mozc/eval_baseline.py <converter_main> [--out report.json] [--context]
   <converter_main> は bazel-bin/converter/converter_main。データは runfiles の中にあるので、
   runfiles の _main を作業ディレクトリにして起動する。
 第 1 候補は、各文節の第 1 候補をつないだ文。左文脈は使わない(Rust 版の M1 と同じ条件)。
 LM リランク(docs/adr/0013)は環境変数 KOTORI_ZENZ_MODEL などで有効にする(lm_rewriter.h)。
---whole は全体を 1 文節にリサイズし、文全体の候補の第 1 候補を見る。
+--context は問題の前の文(context_text)を AI に渡す(アプリから直前の文を受け取った場合に当たる)。
 """
 import argparse
 import json
@@ -45,16 +45,10 @@ def first_candidates(out: str) -> str:
     return "".join(parts)
 
 
-def convert(exe: Path, cwd: Path, reading: str, whole: bool = False) -> str:
-    if whole:
-        # 全体を 1 文節にして文全体の候補を出す。先頭文節の長さは LM なしで先に調べる。
-        first = run(exe, cwd, f"start {reading}\nquit\n", {"KOTORI_LM_K": "0"}).splitlines()
-        heads = [i for i, l in enumerate(first) if SEG.match(l)]
-        if len(heads) > 1:
-            offset = len(reading) - len(first[heads[0] + 1])
-            out = run(exe, cwd, f"start {reading}\nresize 0 {offset}\nquit\n")
-            return first_candidates(out[out.rindex("---------- Segment 0/1"):])
-    return first_candidates(run(exe, cwd, f"start {reading}\nquit\n"))
+def convert(exe: Path, cwd: Path, reading: str, context: str = "") -> str:
+    # 前の文は、アプリが渡す直前の文(preceding_text)の代わりに環境変数で渡す(lm_rewriter.cc)。
+    env = {"KOTORI_LM_PRECEDING": context} if context else None
+    return first_candidates(run(exe, cwd, f"start {reading}\nquit\n", env))
 
 
 def main() -> int:
@@ -62,7 +56,7 @@ def main() -> int:
     ap.add_argument("converter_main")
     ap.add_argument("--data", default="eval/data/ajimee-bench.json")
     ap.add_argument("--out", default="")
-    ap.add_argument("--whole", action="store_true", help="全体を 1 文節にして文全体の候補を並べ替える")
+    ap.add_argument("--context", action="store_true", help="問題の context_text を前の文として AI に渡す")
     args = ap.parse_args()
 
     exe = Path(args.converter_main)
@@ -70,7 +64,7 @@ def main() -> int:
     items = json.load(open(args.data, encoding="utf-8"))
     rows, hit = [], 0
     for it in items:
-        top = convert(exe, cwd, kata_to_hira(it["input"]), args.whole)
+        top = convert(exe, cwd, kata_to_hira(it["input"]), it.get("context_text", "") if args.context else "")
         ok = top in it["expected_output"]
         hit += ok
         rows.append({"index": it["index"], "input": it["input"], "top1": top,

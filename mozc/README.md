@@ -14,11 +14,18 @@ Kotori は Mozc(google/mozc、BSD-3-Clause)をベースにし、LM のリラン�
     MSI の UpgradeCode、パイプ・イベント・ミューテックス・ウィンドウクラス・レジストリの名前、
     キャッシュサービスの名前、インストール先(`Program Files\Kotori`)を変える。本家の Mozc と
     並べて入れられ、設定や学習も混ざらない。実行ファイルの名前(`mozc_server.exe` など)は変えない。
-  - `0002-kotori-lm-rerank.patch`: 変換候補の LM リランク(docs/adr/0013)。llama.cpp(`third_party/llama.cpp` と
-    同じコミット)を Bazel の外部依存にし、`rewriter/lm_rewriter.*`(文節ごとに上位 K 件を並べ替える)と
-    `rewriter/zenz_scorer.*`(zenz の採点)を足す。モデルは `KOTORI_ZENZ_MODEL` か、`mozc_server` と同じ
-    フォルダの `zenz-v2.5-small-q8_0.gguf`。なければ何もしない。調整用に `KOTORI_LM_K`、`KOTORI_LM_WEIGHTS`
-    (`λ_lm,λ_lattice,T`)、`KOTORI_LM_THREADS` がある。
+  - `0002-kotori-lm-rerank.patch`: 変換候補の LM リランク(docs/adr/0013、0015)。llama.cpp(`third_party/llama.cpp` と
+    同じコミット)を Bazel の外部依存にし、`rewriter/zenz_scorer.*`(zenz の採点)と `rewriter/lm_rewriter.*` を足す。
+    並べ替えは 2 段: (1) `ImmutableConverter` がラティスから文全体の候補(区切りの違う文を含む)を
+    `Segments::kotori_sentences()` に入れ、リライターが zenz で採点して最良の文の区切りで切り直す。
+    (2) 使えないときは文節ごとに上位 K 件を前後の文節とともに採点する。
+    設定(`config.proto` の `kotori_lm_*`)と設定画面の「AI変換」タブ(オン・オフ、品質 Low/Standard/High/Unreal、
+    モデルのファイル)もここに入れる。モデルは設定のパス → `KOTORI_ZENZ_MODEL` → 品質の段階のモデル →
+    `mozc_server` と同じフォルダの `zenz-v2.5-small-q8_0.gguf` の順。なければ何もしない。
+    調整用に `KOTORI_LM_K`、`KOTORI_LM_SENTENCE`、`KOTORI_LM_WEIGHTS`(`λ_lm,λ_lattice,T`)、`KOTORI_LM_THREADS` がある。
+  - `0003-kotori-bundle-model.patch`: モデル(`data/kotori/zenz-v2.5-small-q8_0.gguf`)と `NOTICE-zenz.txt`
+    (CC BY-SA 4.0 の表示)を MSI に入れる。モデルはコミットしないので、ビルドの前に `data/kotori/` に置く
+    (ワークフローが `training/zenz/convert.py --outtype q8_0` で作って置く)。
 
 Linux での評価: `bazel build //converter:converter_main -c opt` のあと、
 `python3 mozc/eval_baseline.py bazel-bin/converter/converter_main`(`eval/fetch.sh` で評価セットを取得しておく)。

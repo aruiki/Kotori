@@ -133,8 +133,255 @@ index 000000000..2c3b3332a
 +    ],
 +    deps = [":ggml"],
 +)
+diff --git a/src/converter/immutable_converter.cc b/src/converter/immutable_converter.cc
+index 448b6c25a..d62a1ff22 100644
+--- a/src/converter/immutable_converter.cc
++++ b/src/converter/immutable_converter.cc
+@@ -1624,6 +1624,21 @@ void ImmutableConverter::InsertCandidatesForConversion(
+   // TODO(toshiyuki): We want more beautiful structure.
+   const size_t old_conversion_segments_size =
+       segments->conversion_segments_size();
++  // Kotori: 区切りが決まっていないとき、文全体の候補も作っておく(docs/adr/0015)。
++  segments->kotori_sentences().clear();
++  if (options.request_type == RequestType::CONVERSION &&
++      old_conversion_segments_size == 1 &&
++      segments->conversion_segment(0).segment_type() == Segment::FREE) {
++    constexpr size_t kKotoriSentences = 16;
++    Segments tmp = *segments;
++    tmp.mutable_conversion_segment(0)->clear_candidates();
++    InsertCandidates(options, &tmp, lattice, group, kKotoriSentences,
++                     SINGLE_SEGMENT);
++    const Segment& whole = tmp.conversion_segment(0);
++    for (size_t i = 0; i < whole.candidates_size(); ++i) {
++      segments->kotori_sentences().push_back(whole.candidate(i));
++    }
++  }
+   InsertCandidates(options, segments, lattice, group, max_candidates_size,
+                    MULTI_SEGMENTS);
+   if (old_conversion_segments_size > 0) {
+diff --git a/src/converter/segments.cc b/src/converter/segments.cc
+index d9176b9a8..bd8065a38 100644
+--- a/src/converter/segments.cc
++++ b/src/converter/segments.cc
+@@ -271,7 +271,8 @@ Segments::Segments(const Segments& x)
+     : pool_(32),
+       revert_id_(x.revert_id_),
+       max_history_segments_size_(x.max_history_segments_size_),
+-      resized_(x.resized_) {
++      resized_(x.resized_),
++      kotori_sentences_(x.kotori_sentences_) {
+   // Deep-copy segments.
+   for (const Segment* segment : x.segments_) {
+     *add_segment() = *segment;
+@@ -283,6 +284,7 @@ Segments& Segments::operator=(const Segments& x) {
+ 
+   max_history_segments_size_ = x.max_history_segments_size_;
+   resized_ = x.resized_;
++  kotori_sentences_ = x.kotori_sentences_;
+   // Deep-copy segments.
+   for (const Segment* segment : x.segments_) {
+     *add_segment() = *segment;
+@@ -429,6 +431,7 @@ void Segments::InitForCommit(absl::string_view key, absl::string_view value) {
+ 
+ void Segments::Clear() {
+   clear_segments();
++  kotori_sentences_.clear();
+   revert_id_ = 0;
+ }
+ 
+diff --git a/src/converter/segments.h b/src/converter/segments.h
+index dff166325..b6ba3fe95 100644
+--- a/src/converter/segments.h
++++ b/src/converter/segments.h
+@@ -405,6 +405,15 @@ class Segments final {
+   }
+ 
+   bool resized() const { return resized_; }
++
++  // Kotori: 文全体の候補(区切りの違う文を含む)。ImmutableConverter が変換のときに
++  // 入れ、LmRewriter が使う(docs/adr/0015)。
++  std::vector<converter::Candidate>& kotori_sentences() {
++    return kotori_sentences_;
++  }
++  const std::vector<converter::Candidate>& kotori_sentences() const {
++    return kotori_sentences_;
++  }
+   void set_resized(bool resized) { resized_ = resized; }
+ 
+   // Returns history key of `size` segments.
+@@ -459,6 +468,7 @@ class Segments final {
+   uint64_t revert_id_ = 0;
+   uint32_t max_history_segments_size_ = 0;
+   bool resized_ = false;
++  std::vector<converter::Candidate> kotori_sentences_;
+   // LINT.ThenChange(//converter/segments_matchers.h)
+ };
+ 
+diff --git a/src/gui/config_dialog/config_dialog.cc b/src/gui/config_dialog/config_dialog.cc
+index abbf55d68..1f82df809 100644
+--- a/src/gui/config_dialog/config_dialog.cc
++++ b/src/gui/config_dialog/config_dialog.cc
+@@ -30,7 +30,15 @@
+ // Qt component of configure dialog for Mozc
+ #include "gui/config_dialog/config_dialog.h"
+ 
++#include <QCheckBox>
++#include <QComboBox>
++#include <QFileDialog>
++#include <QHBoxLayout>
++#include <QLabel>
++#include <QLineEdit>
+ #include <QMessageBox>
++#include <QPushButton>
++#include <QVBoxLayout>
+ #include <algorithm>
+ #include <cstdint>
+ #include <istream>
+@@ -152,6 +160,61 @@ ConfigDialog::ConfigDialog()
+   symbolsSettingComboBox->addItem(QString::fromUtf8("「」／"));
+   symbolsSettingComboBox->addItem(QString::fromUtf8("[]・"));
+ 
++  // Kotori: 「AI変換」タブ(docs/adr/0013)。
++  {
++    auto *page = new QWidget();
++    auto *layout = new QVBoxLayout(page);
++    kotoriLmEnabledCheckBox_ = new QCheckBox(
++        QString::fromUtf8("AI(zenz)で変換候補を並べ替える"), page);
++    layout->addWidget(kotoriLmEnabledCheckBox_);
++    auto *quality_row = new QHBoxLayout();
++    quality_row->addWidget(new QLabel(QString::fromUtf8("変換の品質"), page));
++    kotoriLmQualityComboBox_ = new QComboBox(page);
++    kotoriLmQualityComboBox_->addItem(QString::fromUtf8("Low(軽い。古い PC 向け)"));
++    kotoriLmQualityComboBox_->addItem(QString::fromUtf8("Standard(標準)"));
++    kotoriLmQualityComboBox_->addItem(QString::fromUtf8("High(候補を多く調べる)"));
++    kotoriLmQualityComboBox_->addItem(QString::fromUtf8("Unreal(最高精度。速い PC 向け)"));
++    quality_row->addWidget(kotoriLmQualityComboBox_);
++    quality_row->addStretch();
++    layout->addLayout(quality_row);
++    auto *quality_note = new QLabel(QString::fromUtf8(
++        "Low は zenz-v2.5-xsmall-q8_0.gguf、Unreal は zenz-v2.5-medium-q8_0.gguf を"
++        "インストール先に置くと使う。ないときは標準のモデルで動く。"), page);
++    quality_note->setWordWrap(true);
++    layout->addWidget(quality_note);
++    layout->addWidget(new QLabel(QString::fromUtf8("モデルのファイル(GGUF)"), page));
++    auto *row = new QHBoxLayout();
++    kotoriLmModelPathEdit_ = new QLineEdit(page);
++    kotoriLmModelPathEdit_->setPlaceholderText(QString::fromUtf8(
++        "空欄のときは、インストール先の zenz-v2.5-small-q8_0.gguf を使う"));
++    auto *browse = new QPushButton(QString::fromUtf8("参照..."), page);
++    row->addWidget(kotoriLmModelPathEdit_);
++    row->addWidget(browse);
++    layout->addLayout(row);
++    auto *note = new QLabel(
++        QString::fromUtf8(
++            "zenz-v2.5 と同じ語彙の GGUF を選べる(既定は zenz-v2.5-small を 8 bit にしたもの)。"
++            "変更は次の変換から効く。ファイルがないときは、AI なしで変換する。"),
++        page);
++    note->setWordWrap(true);
++    layout->addWidget(note);
++    layout->addStretch();
++    configDialogTabWidget->addTab(page, QString::fromUtf8("AI変換"));
++    QObject::connect(kotoriLmEnabledCheckBox_, SIGNAL(stateChanged(int)), this,
++                     SLOT(EnableApplyButton()));
++    QObject::connect(kotoriLmModelPathEdit_, SIGNAL(textChanged(QString)), this,
++                     SLOT(EnableApplyButton()));
++    QObject::connect(kotoriLmQualityComboBox_, SIGNAL(currentIndexChanged(int)),
++                     this, SLOT(EnableApplyButton()));
++    QObject::connect(browse, &QPushButton::clicked, this, [this]() {
++      const QString path = QFileDialog::getOpenFileName(
++          this, QString::fromUtf8("モデルのファイルを選ぶ"),
++          kotoriLmModelPathEdit_->text(),
++          QString::fromUtf8("GGUF (*.gguf);;すべてのファイル (*)"));
++      if (!path.isEmpty()) kotoriLmModelPathEdit_->setText(path);
++    });
++  }
++
+   keymapSettingComboBox->addItem(tr("Custom keymap"));
+   keymapSettingComboBox->addItem(tr("ATOK"));
+   keymapSettingComboBox->addItem(tr("MS-IME"));
+@@ -524,6 +587,14 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
+   custom_keymap_table_ = config.custom_keymap_table();
+   custom_roman_table_ = config.custom_roman_table();
+ 
++  // Kotori
++  kotoriLmEnabledCheckBox_->setChecked(config.kotori_lm_enabled());
++  kotoriLmQualityComboBox_->setCurrentIndex(
++      static_cast<int>(config.kotori_lm_quality()));
++  kotoriLmModelPathEdit_->setText(
++      QString::fromUtf8(config.kotori_lm_model_path().data(),
++                        static_cast<int>(config.kotori_lm_model_path().size())));
++
+   // tab2
+   SET_COMBOBOX(historyLearningLevelComboBox, HistoryLearningLevel,
+                history_learning_level);
+@@ -612,6 +683,13 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
+     config->set_custom_roman_table(custom_roman_table_);
+   }
+ 
++  // Kotori
++  config->set_kotori_lm_enabled(kotoriLmEnabledCheckBox_->isChecked());
++  config->set_kotori_lm_quality(static_cast<config::Config::KotoriLmQuality>(
++      kotoriLmQualityComboBox_->currentIndex()));
++  config->set_kotori_lm_model_path(
++      kotoriLmModelPathEdit_->text().trimmed().toUtf8().toStdString());
++
+   // tab2
+   GET_COMBOBOX(historyLearningLevelComboBox, HistoryLearningLevel,
+                history_learning_level);
+diff --git a/src/gui/config_dialog/config_dialog.h b/src/gui/config_dialog/config_dialog.h
+index 85e1c0075..c9bf8602a 100644
+--- a/src/gui/config_dialog/config_dialog.h
++++ b/src/gui/config_dialog/config_dialog.h
+@@ -33,6 +33,10 @@
+ #define MOZC_GUI_CONFIG_DIALOG_CONFIG_DIALOG_H_
+ 
+ #include <QObject>
++
++class QCheckBox;
++class QComboBox;
++class QLineEdit;
+ #include <QTimer>
+ #include <map>
+ #include <memory>
+@@ -48,6 +52,11 @@ namespace gui {
+ class ConfigDialog : public QDialog, private Ui::ConfigDialog {
+   Q_OBJECT;
+ 
++  // Kotori: 「AI変換」タブ。
++  QCheckBox *kotoriLmEnabledCheckBox_ = nullptr;
++  QLineEdit *kotoriLmModelPathEdit_ = nullptr;
++  QComboBox *kotoriLmQualityComboBox_ = nullptr;
++
+  public:
+   ConfigDialog();
+ 
+diff --git a/src/protocol/config.proto b/src/protocol/config.proto
+index 7d735374e..387a09cb7 100644
+--- a/src/protocol/config.proto
++++ b/src/protocol/config.proto
+@@ -360,6 +360,20 @@ message Config {
+   // Use mode indicator feature.
+   optional bool use_mode_indicator = 120 [default = true];
+ 
++  // Kotori: AI(zenz)による変換候補の並べ替え(docs/adr/0013)。
++  optional bool kotori_lm_enabled = 200 [default = true];
++  // 空なら、インストール先に同梱したモデルを使う。
++  optional string kotori_lm_model_path = 201;
++  // 変換の品質。高いほど大きなモデルと多くの候補を使い、遅くなる。
++  enum KotoriLmQuality {
++    KOTORI_LM_LOW = 0;       // zenz-v2.5-xsmall、候補 4 件
++    KOTORI_LM_STANDARD = 1;  // zenz-v2.5-small(同梱)、候補 8 件
++    KOTORI_LM_HIGH = 2;      // zenz-v2.5-small、候補 16 件
++    KOTORI_LM_UNREAL = 3;    // zenz-v2.5-medium、候補 16 件
++  }
++  optional KotoriLmQuality kotori_lm_quality = 202
++      [default = KOTORI_LM_STANDARD];
++
+   //////////////////////////////////////////////////////////////
+   //
+   // Cloud (300-319)
 diff --git a/src/rewriter/BUILD.bazel b/src/rewriter/BUILD.bazel
-index 4bbcddeca..c0c58e7bf 100644
+index 4bbcddeca..52cbe1c4d 100644
 --- a/src/rewriter/BUILD.bazel
 +++ b/src/rewriter/BUILD.bazel
 @@ -1536,6 +1536,7 @@ mozc_cc_library(
@@ -145,7 +392,7 @@ index 4bbcddeca..c0c58e7bf 100644
          ":merger_rewriter",
          ":number_rewriter",
          ":remove_redundant_candidate_rewriter",
-@@ -1743,3 +1744,31 @@ mozc_cc_test(
+@@ -1743,3 +1744,33 @@ mozc_cc_test(
          "//testing:gunit_main",
      ],
  )
@@ -171,7 +418,9 @@ index 4bbcddeca..c0c58e7bf 100644
 +        ":zenz_scorer",
 +        "//base:file_util",
 +        "//base:system_util",
++        "//base:util",
 +        "//converter:segments",
++        "//protocol:config_cc_proto",
 +        "//request:conversion_request",
 +        "@com_google_absl//absl/base:core_headers",
 +        "@com_google_absl//absl/synchronization",
@@ -179,26 +428,31 @@ index 4bbcddeca..c0c58e7bf 100644
 +)
 diff --git a/src/rewriter/lm_rewriter.cc b/src/rewriter/lm_rewriter.cc
 new file mode 100755
-index 000000000..70af55d76
+index 000000000..8df16f484
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.cc
-@@ -0,0 +1,107 @@
+@@ -0,0 +1,308 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/lm_rewriter.h"
 +
 +#include <algorithm>
++#include <cstdint>
 +#include <cstdio>
 +#include <cstdlib>
 +#include <numeric>
++#include <optional>
 +#include <string>
++#include <utility>
 +#include <vector>
 +
 +#include "absl/synchronization/mutex.h"
 +#include "base/file_util.h"
 +#include "base/system_util.h"
++#include "base/util.h"
 +#include "converter/candidate.h"
 +#include "converter/segments.h"
++#include "protocol/config.pb.h"
 +#include "request/conversion_request.h"
 +
 +namespace mozc {
@@ -206,16 +460,66 @@ index 000000000..70af55d76
 +
 +constexpr char kDefaultModelName[] = "zenz-v2.5-small-q8_0.gguf";
 +constexpr size_t kMaxContextBytes = 240;  // 40 文字ぶん以上
++constexpr size_t kMaxSentences = 16;
++
++struct Quality {
++  size_t k;
++  const char* model;
++};
++
++Quality QualityOf(config::Config::KotoriLmQuality q) {
++  switch (q) {
++    case config::Config::KOTORI_LM_LOW:
++      return {4, "zenz-v2.5-xsmall-q8_0.gguf"};
++    case config::Config::KOTORI_LM_HIGH:
++      return {16, kDefaultModelName};
++    case config::Config::KOTORI_LM_UNREAL:
++      return {16, "zenz-v2.5-medium-q8_0.gguf"};
++    default:
++      return {8, kDefaultModelName};
++  }
++}
 +
 +const char* Env(const char* name) {
 +  const char* v = std::getenv(name);
 +  return (v != nullptr && *v != '\0') ? v : nullptr;
 +}
 +
++std::string Tail(const std::string& s) {
++  return s.size() > kMaxContextBytes ? s.substr(s.size() - kMaxContextBytes)
++                                     : s;
++}
++
++// 左の文脈。アプリが渡す直前の文(TSF の preceding_text)があればそれを使い、
++// なければ確定済みの文節(履歴)の値をつなぐ。KOTORI_LM_PRECEDING は評価用。
++std::string HistoryContext(const ConversionRequest& request,
++                           const Segments& segments) {
++  if (const char* v = Env("KOTORI_LM_PRECEDING")) return Tail(v);
++  std::string preceding = request.GetSurroundingContext().first;
++  if (!preceding.empty()) return Tail(preceding);
++  std::string context;
++  for (const Segment& seg : segments.history_segments()) {
++    if (seg.candidates_size() > 0) context += seg.candidate(0).value;
++  }
++  return Tail(context);
++}
++
++std::string ConversionReading(const Segments& segments) {
++  std::string reading;
++  for (const Segment& seg : segments.conversion_segments()) {
++    reading += seg.key();
++  }
++  return reading;
++}
++
 +}  // namespace
 +
 +LmRewriter::LmRewriter() {
-+  if (const char* v = Env("KOTORI_LM_K")) k_ = std::strtoul(v, nullptr, 10);
++  if (const char* v = Env("KOTORI_LM_K")) {
++    k_override_ = std::strtoul(v, nullptr, 10);
++  }
++  if (const char* v = Env("KOTORI_LM_SENTENCE")) sentence_ = *v != '0';
++  if (const char* v = Env("KOTORI_LM_RIGHT")) right_context_ = *v != '0';
 +  if (const char* v = Env("KOTORI_LM_THREADS")) {
 +    threads_ = std::max(1, std::atoi(v));
 +  }
@@ -227,54 +531,187 @@ index 000000000..70af55d76
 +      temperature_ = t;
 +    }
 +  }
-+  if (const char* v = Env("KOTORI_ZENZ_MODEL")) {
-+    model_path_ = v;
-+  } else {
-+    model_path_ = FileUtil::JoinPath(SystemUtil::GetServerDirectory(),
-+                                     kDefaultModelName);
-+  }
++  if (const char* v = Env("KOTORI_ZENZ_MODEL")) env_model_path_ = v;
++  model_dir_ = SystemUtil::GetServerDirectory();
 +}
 +
-+void LmRewriter::EnsureLoaded() const {
-+  if (loaded_) return;
++void LmRewriter::EnsureLoaded(const std::string& path) const {
++  if (loaded_ && loaded_path_ == path) return;
 +  loaded_ = true;
-+  if (!FileUtil::FileExists(model_path_).ok()) return;
-+  scorer_ = ZenzScorer::Open(model_path_, threads_);
++  loaded_path_ = path;
++  scorer_.reset();
++  if (!FileUtil::FileExists(path).ok()) return;
++  scorer_ = ZenzScorer::Open(path, threads_);
 +}
 +
-+bool LmRewriter::Rewrite(const ConversionRequest& request,
-+                         Segments* segments) const {
-+  if (k_ < 2) return false;
-+  absl::MutexLock lock(mutex_);
-+  EnsureLoaded();
-+  if (scorer_ == nullptr) return false;
-+
-+  // 左文脈: 確定済みの文節(履歴)と、並べ替え済みの前の文節の第 1 候補。
-+  std::string context;
-+  for (const Segment& seg : segments->history_segments()) {
-+    if (seg.candidates_size() > 0) context += seg.candidate(0).value;
++ZenzScorer* LmRewriter::Prepare(const ConversionRequest& request,
++                                size_t* k) const {
++  const config::Config& config = request.config();
++  if (!config.kotori_lm_enabled()) return nullptr;
++  const Quality quality = QualityOf(config.kotori_lm_quality());
++  *k = k_override_.value_or(quality.k);
++  if (*k < 2) return nullptr;
++  std::string path = config.kotori_lm_model_path();
++  if (path.empty()) path = env_model_path_;
++  if (path.empty()) {
++    path = FileUtil::JoinPath(model_dir_, quality.model);
++    if (!FileUtil::FileExists(path).ok()) {
++      path = FileUtil::JoinPath(model_dir_, kDefaultModelName);
++    }
 +  }
++  EnsureLoaded(path);
++  return scorer_.get();
++}
++
++std::optional<RewriterInterface::ResizeSegmentsRequest>
++LmRewriter::CheckResizeSegmentsRequest(const ConversionRequest& request,
++                                       const Segments& segments) const {
++  if (!sentence_) return std::nullopt;
++  const std::vector<converter::Candidate>& sentences =
++      segments.kotori_sentences();
++  if (sentences.size() < 2) return std::nullopt;
++  absl::MutexLock lock(mutex_);
++  best_.reset();
++  size_t k = 0;
++  ZenzScorer* scorer = Prepare(request, &k);
++  if (scorer == nullptr) return std::nullopt;
++
++  const std::string reading = ConversionReading(segments);
++  const std::string context = HistoryContext(request, segments);
++  std::vector<const converter::Candidate*> cands;
++  std::vector<std::string> values;
++  for (const converter::Candidate& c : sentences) {
++    if (c.key != reading || c.inner_segment_boundary.empty()) continue;
++    if (std::find(values.begin(), values.end(), c.value) != values.end()) {
++      continue;
++    }
++    cands.push_back(&c);
++    values.push_back(c.value);
++    if (cands.size() >= kMaxSentences) break;
++  }
++  if (cands.size() < 2) return std::nullopt;
++  const std::optional<std::vector<float>> logp =
++      scorer->Score(context, reading, values);
++  if (!logp) return std::nullopt;
++  size_t top = 0;
++  double top_score = 0;
++  for (size_t i = 0; i < cands.size(); ++i) {
++    const double s = Combine((*logp)[i], cands[i]->cost);
++    if (i == 0 || s > top_score) {
++      top = i;
++      top_score = s;
++    }
++  }
++
++  Best best{reading, context, {}, {}};
++  for (const auto& inner : cands[top]->inner_segments()) {
++    best.keys.emplace_back(inner.GetKey());
++    best.values.emplace_back(inner.GetValue());
++  }
++  if (best.keys.empty()) return std::nullopt;
++
++  // 今の区切りと同じなら、切り直さずに Rewrite で先頭を入れ替える。
++  std::vector<std::string> current;
++  for (const Segment& seg : segments.conversion_segments()) {
++    current.emplace_back(seg.key());
++  }
++  best_ = best;
++  if (current == best.keys) return std::nullopt;
++
++  ResizeSegmentsRequest resize;
++  resize.segment_index = 0;
++  const size_t n = std::min(best.keys.size(), resize.segment_sizes.size());
++  for (size_t i = 0; i < n; ++i) {
++    const size_t len = Util::CharsLen(best.keys[i]);
++    if (len == 0 || len > 255) {
++      best_.reset();
++      return std::nullopt;
++    }
++    resize.segment_sizes[i] = static_cast<uint8_t>(len);
++  }
++  return resize;
++}
++
++bool LmRewriter::ApplyBest(Segments* segments,
++                           const std::string& context) const {
++  if (!best_ || best_->context != context ||
++      best_->reading != ConversionReading(*segments)) {
++    return false;
++  }
++  size_t i = 0;
++  for (const Segment& seg : segments->conversion_segments()) {
++    if (i >= best_->keys.size() || seg.key() != best_->keys[i]) return false;
++    ++i;
++  }
++  if (i != best_->keys.size()) return false;
++
 +  bool changed = false;
++  i = 0;
 +  for (Segment& seg : segments->conversion_segments()) {
-+    const size_t n = std::min(seg.candidates_size(), k_);
++    const std::string& value = best_->values[i++];
++    if (seg.candidates_size() == 0 || seg.candidate(0).value == value) {
++      continue;
++    }
++    int found = -1;
++    for (size_t j = 1; j < seg.candidates_size(); ++j) {
++      if (seg.candidate(j).value == value) {
++        found = static_cast<int>(j);
++        break;
++      }
++    }
++    converter::Candidate c = seg.candidate(found >= 0 ? found : 0);
++    if (found >= 0) {
++      seg.erase_candidate(found);
++    } else {
++      // 文節の候補にない値(文全体の候補でだけ出たもの)は、先頭の候補を写して作る。
++      c.value = value;
++      c.content_value = value;
++      c.content_key = std::string(seg.key());
++      c.inner_segment_boundary.clear();
++    }
++    *seg.insert_candidate(0) = std::move(c);
++    changed = true;
++  }
++  return changed;
++}
++
++bool LmRewriter::RewriteEachSegment(const ConversionRequest& request,
++                                    ZenzScorer* scorer, size_t k,
++                                    Segments* segments) const {
++  std::string context = HistoryContext(request, *segments);
++  bool changed = false;
++  const size_t num_segments = segments->conversion_segments_size();
++  for (size_t s = 0; s < num_segments; ++s) {
++    Segment& seg = *segments->mutable_conversion_segment(s);
++    const size_t n = std::min(seg.candidates_size(), k);
 +    if (n >= 2 && !seg.key().empty()) {
++      // 読みと候補の後ろに、残りの文節の読みと第 1 候補をつなぐ。「はが」だけでは
++      // 葉/歯を決められないが、「はがいたい」なら決められる。
++      std::string reading(seg.key());
++      std::string suffix;
++      if (right_context_) {
++        for (size_t t = s + 1; t < num_segments; ++t) {
++          const Segment& next = segments->conversion_segment(t);
++          if (next.candidates_size() == 0) break;
++          reading += next.key();
++          suffix += next.candidate(0).value;
++        }
++      }
 +      std::vector<std::string> values;
 +      values.reserve(n);
-+      for (size_t i = 0; i < n; ++i) values.push_back(seg.candidate(i).value);
-+      const std::string left =
-+          context.size() > kMaxContextBytes
-+              ? context.substr(context.size() - kMaxContextBytes)
-+              : context;
-+      if (auto logp = scorer_->Score(left, seg.key(), values)) {
++      for (size_t i = 0; i < n; ++i) {
++        values.push_back(seg.candidate(i).value + suffix);
++      }
++      if (auto logp = scorer->Score(Tail(context), reading, values)) {
 +        std::vector<double> score(n);
 +        for (size_t i = 0; i < n; ++i) {
-+          score[i] = lambda_lm_ * (*logp)[i] -
-+                     lambda_lattice_ * seg.candidate(i).cost / temperature_;
++          score[i] = Combine((*logp)[i], seg.candidate(i).cost);
 +        }
 +        std::vector<size_t> order(n);
 +        std::iota(order.begin(), order.end(), 0);
-+        std::stable_sort(order.begin(), order.end(),
-+                         [&](size_t a, size_t b) { return score[a] > score[b]; });
++        std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
++          return score[a] > score[b];
++        });
 +        std::vector<converter::Candidate> copies;
 +        copies.reserve(n);
 +        for (size_t i = 0; i < n; ++i) copies.push_back(seg.candidate(order[i]));
@@ -289,22 +726,38 @@ index 000000000..70af55d76
 +  return changed;
 +}
 +
++bool LmRewriter::Rewrite(const ConversionRequest& request,
++                         Segments* segments) const {
++  absl::MutexLock lock(mutex_);
++  size_t k = 0;
++  ZenzScorer* scorer = Prepare(request, &k);
++  if (scorer == nullptr) return false;
++  // 文全体で選んだ文が今の区切りに合えば、それを使う。
++  if (sentence_ && ApplyBest(segments, HistoryContext(request, *segments))) {
++    return true;
++  }
++  return RewriteEachSegment(request, scorer, k, segments);
++}
++
 +}  // namespace mozc
 diff --git a/src/rewriter/lm_rewriter.h b/src/rewriter/lm_rewriter.h
 new file mode 100755
-index 000000000..74bb8e65d
+index 000000000..1666bfb1b
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.h
-@@ -0,0 +1,55 @@
+@@ -0,0 +1,96 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
-+// Kotori: zenz-v2.5 による変換候補の並べ替え(docs/adr/0013)。
++// Kotori: zenz-v2.5 による変換候補の並べ替え(docs/adr/0013、0015)。
 +
 +#ifndef MOZC_REWRITER_LM_REWRITER_H_
 +#define MOZC_REWRITER_LM_REWRITER_H_
 +
++#include <cstddef>
 +#include <memory>
++#include <optional>
 +#include <string>
++#include <vector>
 +
 +#include "absl/base/thread_annotations.h"
 +#include "absl/synchronization/mutex.h"
@@ -315,14 +768,24 @@ index 000000000..74bb8e65d
 +
 +namespace mozc {
 +
-+// 文節ごとに、上位 K 件の候補を「左文脈 + 読み」のもとで zenz で採点し、
-+// Mozc のコストと合わせて並べ替える。モデルがなければ何もしない。
++// 2 段で並べ替える。
++//
++// 1. 文全体: ImmutableConverter が Segments::kotori_sentences() に入れた文全体の
++//    候補(区切りの違う文を含む)を zenz で採点し、最良の文の区切りで文節を切り直す
++//    (CheckResizeSegmentsRequest)。切り直した後の Rewrite で、各文節の先頭に
++//    最良の文の値を置く。
++// 2. 文節ごと: 文全体の結果が使えないとき、上位 K 件を前後の文節とともに採点する。
++//
++// モデルがなければ何もしない。モデルは、設定のパス → KOTORI_ZENZ_MODEL → 品質の段階の
++// モデル(mozc_server と同じフォルダ)→ 同梱の zenz-v2.5-small-q8_0.gguf の順に探す。
 +//
 +// 環境変数(評価と調整用):
-+//   KOTORI_ZENZ_MODEL  GGUF のパス。なければ実行ファイルの隣の zenz-v2.5-small-q8_0.gguf
-+//   KOTORI_LM_K        文節ごとに並べ替える候補の数(既定 8。0 で無効)
++//   KOTORI_ZENZ_MODEL  GGUF のパス(設定のパスが空のとき)
++//   KOTORI_LM_K        文節ごとに並べ替える候補の数(品質の段階より優先。0 で無効)
++//   KOTORI_LM_SENTENCE 0 で文全体の並べ替えを切る
 +//   KOTORI_LM_WEIGHTS  "λ_lm,λ_lattice,T"(既定 "1,1,1000")
 +//   KOTORI_LM_THREADS  推論のスレッド数(既定 4)
++//   KOTORI_LM_PRECEDING 左の文脈を差し替える(評価用)
 +class LmRewriter : public RewriterInterface {
 + public:
 +  LmRewriter();
@@ -331,21 +794,49 @@ index 000000000..74bb8e65d
 +    return CONVERSION;
 +  }
 +
++  std::optional<ResizeSegmentsRequest> CheckResizeSegmentsRequest(
++      const ConversionRequest& request,
++      const Segments& segments) const override;
++
 +  bool Rewrite(const ConversionRequest& request,
 +               Segments* segments) const override;
 +
 + private:
-+  void EnsureLoaded() const ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
++  struct Best {
++    std::string reading;
++    std::string context;
++    std::vector<std::string> keys;
++    std::vector<std::string> values;
++  };
++
++  // 設定に合わせてモデルを用意する。使えなければ nullptr。*k は文節ごとの候補数。
++  ZenzScorer* Prepare(const ConversionRequest& request, size_t* k) const
++      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
++  void EnsureLoaded(const std::string& path) const
++      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
++  bool ApplyBest(Segments* segments, const std::string& context) const
++      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
++  bool RewriteEachSegment(const ConversionRequest& request,
++                          ZenzScorer* scorer, size_t k,
++                          Segments* segments) const;
++  double Combine(float logp, int cost) const {
++    return lambda_lm_ * logp - lambda_lattice_ * cost / temperature_;
++  }
 +
 +  mutable absl::Mutex mutex_;
++  mutable std::string loaded_path_ ABSL_GUARDED_BY(mutex_);
 +  mutable bool loaded_ ABSL_GUARDED_BY(mutex_) = false;
 +  mutable std::unique_ptr<ZenzScorer> scorer_ ABSL_GUARDED_BY(mutex_);
-+  size_t k_ = 8;
++  mutable std::optional<Best> best_ ABSL_GUARDED_BY(mutex_);
++  std::optional<size_t> k_override_;
++  bool sentence_ = true;
++  bool right_context_ = true;
 +  double lambda_lm_ = 1.0;
 +  double lambda_lattice_ = 1.0;
 +  double temperature_ = 1000.0;
 +  int threads_ = 4;
-+  std::string model_path_;
++  std::string env_model_path_;
++  std::string model_dir_;
 +};
 +
 +}  // namespace mozc
