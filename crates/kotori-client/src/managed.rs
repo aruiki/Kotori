@@ -354,23 +354,28 @@ impl Connector for SystemConnector {
     /// サーバーを切り離したプロセスとして起動する。二重に起動してもサーバー側の単一インスタンスの
     /// 仕組みで後から起動したほうが終わる(REQ-4-1)。
     fn launch(&mut self) -> io::Result<()> {
-        let Some(server) = &self.server else {
-            return Ok(());
-        };
-        let mut cmd = std::process::Command::new(server);
-        cmd.stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            // コンソールを開かず、アプリのプロセスグループから切り離す。
-            const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            cmd.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
+        match &self.server {
+            Some(server) => spawn_detached(server),
+            None => Ok(()),
         }
-        cmd.spawn().map(drop)
     }
+}
+
+/// 実行ファイルを、コンソールを開かずアプリから切り離したプロセスとして起動する。
+pub(crate) fn spawn_detached(exe: &std::path::Path) -> io::Result<()> {
+    let mut cmd = std::process::Command::new(exe);
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // コンソールを開かず、アプリのプロセスグループから切り離す。
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
+    }
+    cmd.spawn().map(drop)
 }
 
 #[cfg(test)]

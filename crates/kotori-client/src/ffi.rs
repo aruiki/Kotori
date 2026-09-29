@@ -89,13 +89,13 @@ impl From<ipc::Output> for KotoriOutput {
 }
 
 /// パニックを状態コードに変える。
-fn guard(f: impl FnOnce() -> i32) -> i32 {
+pub(crate) fn guard(f: impl FnOnce() -> i32) -> i32 {
     catch_unwind(AssertUnwindSafe(f)).unwrap_or(KOTORI_ERR_INTERNAL)
 }
 
 /// # Safety
 /// `p` は NULL か、NUL 終端の文字列を指すこと。
-unsafe fn str_arg<'a>(p: *const c_char) -> Option<&'a str> {
+pub(crate) unsafe fn str_arg<'a>(p: *const c_char) -> Option<&'a str> {
     if p.is_null() {
         return None;
     }

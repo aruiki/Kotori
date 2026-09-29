@@ -12,6 +12,11 @@ pub mod ipc {
     include!(concat!(env!("OUT_DIR"), "/kotori.ipc.v1.rs"));
 }
 
+/// `proto/renderer.proto` から生成した型(候補ウィンドウの renderer への通知、docs/adr/0010)。
+pub mod renderer {
+    include!(concat!(env!("OUT_DIR"), "/kotori.renderer.v1.rs"));
+}
+
 /// このビルドのプロトコルのメジャーバージョン。不一致なら接続を拒否する。
 pub const PROTOCOL_MAJOR: u32 = 1;
 /// このビルドのプロトコルのマイナーバージョン。互換のある追加で上げる。
@@ -135,6 +140,45 @@ mod tests {
         let buf = (MAX_FRAME_LEN + 1).to_le_bytes();
         let err = read_message::<_, Request>(&mut buf.as_slice()).unwrap_err();
         assert!(matches!(err, FrameError::TooLarge(_)));
+    }
+
+    #[test]
+    fn renderer_messages_roundtrip() {
+        use renderer::{renderer_message, Candidate, Hide, Rect, RendererMessage, Show};
+        let show = RendererMessage {
+            protocol_major: PROTOCOL_MAJOR,
+            body: Some(renderer_message::Body::Show(Show {
+                candidates: vec![Candidate {
+                    text: "今日".into(),
+                    annotation: "日付".into(),
+                }],
+                focused_index: 0,
+                caret: Some(Rect {
+                    left: -1920,
+                    top: 10,
+                    right: -1900,
+                    bottom: 30,
+                }),
+                owner_window: 0x1234,
+                notify_window: 0x5678,
+            })),
+        };
+        let hide = RendererMessage {
+            protocol_major: PROTOCOL_MAJOR,
+            body: Some(renderer_message::Body::Hide(Hide {})),
+        };
+        let mut buf = Vec::new();
+        write_message(&mut buf, &show).unwrap();
+        write_message(&mut buf, &hide).unwrap();
+        let mut r = buf.as_slice();
+        assert_eq!(
+            read_message::<_, RendererMessage>(&mut r).unwrap(),
+            Some(show)
+        );
+        assert_eq!(
+            read_message::<_, RendererMessage>(&mut r).unwrap(),
+            Some(hide)
+        );
     }
 
     #[test]
