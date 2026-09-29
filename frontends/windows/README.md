@@ -10,12 +10,10 @@
 ダウンロードして展開し、`install.cmd` をダブルクリックする(管理者の確認で「はい」)。外すときは
 `uninstall.cmd`。手順は zip の `README.txt`(元は `README.release.txt`)にある。
 
-リリースは `.github/workflows/release.yml` が作る。Actions の「Release」を手で実行するか、`v` で
-始まるタグを push する。手で実行するときバージョン(SPEC 16.3 の `0.x.y-beta` の形)を空にすると、
-ワークスペースの版の beta の番号を既にあるタグの次にする(例 `v0.1.0-beta.1` があれば `v0.1.0-beta.2`)。
-サーバー・x64 と x86 の TIP・辞書・`THIRD_PARTY_NOTICES.txt`・インストールのスクリプトを zip に
-まとめ、最新のリリース(Latest)として公開する。リリースの名前は日本時間の日時と版
-(例 `2026.929.151234 (v0.1.0-beta.2)`)。LM のモデルは同梱しない(docs/licenses.md)。
+リリースは `.github/workflows/release.yml` が作る。Actions の「Release」を手で実行して
+バージョン(例 `0.1.0-beta.1`、SPEC 16.3 の `0.x.y-beta` の形)を入れるか、`v` で始まるタグを
+push する。サーバー・x64 と x86 の TIP・辞書・`THIRD_PARTY_NOTICES.txt`・インストールの
+スクリプトを zip にまとめ、プレリリースとして公開する。LM のモデルは同梱しない(docs/licenses.md)。
 このワークフローやインストールのスクリプトを変える PR では、zip を作って Actions の成果物に置く
 だけにする(公開しない)。
 
