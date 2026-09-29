@@ -98,3 +98,38 @@ fn scoring_errors() {
         Err(LmError::TooLong)
     );
 }
+
+#[test]
+fn shared_prefixes_score_like_independent_candidates() {
+    let (_d, model) = tiny();
+    let mut ctx = Context::new(&model, 256, 8, 2).unwrap();
+    let prefix = vec![model.bos(), 40, 41];
+    // 先頭を共有する候補、ほかの候補の接頭辞になっている候補、重複した候補、共有しない候補。
+    let cands: Vec<Vec<i32>> = vec![
+        vec![10, 11, 12],
+        vec![10, 11, 13],
+        vec![10, 11],
+        vec![10, 11, 12],
+        vec![20, 11, 12],
+        vec![10, 14, 12, 15],
+    ];
+    let batch = ctx.score_candidates(&prefix, &cands).unwrap();
+    for (c, &b) in cands.iter().zip(&batch) {
+        let single = ctx
+            .score_candidates(&prefix, std::slice::from_ref(c))
+            .unwrap()[0];
+        assert!(
+            (single - b).abs() < 1e-3,
+            "{c:?}: 一括 {b} と単独 {single} が違う"
+        );
+    }
+    assert_eq!(batch[0], batch[3], "重複した候補は同じスコア");
+    // 共有する節は1回だけ置くので、節の数(10 個)で長さを判定する。18 トークンぶんはない。
+    let mut small = Context::new(&model, 13, 8, 1).unwrap();
+    assert!(small.score_candidates(&prefix, &cands).is_ok());
+    let mut smaller = Context::new(&model, 12, 8, 1).unwrap();
+    assert_eq!(
+        smaller.score_candidates(&prefix, &cands),
+        Err(LmError::TooLong)
+    );
+}

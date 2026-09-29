@@ -44,7 +44,9 @@ extern "C" {
         n: i32,
         tokens: *const i32,
         pos: *const i32,
-        seq: *const i32,
+        n_seq: *const i32,
+        seqs: *const i32,
+        n_seq_max: i32,
         want_logits: *const i8,
     ) -> i32;
     fn kotori_lm_logits(ctx: *mut LlamaContext, i: i32) -> *const f32;
@@ -161,29 +163,48 @@ pub fn seq_cp(ctx: NonNull<LlamaContext>, src: i32, dst: i32) {
     unsafe { kotori_lm_seq_cp(ctx.as_ptr(), src, dst) }
 }
 
-/// 4 つの配列は同じ長さであること。0 なら成功。
+/// トークン `i` は `seqs[i]` のシーケンスに属する(1 つ以上)。配列はどれも同じ長さであること。
+/// 0 なら成功。
 pub fn decode(
     ctx: NonNull<LlamaContext>,
     tokens: &[i32],
     pos: &[i32],
-    seq: &[i32],
+    seqs: &[&[i32]],
     want_logits: &[i8],
 ) -> i32 {
     let n = tokens.len();
-    if pos.len() != n || seq.len() != n || want_logits.len() != n {
+    if pos.len() != n
+        || seqs.len() != n
+        || want_logits.len() != n
+        || seqs.iter().any(|s| s.is_empty())
+    {
         return -1;
     }
-    let Ok(n) = i32::try_from(n) else {
+    let (Ok(n), Ok(n_seq_max)) = (
+        i32::try_from(n),
+        i32::try_from(seqs.iter().map(|s| s.len()).max().unwrap_or(1)),
+    ) else {
         return -1;
     };
-    // SAFETY: 4 つの配列はどれも n 要素あり、呼び出しの間生きている。
+    let mut n_seq = Vec::with_capacity(seqs.len());
+    for s in seqs {
+        let Ok(len) = i32::try_from(s.len()) else {
+            return -1;
+        };
+        n_seq.push(len);
+    }
+    let flat: Vec<i32> = seqs.concat();
+    // SAFETY: tokens・pos・n_seq・want_logits はどれも n 要素、flat は n_seq の和の要素があり、
+    // n_seq の各値は 1 以上 n_seq_max 以下。どれも呼び出しの間生きている。
     unsafe {
         kotori_lm_decode(
             ctx.as_ptr(),
             n,
             tokens.as_ptr(),
             pos.as_ptr(),
-            seq.as_ptr(),
+            n_seq.as_ptr(),
+            flat.as_ptr(),
+            n_seq_max,
             want_logits.as_ptr(),
         )
     }

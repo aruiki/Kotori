@@ -78,15 +78,22 @@ void kotori_lm_seq_cp(struct llama_context * ctx, int32_t src, int32_t dst) {
     llama_memory_seq_cp(llama_get_memory(ctx), src, dst, -1, -1);
 }
 
-/* 1 トークンに 1 シーケンスを割り当てたバッチを作って評価する。0 なら成功。 */
+/*
+ * バッチを作って評価する。0 なら成功。トークン i は n_seq[i] 個のシーケンスに属し、その ID は
+ * seqs に続けて並べる(候補の共通の接頭辞を1回だけ評価するため、6.2)。
+ */
 int32_t kotori_lm_decode(struct llama_context * ctx, int32_t n, const int32_t * tokens,
-                         const int32_t * pos, const int32_t * seq, const int8_t * want_logits) {
-    struct llama_batch batch = llama_batch_init(n, 0, 1);
+                         const int32_t * pos, const int32_t * n_seq, const int32_t * seqs,
+                         int32_t n_seq_max, const int8_t * want_logits) {
+    struct llama_batch batch = llama_batch_init(n, 0, n_seq_max);
+    int32_t at = 0;
     for (int32_t i = 0; i < n; i++) {
         batch.token[i] = tokens[i];
         batch.pos[i] = pos[i];
-        batch.n_seq_id[i] = 1;
-        batch.seq_id[i][0] = seq[i];
+        batch.n_seq_id[i] = n_seq[i];
+        for (int32_t s = 0; s < n_seq[i]; s++) {
+            batch.seq_id[i][s] = seqs[at++];
+        }
         batch.logits[i] = want_logits[i];
     }
     batch.n_tokens = n;
