@@ -1,6 +1,8 @@
 #![allow(clippy::unwrap_used)]
 
 use kotori_dict::{DictBuilder, PosClass};
+use kotori_lm::rerank::{CancelToken, RerankRequest, Scorer};
+use kotori_lm::ScoreWeights;
 
 use super::*;
 
@@ -60,7 +62,7 @@ fn evaluate_reports_accuracy_and_cer() {
         ]"#,
     )
     .unwrap();
-    let r = evaluate(&dict(), "t", &items);
+    let r = evaluate(&dict(), "t", &items, None);
     assert_eq!(r.items, 3);
     assert_eq!(r.results[0].rank, Some(1));
     assert_eq!(r.results[1].rank, Some(2), "京は は第2候補");
@@ -70,6 +72,111 @@ fn evaluate_reports_accuracy_and_cer() {
     let edits: usize = r.results.iter().map(|x| x.edits).sum();
     let chars: usize = r.results.iter().map(|x| x.chars).sum();
     assert!((r.cer - edits as f64 / chars as f64).abs() < 1e-9);
+    assert_eq!(r.lm_failures, 0);
     let md = to_markdown(&[r]);
     assert!(md.contains("| t | 3 | 33.3% | 66.7% |"), "{md}");
+}
+
+/// 表記に「京」を含む候補を好む偽の LM。`fail` なら採点しない。
+struct FakeLm {
+    fail: bool,
+    seen: Vec<RerankRequest>,
+}
+
+impl Scorer for FakeLm {
+    fn score(&mut self, request: &RerankRequest, _: &CancelToken) -> Option<Vec<f32>> {
+        self.seen.push(request.clone());
+        (!self.fail).then(|| {
+            request
+                .candidates
+                .iter()
+                .map(|c| if c.contains('京') { 0.0 } else { -10.0 })
+                .collect()
+        })
+    }
+}
+
+fn weights(lambda_lattice: f32) -> ScoreWeights {
+    ScoreWeights {
+        lambda_lm: 1.0,
+        lambda_lattice,
+        temperature: 1000.0,
+        lambda_user: 0.0,
+    }
+}
+
+#[test]
+fn rerank_reorders_top_k_by_combined_score() {
+    use crate::eval::{evaluate, Item, Reorder, Rerank};
+    let items: Vec<Item> = serde_json::from_str(
+        r#"[{"index": "1", "context_text": "左", "input": "キョウハ", "expected_output": ["京は"]}]"#,
+    )
+    .unwrap();
+    // 今日は(コスト 1200)と京は(3200)。LM の差 10 がコストの差 2 より大きいので入れ替わる。
+    let mut rerank = Rerank {
+        scorer: FakeLm {
+            fail: false,
+            seen: vec![],
+        },
+        weights: weights(1.0),
+    };
+    let r = evaluate(
+        &dict(),
+        "t",
+        &items,
+        Some((&mut rerank as &mut dyn Reorder, 16)),
+    );
+    assert_eq!(r.results[0].top[..2], ["京は", "今日は"]);
+    assert_eq!(r.results[0].rank, Some(1));
+    let seen = &rerank.scorer.seen[0];
+    assert_eq!(
+        (seen.left_context.as_str(), seen.reading.as_str()),
+        ("左", "キョウハ")
+    );
+    assert_eq!(seen.candidates[..2], ["今日は", "京は"]);
+
+    // ラティスの重みを大きくすると、コストの差が勝って元の順に戻る。
+    rerank.weights = weights(10.0);
+    let r = evaluate(
+        &dict(),
+        "t",
+        &items,
+        Some((&mut rerank as &mut dyn Reorder, 16)),
+    );
+    assert_eq!(r.results[0].top[..2], ["今日は", "京は"]);
+
+    // 上位 1 件だけを並べ替えるなら順は変わらない。
+    rerank.weights = weights(1.0);
+    let r = evaluate(
+        &dict(),
+        "t",
+        &items,
+        Some((&mut rerank as &mut dyn Reorder, 1)),
+    );
+    assert_eq!(r.results[0].top[..2], ["今日は", "京は"]);
+    assert_eq!(rerank.scorer.seen.last().unwrap().candidates, ["今日は"]);
+}
+
+#[test]
+fn rerank_failure_keeps_lattice_order() {
+    use crate::eval::{evaluate, Item, Reorder, Rerank};
+    let items: Vec<Item> = serde_json::from_str(
+        r#"[{"index": "1", "input": "キョウハ", "expected_output": ["京は"]}]"#,
+    )
+    .unwrap();
+    let mut rerank = Rerank {
+        scorer: FakeLm {
+            fail: true,
+            seen: vec![],
+        },
+        weights: weights(1.0),
+    };
+    let r = evaluate(
+        &dict(),
+        "t",
+        &items,
+        Some((&mut rerank as &mut dyn Reorder, 16)),
+    );
+    assert_eq!(r.results[0].top[..2], ["今日は", "京は"]);
+    assert_eq!(r.lm_failures, 1);
 }

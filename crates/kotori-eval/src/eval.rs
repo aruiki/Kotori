@@ -4,6 +4,8 @@ use std::fmt::Write as _;
 
 use kotori_dict::Dictionary;
 use kotori_lattice::{Config, Lattice};
+use kotori_lm::rerank::{Generation, RerankRequest, Scorer};
+use kotori_lm::ScoreWeights;
 use serde::{Deserialize, Serialize};
 
 /// 評価の1問。AJIMEE-Bench の `evaluation_items.json` と同じ形。
@@ -11,7 +13,7 @@ use serde::{Deserialize, Serialize};
 pub struct Item {
     #[serde(default)]
     pub index: String,
-    /// 左文脈。M1(ラティス単体)では使わない。
+    /// 左文脈。LM によるリランクで使う。
     #[serde(default)]
     pub context_text: String,
     /// 読み(カタカナ)。
@@ -44,7 +46,48 @@ pub struct Report {
     pub acc_at_10: f64,
     /// 文字誤り率(全問の編集距離の和 / 正解の文字数の和)。
     pub cer: f64,
+    /// LM で採点できず、ラティスの順のままにした問題の数。
+    pub lm_failures: usize,
     pub results: Vec<ItemResult>,
+}
+
+/// 候補の並べ替え。
+pub trait Reorder {
+    /// `candidates`(表記とラティスのコスト、コストの昇順)の新しい順。採点できなければ `None`。
+    fn reorder(&mut self, item: &Item, candidates: &[(String, i64)]) -> Option<Vec<usize>>;
+}
+
+/// LM によるリランク(6.2 モード A)。候補を S(c) の降順に並べ替える。
+#[derive(Debug)]
+pub struct Rerank<S> {
+    pub scorer: S,
+    pub weights: ScoreWeights,
+}
+
+impl<S: Scorer> Reorder for Rerank<S> {
+    fn reorder(&mut self, item: &Item, candidates: &[(String, i64)]) -> Option<Vec<usize>> {
+        let request = RerankRequest {
+            left_context: item.context_text.clone(),
+            reading: item.input.clone(),
+            candidates: candidates.iter().map(|(s, _)| s.clone()).collect(),
+        };
+        let generation = Generation::new();
+        let lm = self
+            .scorer
+            .score(&request, &generation.token(generation.current()))?;
+        if lm.len() != candidates.len() {
+            return None;
+        }
+        let scores: Vec<f32> = lm
+            .iter()
+            .zip(candidates)
+            .map(|(&logp, &(_, cost))| self.weights.combine(logp, cost, 0.0))
+            .collect();
+        let mut order: Vec<usize> = (0..candidates.len()).collect();
+        // 同点ならラティスの順を保つ(安定な整列)。
+        order.sort_by(|&a, &b| scores[b].total_cmp(&scores[a]));
+        Some(order)
+    }
 }
 
 /// 上位何件まで見るか(Acc@10)。
@@ -66,15 +109,34 @@ pub fn edit_distance(a: &str, b: &str) -> usize {
     prev[b.len()]
 }
 
-/// 1問を変換して採点する。
-pub fn evaluate_item(dict: &Dictionary, item: &Item) -> ItemResult {
+/// 1問を変換して採点する。`rerank` があればラティスの上位 `k` 件を並べ替える。
+/// 採点できなかったときはラティスの順のままにし、2つ目の値を true にする。
+pub fn evaluate_item<'r>(
+    dict: &Dictionary,
+    item: &Item,
+    rerank: Option<(&mut (dyn Reorder + 'r), usize)>,
+) -> (ItemResult, bool) {
     let mut lattice = Lattice::new(Config::default());
     lattice.set_reading(dict, &item.input);
-    let top: Vec<String> = lattice
-        .n_best(dict, TOP)
+    let k = rerank.as_ref().map_or(0, |&(_, k)| k);
+    let mut cands: Vec<(String, i64)> = lattice
+        .n_best(dict, TOP.max(k))
         .iter()
-        .map(|c| c.surface())
+        .map(|c| (c.surface(), c.cost))
         .collect();
+    let mut failed = false;
+    if let Some((reorder, k)) = rerank {
+        let head = &cands[..k.min(cands.len())];
+        match reorder.reorder(item, head) {
+            Some(order) => {
+                let reordered: Vec<(String, i64)> =
+                    order.iter().map(|&i| head[i].clone()).collect();
+                cands.splice(..reordered.len(), reordered);
+            }
+            None => failed = true,
+        }
+    }
+    let top: Vec<String> = cands.into_iter().take(TOP).map(|(s, _)| s).collect();
     let rank = top
         .iter()
         .position(|t| item.expected_output.contains(t))
@@ -86,7 +148,7 @@ pub fn evaluate_item(dict: &Dictionary, item: &Item) -> ItemResult {
         .map(|e| (edit_distance(first, e), e.chars().count()))
         .min()
         .unwrap_or((0, 0));
-    ItemResult {
+    let result = ItemResult {
         index: item.index.clone(),
         input: item.input.clone(),
         expected: item.expected_output.clone(),
@@ -94,12 +156,25 @@ pub fn evaluate_item(dict: &Dictionary, item: &Item) -> ItemResult {
         rank,
         edits,
         chars,
-    }
+    };
+    (result, failed)
 }
 
-/// 評価セットを一括で実行する。
-pub fn evaluate(dict: &Dictionary, name: &str, items: &[Item]) -> Report {
-    let results: Vec<ItemResult> = items.iter().map(|i| evaluate_item(dict, i)).collect();
+/// 評価セットを一括で実行する。`rerank` は並べ替えと、並べ替える上位の件数。
+pub fn evaluate<'r>(
+    dict: &Dictionary,
+    name: &str,
+    items: &[Item],
+    mut rerank: Option<(&mut (dyn Reorder + 'r), usize)>,
+) -> Report {
+    let mut lm_failures = 0;
+    let mut results = Vec::with_capacity(items.len());
+    for item in items {
+        let r = rerank.as_mut().map(|(re, k)| (&mut **re, *k));
+        let (result, failed) = evaluate_item(dict, item, r);
+        lm_failures += usize::from(failed);
+        results.push(result);
+    }
     let n = results.len().max(1) as f64;
     let hits = |k: usize| {
         results
@@ -119,6 +194,7 @@ pub fn evaluate(dict: &Dictionary, name: &str, items: &[Item]) -> Report {
         } else {
             edits as f64 / chars as f64
         },
+        lm_failures,
         results,
     }
 }
