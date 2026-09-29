@@ -249,7 +249,14 @@ impl Session {
         self.converted_now = false;
         let state = self.state();
         let mut committed = String::new();
-        let consumed = if let Some(command) = self.keymap.command(state, key) {
+        // 確定アンドゥ(REQ-9-5)は確定の直後だけ効く。取り消せる確定がないときは割り当てが
+        // ないのと同じに扱い、待機中ならアプリへ渡す(Ctrl+Backspace の単語削除など)。
+        // 確定アンドゥそのものはまだないので、今は常にアプリへ渡す。
+        let command = self
+            .keymap
+            .command(state, key)
+            .filter(|&c| c != Command::UndoCommit);
+        let consumed = if let Some(command) = command {
             self.run(command, converter, &mut committed);
             true
         } else if !text.is_empty() && !key.ctrl && !key.alt && !text.chars().any(char::is_control) {

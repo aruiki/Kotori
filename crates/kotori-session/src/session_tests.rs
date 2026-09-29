@@ -237,6 +237,8 @@ fn typing_while_converting_commits_first() {
 fn unassigned_keys_pass_through_only_when_idle() {
     let mut s = session();
     assert!(!press(&mut s, "Tab").consumed);
+    // 取り消せる確定がないときの Ctrl+Backspace は、アプリの単語削除に使えるよう渡す。
+    assert!(!press(&mut s, "Ctrl+Backspace").consumed);
     assert!(!press(&mut s, "Enter").consumed);
     let ctrl_c = Key {
         ctrl: true,
