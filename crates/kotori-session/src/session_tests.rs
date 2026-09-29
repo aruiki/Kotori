@@ -418,3 +418,63 @@ fn select_index_picks_a_candidate_and_keeps_the_window() {
     let out = s.command(Command::SelectIndex(0), &Fake);
     assert_eq!(preedit(&out), [("あ", Attribute::Input)]);
 }
+
+#[test]
+fn apply_sentence_replaces_an_untouched_conversion_only() {
+    let mut s = session();
+    type_text(&mut s, "kyouha");
+    assert!(!s.just_converted());
+    press(&mut s, "Space");
+    assert!(s.just_converted());
+    assert_eq!(s.untouched_reading(), Some("キョウハ"));
+    let sentence = Sentence {
+        segments: vec![(2, "強".into()), (2, "羽".into())],
+        cost: 0,
+    };
+    // 読みが違えば当てない。
+    assert!(!s.apply_sentence("キョウ", &sentence, &Fake));
+    assert!(s.apply_sentence("キョウハ", &sentence, &Fake));
+    let out = s.view();
+    assert_eq!(
+        preedit(&out),
+        [("強", Attribute::Focused), ("羽", Attribute::Converted)]
+    );
+    // 文節の候補は区切りを固定した変換から取り、選ばれた表記を先頭に置く。
+    let out = press(&mut s, "Space");
+    assert!(!s.just_converted());
+    assert_eq!(
+        out.candidate_window.unwrap().candidates,
+        ["強", "きょ", "キョ"]
+    );
+    // 候補ウィンドウを開いた(候補を変えた)あとは当てない(REQ-6-2)。
+    assert_eq!(s.untouched_reading(), None);
+    assert!(!s.apply_sentence("キョウハ", &sentence, &Fake));
+    press(&mut s, "Escape");
+    assert_eq!(s.untouched_reading(), None, "触ったあとは閉じても当てない");
+}
+
+#[test]
+fn lattice_converter_lists_sentences_with_segments() {
+    use kotori_dict::{DictBuilder, Dictionary, PosClass};
+    let mut b = DictBuilder::new();
+    for (r, surface, id, cost) in [
+        ("キョウ", "今日", 1, 1000),
+        ("キョウ", "京", 1, 3000),
+        ("ハ", "は", 2, 200),
+    ] {
+        b.add(r, surface, id, id, cost, 0).unwrap();
+    }
+    b.set_connection(3, 3, vec![0; 9]).unwrap();
+    b.set_pos_classes(vec![
+        PosClass::Content,
+        PosClass::Content,
+        PosClass::Function,
+    ]);
+    let dict = Arc::new(Dictionary::from_bytes(b.build().unwrap()).unwrap());
+    let conv = LatticeConverter::new(dict);
+    let sentences = conv.sentences("キョウハ", 2);
+    assert_eq!(sentences.len(), 2);
+    assert_eq!(sentences[0].segments, [(4, "今日は".to_owned())]);
+    assert_eq!(sentences[1].surface(), "京は");
+    assert!(sentences[0].cost < sentences[1].cost);
+}

@@ -75,18 +75,8 @@ impl<S: Scorer> Reorder for Rerank<S> {
         let lm = self
             .scorer
             .score(&request, &generation.token(generation.current()))?;
-        if lm.len() != candidates.len() {
-            return None;
-        }
-        let scores: Vec<f32> = lm
-            .iter()
-            .zip(candidates)
-            .map(|(&logp, &(_, cost))| self.weights.combine(logp, cost, 0.0))
-            .collect();
-        let mut order: Vec<usize> = (0..candidates.len()).collect();
-        // 同点ならラティスの順を保つ(安定な整列)。
-        order.sort_by(|&a, &b| scores[b].total_cmp(&scores[a]));
-        Some(order)
+        let costs: Vec<i64> = candidates.iter().map(|&(_, cost)| cost).collect();
+        self.weights.order(&lm, &costs)
     }
 }
 

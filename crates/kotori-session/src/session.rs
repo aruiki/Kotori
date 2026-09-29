@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use kotori_composer::{Composer, RomajiTable};
 
-use crate::converter::{to_hiragana, Converter, SegmentCandidates};
+use crate::converter::{to_hiragana, Converter, SegmentCandidates, Sentence};
 use crate::keymap::{Command, Key, Keymap, State};
 use kotori_lattice::to_halfwidth_katakana;
 
@@ -93,6 +93,8 @@ struct Conversion {
     segments: Vec<Segment>,
     focus: usize,
     window_open: bool,
+    /// 利用者が候補・文節・表記を変えたか。変えたら LM のリランクの結果を当てない(REQ-6-2)。
+    touched: bool,
 }
 
 impl Conversion {
@@ -113,6 +115,8 @@ pub struct Session {
     conversion: Option<Conversion>,
     /// 確定済みの左文脈。LM のリランクの入力になる(6.2)。
     left_context: String,
+    /// 今のキー(コマンド)で変換を始めたか。
+    converted_now: bool,
 }
 
 impl Session {
@@ -122,7 +126,87 @@ impl Session {
             composer: Composer::new(romaji),
             conversion: None,
             left_context: String::new(),
+            converted_now: false,
         }
+    }
+
+    /// 今のキー(コマンド)で変換を始めたか。サーバーが LM のリランクを頼む合図(6.2)。
+    pub fn just_converted(&self) -> bool {
+        self.converted_now
+    }
+
+    /// 利用者がまだ変えていない変換の読み。変換していない・候補や文節を変えた・候補ウィンドウを
+    /// 開いたなら `None`(リランクの結果で順位を変えない、REQ-6-2)。
+    pub fn untouched_reading(&self) -> Option<&str> {
+        self.conversion
+            .as_ref()
+            .filter(|c| !c.touched && !c.window_open)
+            .map(|c| c.reading.as_str())
+    }
+
+    /// 文全体の候補 `sentence`(LM のリランクで選ばれたもの)の区切りと表記で変換し直す。
+    /// 読みが `reading` と違う・利用者が変えたあとなら何もせず false。
+    pub fn apply_sentence(
+        &mut self,
+        reading: &str,
+        sentence: &Sentence,
+        converter: &dyn Converter,
+    ) -> bool {
+        if self.untouched_reading() != Some(reading) {
+            return false;
+        }
+        let mut ends = Vec::with_capacity(sentence.segments.len());
+        let mut pos = 0;
+        for (len, _) in &sentence.segments {
+            pos += len;
+            ends.push(pos);
+        }
+        if pos != reading.chars().count() || ends.is_empty() {
+            return false;
+        }
+        // 区切りを固定して変換し、同じ区間の文節があればその候補を使う。なければ表記と
+        // ひらがなだけの文節にする。
+        let converted = converter.convert_with_boundaries(reading, &ends[..ends.len() - 1]);
+        let mut spans = std::collections::HashMap::new();
+        let mut at = 0;
+        for s in converted {
+            let len = s.len;
+            spans.insert((at, len), s.candidates);
+            at += len;
+        }
+        let chars: Vec<char> = reading.chars().collect();
+        let mut start = 0;
+        let segments = sentence
+            .segments
+            .iter()
+            .map(|(len, text)| {
+                let span: String = chars[start..start + len].iter().collect();
+                let mut candidates = spans
+                    .remove(&(start, *len))
+                    .unwrap_or_else(|| vec![to_hiragana(&span)]);
+                start += len;
+                candidates.retain(|t| t != text);
+                candidates.insert(0, text.clone());
+                Segment {
+                    len: *len,
+                    candidates,
+                    selected: 0,
+                }
+            })
+            .collect();
+        self.conversion = Some(Conversion {
+            reading: reading.to_owned(),
+            segments,
+            focus: 0,
+            window_open: false,
+            touched: false,
+        });
+        true
+    }
+
+    /// 今の表示(プリエディット、カーソル、候補ウィンドウ)。確定文字列は空。
+    pub fn view(&self) -> Output {
+        self.output(true, String::new())
     }
 
     /// フロントエンドから届いた左文脈に置き換える。長ければ末尾の
@@ -162,6 +246,7 @@ impl Session {
 
     /// キーを1つ処理する。`text` はキーが生む文字(なければ空)。
     pub fn key(&mut self, key: Key, text: &str, converter: &dyn Converter) -> Output {
+        self.converted_now = false;
         let state = self.state();
         let mut committed = String::new();
         let consumed = if let Some(command) = self.keymap.command(state, key) {
@@ -185,6 +270,7 @@ impl Session {
 
     /// フロントエンドから届いたコマンド(4.2 の SendCommand の確定・取消など)を実行する。
     pub fn command(&mut self, command: Command, converter: &dyn Converter) -> Output {
+        self.converted_now = false;
         let mut committed = String::new();
         self.run(command, converter, &mut committed);
         // 確定した文字列は次の変換の左文脈になる。
@@ -210,7 +296,9 @@ impl Session {
                     segments,
                     focus: 0,
                     window_open: false,
+                    touched: false,
                 });
+                self.converted_now = true;
                 if command == Command::ConvertPrev {
                     self.move_candidate(-1);
                 }
@@ -241,6 +329,7 @@ impl Session {
                     if let Some(seg) = c.focused().filter(|s| i < s.candidates.len()) {
                         seg.selected = i;
                         c.window_open = true;
+                        c.touched = true;
                     }
                 }
             }
@@ -262,6 +351,7 @@ impl Session {
                         (c.focus + 1).min(last)
                     };
                     c.window_open = false;
+                    c.touched = true;
                 }
             }
             Command::ToHiragana
@@ -285,6 +375,7 @@ impl Session {
             return;
         };
         c.window_open = true;
+        c.touched = true;
         if let Some(seg) = c.focused() {
             let n = seg.candidates.len() as isize;
             if n > 0 {
@@ -311,6 +402,7 @@ impl Session {
                 reading,
                 focus: 0,
                 window_open: false,
+                touched: true,
             });
         }
         let units = self.composer.units();
@@ -343,6 +435,7 @@ impl Session {
         seg.candidates.insert(0, text);
         seg.selected = 0;
         c.window_open = false;
+        c.touched = true;
     }
 
     /// 注目文節の読みを `delta` 文字だけ伸縮し、読み全体を変換し直す(11.2、REQ-5-9)。
@@ -395,6 +488,7 @@ impl Session {
             .unwrap_or(0);
         c.segments = segments;
         c.window_open = false;
+        c.touched = true;
     }
 
     fn commit(&mut self, committed: &mut String) {

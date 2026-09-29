@@ -7,7 +7,7 @@ pub mod converter;
 pub mod keymap;
 mod session;
 
-pub use converter::{Converter, LatticeConverter, SegmentCandidates};
+pub use converter::{Converter, LatticeConverter, SegmentCandidates, Sentence};
 pub use keymap::{Command, Key, Keymap, KeymapError, State};
 pub use session::{Attribute, CandidateWindow, Output, Session, MAX_LEFT_CONTEXT, PAGE_SIZE};
 

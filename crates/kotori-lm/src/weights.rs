@@ -43,4 +43,20 @@ impl ScoreWeights {
         self.lambda_lm * lm_logp - self.lambda_lattice * lattice_cost as f32 / self.temperature
             + self.lambda_user * user_bonus
     }
+
+    /// 候補を S(c) の降順に並べた添字(6.2 モード A)。同点ならラティスの順を保つ。
+    /// `lm_logp` と `lattice_costs` の長さが違えば `None`。評価とサーバーで同じ統合を使う。
+    pub fn order(&self, lm_logp: &[f32], lattice_costs: &[i64]) -> Option<Vec<usize>> {
+        if lm_logp.len() != lattice_costs.len() {
+            return None;
+        }
+        let scores: Vec<f32> = lm_logp
+            .iter()
+            .zip(lattice_costs)
+            .map(|(&logp, &cost)| self.combine(logp, cost, 0.0))
+            .collect();
+        let mut order: Vec<usize> = (0..scores.len()).collect();
+        order.sort_by(|&a, &b| scores[b].total_cmp(&scores[a]));
+        Some(order)
+    }
 }
