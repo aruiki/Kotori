@@ -9,6 +9,9 @@
 //!       重みは既定でモデルのメタデータから読み、--score-weights で差し替えられる(調整用)。
 //!   kotori-eval bench-lm [--k <件数>] <辞書> <GGUF> <評価セットの JSON>
 //!       REQ-6-1 の条件(読み 20 文字、左文脈 64 文字、K 件)でリランクの遅延を測る(13.2)
+//!   kotori-eval tune [--k <件数>] <辞書> <GGUF> <開発用データの JSON>
+//!       スコア統合の重みを格子探索し、Acc@1 が最大の重みを JSON で出す(6.2、7.3)。
+//!       評価セット(AJIMEE-Bench など)では調整しない
 
 use std::io::{BufRead, Write};
 
@@ -60,13 +63,46 @@ fn main() -> Result<()> {
             }
             _ => bail!(USAGE),
         },
+        [cmd, rest @ ..] if cmd == "tune" => match parse_options(rest)? {
+            (opts, [dict, model, set]) if opts.lm.is_none() && opts.weights.is_none() => {
+                tune(opts.k.unwrap_or(DEFAULT_K), dict, model, set)
+            }
+            _ => bail!(USAGE),
+        },
         _ => bail!(USAGE),
     }
 }
 
 const USAGE: &str = "使い方: kotori-eval repl <辞書>
         kotori-eval run [--lm <GGUF>] [--k <件数>] [--score-weights <JSON>] <辞書> <出力ディレクトリ> <名前>=<評価セット>...
-        kotori-eval bench-lm [--k <件数>] <辞書> <GGUF> <評価セット>";
+        kotori-eval bench-lm [--k <件数>] <辞書> <GGUF> <評価セット>
+        kotori-eval tune [--k <件数>] <辞書> <GGUF> <開発用データ>";
+
+fn tune(k: usize, dict: &str, model: &str, set: &str) -> Result<()> {
+    use kotori_eval::tune;
+    let dict = load_dict(dict)?;
+    let items = load_items(set)?;
+    let mut scorer = ZenzScorer::open(std::path::Path::new(model), THREADS)
+        .with_context(|| format!("{model} を LM として読めない"))?;
+    let (scored, failures) = tune::collect(&dict, &items, &mut scorer, k);
+    let results = tune::grid(&scored);
+    println!(
+        "問題 {} 件(採点できなかった問題 {failures} 件)、K={k}",
+        scored.len()
+    );
+    println!(
+        "| λ_lattice(T={}) | Acc@1 |\n| ---: | ---: |",
+        tune::TEMPERATURE
+    );
+    for (w, acc) in &results {
+        println!("| {} | {:.1}% |", w.lambda_lattice, acc * 100.0);
+    }
+    let Some((w, _)) = tune::best(&results) else {
+        bail!("採点できた問題がない");
+    };
+    println!("{}", serde_json::to_string(&w)?);
+    Ok(())
+}
 
 /// 計測で各要求を採点する回数。
 const BENCH_ROUNDS: usize = 5;

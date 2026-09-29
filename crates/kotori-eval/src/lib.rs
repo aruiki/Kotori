@@ -5,6 +5,7 @@
 
 pub mod bench;
 pub mod eval;
+pub mod tune;
 
 use std::fmt::Write as _;
 

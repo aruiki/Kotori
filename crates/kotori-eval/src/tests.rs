@@ -234,3 +234,48 @@ fn bench_requests_follow_req_6_1_conditions() {
     lm.fail = true;
     assert!(measure(&mut lm, &reqs, 2).is_empty());
 }
+
+#[test]
+fn tune_finds_the_weight_that_maximizes_acc_at_1() {
+    use crate::eval::Item;
+    use crate::tune::{acc_at_1, best, collect, grid, Scored, LAMBDA_LATTICE};
+    // 1問目は LM を信じると当たり(京は)、2問目はラティスを信じると当たり(今日は)。
+    let items: Vec<Item> = serde_json::from_str(
+        r#"[
+            {"index": "1", "input": "キョウハ", "expected_output": ["京は"]},
+            {"index": "2", "input": "キョウハ", "expected_output": ["今日は"]}
+        ]"#,
+    )
+    .unwrap();
+    let mut lm = FakeLm {
+        fail: false,
+        seen: vec![],
+    };
+    let (scored, failures) = collect(&dict(), &items, &mut lm, 2);
+    assert_eq!((scored.len(), failures), (2, 0));
+    assert_eq!(scored[0].candidates[0].0, "今日は");
+    assert_eq!(scored[0].candidates[1].2, 0.0, "京は の LM スコア");
+
+    // 候補のコストの差は 2000、LM の差は 10(T=1000)。λ_lattice < 5 なら LM が勝って1問目だけ、
+    // そうでなければラティスが勝って2問目だけ当たるので、どの λ_lattice でも 50%。
+    let results = grid(&scored);
+    assert_eq!(results.len(), LAMBDA_LATTICE.len());
+    assert!(results.iter().all(|&(_, acc)| acc == 0.5), "{results:?}");
+    // 1問目だけにすると、LM を重く見る最小の λ_lattice(0)が選ばれる。
+    let only_first: Vec<Scored> = scored[..1].to_vec();
+    let (w, acc) = best(&grid(&only_first)).unwrap();
+    assert_eq!((w.lambda_lattice, acc), (0.0, 1.0));
+    // 2問目だけなら、ラティスが勝つ λ_lattice が選ばれる。
+    let only_second: Vec<Scored> = scored[1..].to_vec();
+    let (w, acc) = best(&grid(&only_second)).unwrap();
+    assert_eq!(acc, 1.0);
+    // λ_lattice = 5 で S が同点になり、ラティスの順(今日は)が勝つ。
+    assert_eq!(w.lambda_lattice, 5.0);
+    assert_eq!(acc_at_1(&[], &w), 0.0);
+
+    // 採点できない問題は記録せずに数える。
+    lm.fail = true;
+    let (scored, failures) = collect(&dict(), &items, &mut lm, 2);
+    assert_eq!((scored.len(), failures), (0, 2));
+    assert_eq!(best(&grid(&scored)).map(|r| r.1), Some(0.0));
+}
