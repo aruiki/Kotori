@@ -236,7 +236,7 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "kotori-client"
-version = "0.0.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "kotori-proto",
  "thiserror 2.0.21",
@@ -245,7 +245,7 @@ dependencies = [
 
 [[package]]
 name = "kotori-composer"
-version = "0.0.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "proptest",
  "thiserror 2.0.21",
@@ -254,15 +254,15 @@ dependencies = [
 
 [[package]]
 name = "kotori-config"
-version = "0.0.0"
+version = "0.1.0-beta.1"
 
 [[package]]
 name = "kotori-core"
-version = "0.0.0"
+version = "0.1.0-beta.1"
 
 [[package]]
 name = "kotori-dict"
-version = "0.0.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "sha2",
  "thiserror 2.0.21",
@@ -271,7 +271,7 @@ dependencies = [
 
 [[package]]
 name = "kotori-dictc"
-version = "0.0.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "anyhow",
  "kotori-dict",
@@ -280,7 +280,7 @@ dependencies = [
 
 [[package]]
 name = "kotori-eval"
-version = "0.0.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "anyhow",
  "kotori-composer",
@@ -293,11 +293,11 @@ dependencies = [
 
 [[package]]
 name = "kotori-imebench"
-version = "0.0.0"
+version = "0.1.0-beta.1"
 
 [[package]]
 name = "kotori-lattice"
-version = "0.0.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "kotori-dict",
  "proptest",
@@ -305,11 +305,11 @@ dependencies = [
 
 [[package]]
 name = "kotori-learn"
-version = "0.0.0"
+version = "0.1.0-beta.1"
 
 [[package]]
 name = "kotori-lm"
-version = "0.0.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "cc",
  "cmake",
@@ -321,11 +321,11 @@ dependencies = [
 
 [[package]]
 name = "kotori-predict"
-version = "0.0.0"
+version = "0.1.0-beta.1"
 
 [[package]]
 name = "kotori-proto"
-version = "0.0.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "prost",
  "prost-build",
@@ -335,7 +335,7 @@ dependencies = [
 
 [[package]]
 name = "kotori-renderer"
-version = "0.0.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "anyhow",
  "kotori-client",
@@ -344,7 +344,7 @@ dependencies = [
 
 [[package]]
 name = "kotori-server"
-version = "0.0.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "anyhow",
  "fs4",
@@ -358,7 +358,7 @@ dependencies = [
 
 [[package]]
 name = "kotori-session"
-version = "0.0.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "kotori-composer",
  "kotori-dict",

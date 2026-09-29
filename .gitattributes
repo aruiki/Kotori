@@ -1,0 +1,4 @@
+# バッチファイルは cmd.exe が CRLF で読む。
+*.cmd text eol=crlf
+# PowerShell のスクリプトは Windows でそのまま使うので CRLF にする。
+*.ps1 text eol=crlf

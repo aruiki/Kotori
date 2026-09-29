@@ -1,4 +1,4 @@
-# kotori_tip.dll を regsvr32 で登録・解除し、COM と TSF のレジストリを確かめる(docs/adr/0009)。
+﻿# kotori_tip.dll を regsvr32 で登録・解除し、COM と TSF のレジストリを確かめる(docs/adr/0009)。
 # 管理者権限で実行する。引数: -Dll <パス> -Arch <x64|Win32>
 param(
   [Parameter(Mandatory)] [string] $Dll,
