@@ -34,6 +34,8 @@ class Engine {
   // キーを送る。キーをアプリへ渡すべきとき(未接続・タイムアウトなど)は nullopt。
   std::optional<EngineOutput> SendKey(UINT vk, const std::wstring& text, bool shift, bool ctrl,
                                       bool alt);
+  // カーソルの左の確定済みの文字列を送る(REQ-10-2)。
+  void SetContext(const std::wstring& left_context);
   // 確定・取消(IPC の CommandKind の値)。
   std::optional<EngineOutput> SendCommand(uint32_t kind);
 

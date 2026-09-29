@@ -71,6 +71,7 @@ class TextService final : public ITfTextInputProcessorEx,
   void SetKeyboardOpen(bool open);
   std::optional<EngineOutput> Send(ITfContext* context, WPARAM wparam, LPARAM lparam);
   bool IsPrivateField(ITfContext* context);
+  void SendLeftContext(ITfContext* context);
   void Apply(ITfContext* context, const EngineOutput& out);
   void ReleaseComposition();
   void RegisterAttributeAtoms();

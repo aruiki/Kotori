@@ -102,6 +102,14 @@ std::optional<EngineOutput> Engine::SendKey(UINT vk, const std::wstring& text, b
   return TakeOutput(status, out);
 }
 
+void Engine::SetContext(const std::wstring& left_context) {
+  if (client_ == nullptr) {
+    return;
+  }
+  const std::string utf8 = WideToUtf8(left_context);
+  kotori_set_context(client_, session_, utf8.c_str());
+}
+
 std::optional<EngineOutput> Engine::SendCommand(uint32_t kind) {
   if (client_ == nullptr) {
     return std::nullopt;

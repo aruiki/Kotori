@@ -340,10 +340,53 @@ bool TextService::IsPrivateField(ITfContext* context) {
   return is_private;
 }
 
+void TextService::SendLeftContext(ITfContext* context) {
+  // カーソル(選択の始点)の左の最大 256 文字を読む。読めないアプリでは左文脈なしで
+  // 変換する(REQ-10-2)ので、空を送って前の文脈を残さない。
+  std::wstring text;
+  auto* session = new (std::nothrow) EditSession(
+      static_cast<ITfTextInputProcessorEx*>(this), [context, &text](TfEditCookie cookie) {
+        TF_SELECTION sel = {};
+        ULONG fetched = 0;
+        if (FAILED(context->GetSelection(cookie, TF_DEFAULT_SELECTION, 1, &sel, &fetched)) ||
+            fetched != 1) {
+          return E_FAIL;
+        }
+        sel.range->Collapse(cookie, TF_ANCHOR_START);
+        LONG moved = 0;
+        sel.range->ShiftStart(cookie, -static_cast<LONG>(kMaxLeftContext), &moved, nullptr);
+        wchar_t buf[kMaxLeftContext] = {};
+        ULONG n = 0;
+        const HRESULT hr = sel.range->GetText(cookie, 0, buf, kMaxLeftContext, &n);
+        sel.range->Release();
+        if (FAILED(hr)) {
+          return hr;
+        }
+        text = LastChars(std::wstring_view(buf, n), kMaxLeftContext);
+        return S_OK;
+      });
+  if (context != nullptr && session != nullptr) {
+    HRESULT session_hr = E_FAIL;
+    const HRESULT hr =
+        context->RequestEditSession(client_id_, session, TF_ES_SYNC | TF_ES_READ, &session_hr);
+    if (FAILED(hr) || FAILED(session_hr)) {
+      text.clear();
+    }
+  }
+  if (session != nullptr) {
+    session->Release();
+  }
+  engine_->SetContext(text);
+}
+
 std::optional<EngineOutput> TextService::Send(ITfContext* context, WPARAM wparam, LPARAM lparam) {
   // パスワード・暗証番号の欄では、キーをエンジンに送らずアプリへ渡す(REQ-10-3)。
   if (engine_ == nullptr || !IsKeyboardOpen() || IsPrivateField(context)) {
     return std::nullopt;
+  }
+  // 新しい入力の始まりでは、先に左文脈を送る。
+  if (composition_ == nullptr) {
+    SendLeftContext(context);
   }
   return engine_->SendKey(static_cast<UINT>(wparam), KeyText(wparam, lparam), KeyDown(VK_SHIFT),
                           KeyDown(VK_CONTROL), KeyDown(VK_MENU));

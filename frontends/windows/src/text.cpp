@@ -29,6 +29,23 @@ bool IsPrivateInputScope(const std::vector<int32_t>& scopes) {
   return false;
 }
 
+std::wstring LastChars(std::wstring_view s, size_t max_chars) {
+  size_t begin = s.size();
+  for (size_t n = 0; n < max_chars && begin > 0; ++n) {
+    --begin;
+    // 後ろ半分のサロゲートなら、前半分も含める。
+    if (begin > 0 && s[begin] >= 0xDC00 && s[begin] <= 0xDFFF && s[begin - 1] >= 0xD800 &&
+        s[begin - 1] <= 0xDBFF) {
+      --begin;
+    }
+  }
+  // 先頭に残った片割れの後ろ半分は落とす。
+  if (begin < s.size() && s[begin] >= 0xDC00 && s[begin] <= 0xDFFF) {
+    ++begin;
+  }
+  return std::wstring(s.substr(begin));
+}
+
 std::wstring Utf8ToWide(std::string_view s) {
   std::wstring out;
   out.reserve(s.size());

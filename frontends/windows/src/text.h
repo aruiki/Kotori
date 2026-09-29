@@ -40,6 +40,12 @@ const GUID& AttributeGuid(uint32_t attribute);
 // どうかを決める。そうならキーをエンジンに送らずアプリへ渡す(REQ-10-3)。
 bool IsPrivateInputScope(const std::vector<int32_t>& scopes);
 
+// 左文脈として送る最大の文字数(REQ-10-2)。
+inline constexpr size_t kMaxLeftContext = 256;
+
+// 末尾の最大 max_chars 文字(Unicode の文字数)を返す。サロゲートペアは分断しない。
+std::wstring LastChars(std::wstring_view s, size_t max_chars);
+
 // 区間をつなぎ、エンジンのカーソル位置(Unicode の文字数)を UTF-16 の位置に直す。
 Composition MakeComposition(const std::vector<Segment>& segments, uint32_t cursor_chars);
 
