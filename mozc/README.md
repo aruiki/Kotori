@@ -6,7 +6,9 @@ Kotori は Mozc(google/mozc、BSD-3-Clause)をベースにし、LM のリラン�
 
 - `.github/workflows/mozc-windows.yml`: Windows のインストーラ(`Kotori64.msi`)を作る。
   Actions の「Mozc (Windows)」を手で実行するか、このフォルダを変える PR で動く。
-  できた MSI は Actions の成果物(Artifacts)からダウンロードできる。
+  できた MSI は Actions の成果物(Artifacts)からダウンロードできる。手で実行すると、MSI を最新の
+  リリース(Latest)として公開する。版は `VERSION` の beta の番号を1つ進め(例 `v0.2.0-beta.1`)、
+  リリースノートは `release-notes.md`。
 - `patches/`: Mozc への改変(`NNNN-<題>.patch`)。番号順に `git apply` する。
   - `0001-kotori-branding.patch`: 製品名・会社名を Kotori にし、TSF の CLSID とプロファイル、
     MSI の UpgradeCode、パイプ・イベント・ミューテックス・ウィンドウクラス・レジストリの名前、
