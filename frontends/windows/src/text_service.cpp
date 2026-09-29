@@ -318,6 +318,20 @@ void TextService::SetKeyboardOpen(bool open) {
   mgr->Release();
 }
 
+void TextService::ToggleOpenClose(ITfContext* context) {
+  const bool open = IsKeyboardOpen();
+  // オフにするときは、入力中・変換中の文字を確定してから閉じる(MS-IME と同じ)。
+  if (open && composition_ != nullptr && engine_ != nullptr) {
+    std::optional<EngineOutput> out = engine_->SendCommand(KOTORI_COMMAND_COMMIT);
+    if (out.has_value() && context != nullptr) {
+      Apply(context, *out);
+    }
+    StopPolling();
+    HideCandidateWindow();
+  }
+  SetKeyboardOpen(!open);
+}
+
 bool TextService::IsPrivateField(ITfContext* context) {
   if (private_field_.has_value()) {
     return *private_field_;
@@ -436,6 +450,13 @@ STDMETHODIMP TextService::OnTestKeyDown(ITfContext* context, WPARAM wparam, LPAR
   if (eaten == nullptr) {
     return E_INVALIDARG;
   }
+  // 半角/全角キーは IME がオフのときも受け取り、OnKeyDown で切り替える(11.2)。
+  if (IsOpenCloseKey(static_cast<uint32_t>(wparam))) {
+    tested_key_.reset();
+    tested_output_.reset();
+    *eaten = TRUE;
+    return S_OK;
+  }
   // 消費するかは送ってみないと決まらないので、ここで送って結果を OnKeyDown まで持つ。
   tested_output_ = Send(context, wparam, lparam);
   tested_key_ = wparam;
@@ -447,6 +468,13 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM l
                                     BOOL* eaten) {
   if (eaten == nullptr) {
     return E_INVALIDARG;
+  }
+  if (IsOpenCloseKey(static_cast<uint32_t>(wparam))) {
+    tested_key_.reset();
+    tested_output_.reset();
+    ToggleOpenClose(context);
+    *eaten = TRUE;
+    return S_OK;
   }
   std::optional<EngineOutput> out;
   if (tested_key_ == wparam) {

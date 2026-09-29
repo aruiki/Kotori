@@ -164,4 +164,6 @@ Composition MakeComposition(const std::vector<Segment>& segments, uint32_t curso
   return c;
 }
 
+bool IsOpenCloseKey(uint32_t vk) { return vk == 0x19 || vk == 0xF3 || vk == 0xF4; }
+
 }  // namespace kotori

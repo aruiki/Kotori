@@ -70,6 +70,7 @@ class TextService final : public ITfTextInputProcessorEx,
 
   bool IsKeyboardOpen() const;
   void SetKeyboardOpen(bool open);
+  void ToggleOpenClose(ITfContext* context);
   std::optional<EngineOutput> Send(ITfContext* context, WPARAM wparam, LPARAM lparam);
   bool IsPrivateField(ITfContext* context);
   void SendLeftContext(ITfContext* context);
