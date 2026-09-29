@@ -56,6 +56,8 @@ impl std::fmt::Debug for Engine {
 struct SessionEntry {
     scope: ipc::InputScope,
     session: Option<Session>,
+    /// 状態機械を作る前に届いた左文脈。作るときに渡す。
+    pending_context: Option<String>,
 }
 
 /// サーバーの状態。接続をまたいで共有する。
@@ -95,6 +97,7 @@ impl Server {
                 let entry = SessionEntry {
                     scope: req.input_scope(),
                     session: None,
+                    pending_context: None,
                 };
                 self.sessions.insert(id, entry);
                 response::Body::SessionCreated(ipc::SessionCreated { session_id: id })
@@ -107,12 +110,35 @@ impl Server {
             }
             Some(request::Body::SendKey(req)) => self.send_key(&req),
             Some(request::Body::SendCommand(req)) => self.send_command(&req),
-            Some(request::Body::SetContext(req)) => self.ack(req.session_id),
+            Some(request::Body::SetContext(req)) => self.set_context(&req),
             Some(request::Body::GetConfig(_))
             | Some(request::Body::SetConfig(_))
             | Some(request::Body::Reload(_)) => error(ErrorCode::Unimplemented, "M0 では未実装"),
             None => error(ErrorCode::InvalidRequest, "要求の本体がない"),
         }
+    }
+
+    /// 左文脈をセッションに持たせる。パスワード欄の文脈は受け取らない(REQ-10-3)。
+    fn set_context(&mut self, req: &ipc::SetContext) -> response::Body {
+        let Some(entry) = self.sessions.get_mut(&req.session_id) else {
+            return unknown_session(req.session_id);
+        };
+        if entry.scope != ipc::InputScope::Password {
+            match &mut entry.session {
+                Some(session) => session.set_left_context(&req.left_context),
+                None => entry.pending_context = Some(req.left_context.clone()),
+            }
+        }
+        response::Body::Ack(ipc::Ack {})
+    }
+
+    /// セッションの左文脈(テストと診断用)。セッションがなければ `None`。
+    pub fn left_context(&self, session_id: u64) -> Option<&str> {
+        let entry = self.sessions.get(&session_id)?;
+        Some(match &entry.session {
+            Some(session) => session.left_context(),
+            None => entry.pending_context.as_deref().unwrap_or_default(),
+        })
     }
 
     fn send_key(&mut self, req: &ipc::SendKey) -> response::Body {
@@ -159,7 +185,14 @@ impl Server {
         if entry.scope == ipc::InputScope::Password {
             return pass_through();
         }
-        let session = entry.session.get_or_insert_with(|| engine.session());
+        let pending = &mut entry.pending_context;
+        let session = entry.session.get_or_insert_with(|| {
+            let mut session = engine.session();
+            if let Some(context) = pending.take() {
+                session.set_left_context(&context);
+            }
+            session
+        });
         let converter = &*engine.converter;
         match catch_unwind(AssertUnwindSafe(|| f(session, converter))) {
             Ok(out) => response::Body::Output(to_proto(out)),
@@ -176,13 +209,6 @@ impl Server {
         } else {
             unknown_session(session_id)
         }
-    }
-
-    fn ack(&self, session_id: u64) -> response::Body {
-        if !self.sessions.contains_key(&session_id) {
-            return unknown_session(session_id);
-        }
-        response::Body::Ack(ipc::Ack {})
     }
 }
 

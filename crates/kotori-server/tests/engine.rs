@@ -180,3 +180,42 @@ fn dict_candidates_prefers_exe_dir() {
             .collect::<Vec<_>>()
     );
 }
+
+fn set_context(server: &mut Server, id: u64, text: &str) -> response::Body {
+    server.handle(Some(request::Body::SetContext(ipc::SetContext {
+        session_id: id,
+        left_context: text.into(),
+        ..Default::default()
+    })))
+}
+
+#[test]
+fn set_context_is_kept_and_grows_on_commit() {
+    // 辞書を読み込む前に届いた左文脈も、状態機械を作るときに渡す。
+    let mut server = Server::new();
+    let id = create(&mut server, ipc::InputScope::Default);
+    assert!(matches!(
+        set_context(&mut server, id, "明日の"),
+        response::Body::Ack(_)
+    ));
+    assert_eq!(server.left_context(id), Some("明日の"));
+    server.set_engine(engine());
+    type_text(&mut server, id, "kyou");
+    key(&mut server, id, SPACE, "");
+    key(&mut server, id, ENTER, "");
+    assert_eq!(server.left_context(id), Some("明日の今日"));
+
+    // 置き換える。
+    set_context(&mut server, id, "昨日");
+    assert_eq!(server.left_context(id), Some("昨日"));
+
+    // パスワード欄の文脈は受け取らない(REQ-10-3)。知らないセッションはエラー。
+    let pw = create(&mut server, ipc::InputScope::Password);
+    set_context(&mut server, pw, "secret");
+    assert_eq!(server.left_context(pw), Some(""));
+    assert!(matches!(
+        set_context(&mut server, 999, "x"),
+        response::Body::Error(e) if e.code() == ErrorCode::UnknownSession
+    ));
+    assert_eq!(server.left_context(999), None);
+}

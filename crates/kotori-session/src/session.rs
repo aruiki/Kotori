@@ -14,6 +14,9 @@ use crate::keymap::{Command, Key, Keymap, State};
 /// 候補ウィンドウの1ページの件数(11.3)。
 pub const PAGE_SIZE: usize = 9;
 
+/// 持っておく左文脈の最大の文字数(4.2 の SetContext)。
+pub const MAX_LEFT_CONTEXT: usize = 256;
+
 /// プリエディットの区間の表示属性。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Attribute {
@@ -93,6 +96,8 @@ pub struct Session {
     keymap: Arc<Keymap>,
     composer: Composer,
     conversion: Option<Conversion>,
+    /// 確定済みの左文脈。LM のリランクの入力になる(6.2)。
+    left_context: String,
 }
 
 impl Session {
@@ -101,6 +106,32 @@ impl Session {
             keymap,
             composer: Composer::new(romaji),
             conversion: None,
+            left_context: String::new(),
+        }
+    }
+
+    /// フロントエンドから届いた左文脈に置き換える。長ければ末尾の
+    /// [`MAX_LEFT_CONTEXT`] 文字だけ持つ。
+    pub fn set_left_context(&mut self, s: &str) {
+        self.left_context.clear();
+        self.push_left_context(s);
+    }
+
+    /// 確定済みの左文脈。
+    pub fn left_context(&self) -> &str {
+        &self.left_context
+    }
+
+    fn push_left_context(&mut self, s: &str) {
+        self.left_context.push_str(s);
+        let n = self.left_context.chars().count();
+        if n > MAX_LEFT_CONTEXT {
+            let start = self
+                .left_context
+                .char_indices()
+                .nth(n - MAX_LEFT_CONTEXT)
+                .map_or(0, |(i, _)| i);
+            self.left_context.drain(..start);
         }
     }
 
@@ -133,6 +164,7 @@ impl Session {
             // 待機中の割り当てのないキーはアプリへ渡す。入力中は飲み込む。
             state != State::Idle
         };
+        self.push_left_context(&committed);
         self.output(consumed, committed)
     }
 
@@ -140,6 +172,8 @@ impl Session {
     pub fn command(&mut self, command: Command, converter: &dyn Converter) -> Output {
         let mut committed = String::new();
         self.run(command, converter, &mut committed);
+        // 確定した文字列は次の変換の左文脈になる。
+        self.push_left_context(&committed);
         self.output(true, committed)
     }
 
