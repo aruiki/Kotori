@@ -1,58 +1,44 @@
-//! フロントエンド(C++ などの TSF TIP)から呼ぶ C ABI(docs/SPEC.md 10章、4.2)。
+//! フロントエンド(C++ などの TSF TIP)から呼ぶ C ABI(docs/SPEC.md 10章、4.1、4.2)。
 //!
 //! 宣言は `include/kotori_client.h`。文字列はすべて NUL 終端の UTF-8。関数は状態コード
 //! (`KOTORI_OK` など)を返し、結果は出力引数に書く。`KotoriOutput` は呼び出し側が
 //! `kotori_output_free` で解放する。パニックは C 側へ漏らさない(REQ-13-2)。
+//!
+//! 接続は [`Managed`] が受け持つ。サーバーがなければ起動し、切れたら間隔を空けて
+//! つなぎ直す(REQ-4-1、REQ-4-2)。つながっていない間はキーをアプリへ渡させる。
 
 #![allow(unsafe_code)]
 
 use std::ffi::{c_char, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use kotori_proto::ipc::{self, request, response};
+use kotori_proto::ipc;
 
-use crate::{Client, ClientError, KeyOutcome, Transport};
+use crate::managed::{Connector, Managed, Reply, SystemConnector};
 
 pub const KOTORI_OK: i32 = 0;
-/// キーイベントが 200ms 以内に返らなかった。キーはアプリへ渡し、表示は保つ(4.2)。
-pub const KOTORI_TIMEOUT: i32 = 1;
+/// キーを処理できなかった(未接続、または 200ms 以内に応答がない)。フロントエンドはキーを
+/// アプリへ渡し、表示は保つ(4.2、REQ-4-2)。
+pub const KOTORI_PASS_THROUGH: i32 = 1;
 pub const KOTORI_ERR_ARGUMENT: i32 = -1;
-/// 接続が切れた、またはプロトコルのバージョンが合わない。接続し直す。
-pub const KOTORI_ERR_DISCONNECTED: i32 = -2;
-/// サーバーがエラーを返した、または想定と異なる応答が返った。
-pub const KOTORI_ERR_SERVER: i32 = -3;
+/// 内部の不具合(パニック)。
+pub const KOTORI_ERR_INTERNAL: i32 = -3;
 
 pub const KOTORI_MOD_SHIFT: u32 = 1;
 pub const KOTORI_MOD_CTRL: u32 = 2;
 pub const KOTORI_MOD_ALT: u32 = 4;
 pub const KOTORI_MOD_META: u32 = 8;
 
-/// 要求と応答をやり取りできる接続(トランスポートを問わない)。
-trait Connection: Send {
-    fn request(&mut self, body: request::Body) -> Result<response::Body, ClientError>;
-    fn send_key(&mut self, key: ipc::SendKey) -> Result<KeyOutcome, ClientError>;
-}
-
-impl<S: Transport> Connection for Client<S> {
-    fn request(&mut self, body: request::Body) -> Result<response::Body, ClientError> {
-        Client::request(self, body)
-    }
-
-    fn send_key(&mut self, key: ipc::SendKey) -> Result<KeyOutcome, ClientError> {
-        Client::send_key(self, key)
-    }
-}
-
 /// C から見える接続。
 pub struct KotoriClient {
-    conn: Box<dyn Connection>,
+    managed: Managed<Box<dyn Connector>>,
 }
 
 impl KotoriClient {
-    /// Rust のクライアントから作る(テストや、別のトランスポートを使うとき)。
-    pub fn from_client<S: Transport>(client: Client<S>) -> Self {
+    /// 接続のしかたを指定して作る(テストや、別のトランスポートを使うとき)。
+    pub fn with_connector(connector: Box<dyn Connector>) -> Self {
         Self {
-            conn: Box::new(client),
+            managed: Managed::new(connector),
         }
     }
 }
@@ -102,19 +88,9 @@ impl From<ipc::Output> for KotoriOutput {
     }
 }
 
-fn status(e: &ClientError) -> i32 {
-    match e {
-        ClientError::UnexpectedBody(_) | ClientError::UnexpectedResponse { .. } => {
-            KOTORI_ERR_SERVER
-        }
-        ClientError::Timeout(_) => KOTORI_TIMEOUT,
-        _ => KOTORI_ERR_DISCONNECTED,
-    }
-}
-
 /// パニックを状態コードに変える。
 fn guard(f: impl FnOnce() -> i32) -> i32 {
-    catch_unwind(AssertUnwindSafe(f)).unwrap_or(KOTORI_ERR_SERVER)
+    catch_unwind(AssertUnwindSafe(f)).unwrap_or(KOTORI_ERR_INTERNAL)
 }
 
 /// # Safety
@@ -127,66 +103,51 @@ unsafe fn str_arg<'a>(p: *const c_char) -> Option<&'a str> {
     unsafe { CStr::from_ptr(p) }.to_str().ok()
 }
 
-fn output_result(result: Result<response::Body, ClientError>, out: *mut *mut KotoriOutput) -> i32 {
-    match result {
-        Ok(response::Body::Output(o)) => {
-            // SAFETY: 呼び出し元の関数が out を NULL でないと確かめてある。
+/// 応答を出力引数に書く。
+///
+/// # Safety
+/// `out` は NULL でなく、書き込める位置を指すこと。
+unsafe fn write_reply(reply: Reply, out: *mut *mut KotoriOutput) -> i32 {
+    match reply {
+        Reply::Output(o) => {
+            // SAFETY: 関数の前提どおり。
             unsafe { *out = Box::into_raw(Box::new(KotoriOutput::from(o))) };
             KOTORI_OK
         }
-        Ok(_) => KOTORI_ERR_SERVER,
-        Err(e) => status(&e),
+        Reply::PassThrough => KOTORI_PASS_THROUGH,
     }
 }
 
-/// サーバーへ接続する。`address` は UNIX ドメインソケットのパスか名前付きパイプ名で、
-/// NULL なら既定の場所(4.2)。失敗したら NULL を返す。
+/// 接続を作る。実際の接続は最初の要求のときに行う。`address` は UNIX ドメインソケットの
+/// パスか名前付きパイプ名で、NULL なら既定の場所(4.2)。`server` はサーバーの実行ファイルで、
+/// つながらないときに起動する(REQ-4-1)。NULL なら起動しない。文字列が不正なら NULL を返す。
 ///
 /// # Safety
-/// `address` は NULL か NUL 終端の UTF-8 文字列であること。
+/// `address` と `server` は NULL か NUL 終端の UTF-8 文字列であること。
 #[no_mangle]
-pub unsafe extern "C" fn kotori_client_connect(address: *const c_char) -> *mut KotoriClient {
+pub unsafe extern "C" fn kotori_client_open(
+    address: *const c_char,
+    server: *const c_char,
+) -> *mut KotoriClient {
     catch_unwind(|| {
         // SAFETY: 関数の前提どおり。
-        let address = unsafe { str_arg(address) };
-        connect(address)
-            .map(|c| Box::into_raw(Box::new(c)))
-            .unwrap_or(std::ptr::null_mut())
+        let (addr, srv) = unsafe { (str_arg(address), str_arg(server)) };
+        if (!address.is_null() && addr.is_none()) || (!server.is_null() && srv.is_none()) {
+            return std::ptr::null_mut();
+        }
+        let connector = SystemConnector {
+            address: addr.map(str::to_owned),
+            server: srv.map(std::path::PathBuf::from),
+        };
+        Box::into_raw(Box::new(KotoriClient::with_connector(Box::new(connector))))
     })
     .unwrap_or(std::ptr::null_mut())
-}
-
-#[cfg(unix)]
-fn connect(address: Option<&str>) -> Option<KotoriClient> {
-    let path = match address {
-        Some(a) => std::path::PathBuf::from(a),
-        None => kotori_proto::default_socket_path()?,
-    };
-    crate::connect_unix(&path)
-        .ok()
-        .map(KotoriClient::from_client)
-}
-
-#[cfg(windows)]
-fn connect(address: Option<&str>) -> Option<KotoriClient> {
-    let name = match address {
-        Some(a) => a.to_owned(),
-        None => crate::default_pipe_name().ok()?,
-    };
-    crate::connect_pipe(&name)
-        .ok()
-        .map(KotoriClient::from_client)
-}
-
-#[cfg(not(any(unix, windows)))]
-fn connect(_address: Option<&str>) -> Option<KotoriClient> {
-    None
 }
 
 /// 接続を閉じて解放する。NULL なら何もしない。
 ///
 /// # Safety
-/// `client` は NULL か、`kotori_client_connect` が返してまだ解放していないものであること。
+/// `client` は NULL か、`kotori_client_open` が返してまだ解放していないものであること。
 #[no_mangle]
 pub unsafe extern "C" fn kotori_client_free(client: *mut KotoriClient) {
     if !client.is_null() {
@@ -195,7 +156,18 @@ pub unsafe extern "C" fn kotori_client_free(client: *mut KotoriClient) {
     }
 }
 
-/// セッションを作る。`input_scope` は IPC の InputScope の値。
+/// サーバーにつながっているか(1 ならつながっている)。
+///
+/// # Safety
+/// `client` は NULL か有効な接続であること。
+#[no_mangle]
+pub unsafe extern "C" fn kotori_client_connected(client: *const KotoriClient) -> i32 {
+    // SAFETY: 関数の前提どおり。
+    i32::from(unsafe { client.as_ref() }.is_some_and(|c| c.managed.is_connected()))
+}
+
+/// セッションを作り、手元のセッション ID を `*session_id` に書く。サーバー側のセッションは
+/// 最初の要求のときに作り、サーバーが再起動したら作り直す。`input_scope` は IPC の InputScope の値。
 ///
 /// # Safety
 /// `client` は有効な接続、`app_id` は NUL 終端の UTF-8、`session_id` は書き込める位置を指すこと。
@@ -215,19 +187,11 @@ pub unsafe extern "C" fn kotori_create_session(
         if session_id.is_null() {
             return KOTORI_ERR_ARGUMENT;
         }
-        let body = request::Body::CreateSession(ipc::CreateSession {
-            app_id: app_id.into(),
-            input_scope: input_scope as i32,
-        });
-        match c.conn.request(body) {
-            Ok(response::Body::SessionCreated(s)) => {
-                // SAFETY: NULL でないことを確かめた、書き込める位置。
-                unsafe { *session_id = s.session_id };
-                KOTORI_OK
-            }
-            Ok(_) => KOTORI_ERR_SERVER,
-            Err(e) => status(&e),
-        }
+        let scope = ipc::InputScope::try_from(input_scope as i32).unwrap_or_default();
+        let id = c.managed.create_session(app_id, scope);
+        // SAFETY: NULL でないことを確かめた、書き込める位置。
+        unsafe { *session_id = id };
+        KOTORI_OK
     })
 }
 
@@ -242,12 +206,8 @@ pub unsafe extern "C" fn kotori_delete_session(client: *mut KotoriClient, sessio
         let Some(c) = (unsafe { client.as_mut() }) else {
             return KOTORI_ERR_ARGUMENT;
         };
-        let body = request::Body::DeleteSession(ipc::DeleteSession { session_id });
-        match c.conn.request(body) {
-            Ok(response::Body::Ack(_)) => KOTORI_OK,
-            Ok(_) => KOTORI_ERR_SERVER,
-            Err(e) => status(&e),
-        }
+        c.managed.delete_session(session_id);
+        KOTORI_OK
     })
 }
 
@@ -267,20 +227,12 @@ pub unsafe extern "C" fn kotori_set_context(
         else {
             return KOTORI_ERR_ARGUMENT;
         };
-        let body = request::Body::SetContext(ipc::SetContext {
-            session_id,
-            left_context: ctx.into(),
-            ..Default::default()
-        });
-        match c.conn.request(body) {
-            Ok(response::Body::Ack(_)) => KOTORI_OK,
-            Ok(_) => KOTORI_ERR_SERVER,
-            Err(e) => status(&e),
-        }
+        c.managed.set_context(session_id, ctx);
+        KOTORI_OK
     })
 }
 
-/// キーを送る。`KOTORI_OK` なら `*out` に表示の内容を書く。`KOTORI_TIMEOUT` なら書かない
+/// キーを送る。`KOTORI_OK` なら `*out` に表示の内容を書く。`KOTORI_PASS_THROUGH` なら書かない
 /// (キーはアプリへ渡し、表示は保つ)。`modifiers` は `KOTORI_MOD_*` の組み合わせ。
 ///
 /// # Safety
@@ -316,15 +268,14 @@ pub unsafe extern "C" fn kotori_send_key(
             }),
             key_up: key_up != 0,
         };
-        match c.conn.send_key(key) {
-            Ok(KeyOutcome::Output(o)) => output_result(Ok(response::Body::Output(o)), out),
-            Ok(KeyOutcome::TimedOut) => KOTORI_TIMEOUT,
-            Err(e) => status(&e),
-        }
+        let reply = c.managed.send_key(session_id, key);
+        // SAFETY: out は NULL でないことを確かめた。
+        unsafe { write_reply(reply, out) }
     })
 }
 
-/// コマンド(確定・取消など、IPC の CommandKind の値)を送り、`*out` に表示の内容を書く。
+/// コマンド(確定・取消など、IPC の CommandKind の値)を送る。戻り値と `*out` は
+/// `kotori_send_key` と同じ。
 ///
 /// # Safety
 /// `client` は有効な接続、`out` は書き込める位置を指すこと。
@@ -344,12 +295,10 @@ pub unsafe extern "C" fn kotori_send_command(
         if out.is_null() {
             return KOTORI_ERR_ARGUMENT;
         }
-        let body = request::Body::SendCommand(ipc::SendCommand {
-            session_id,
-            kind: kind as i32,
-            argument,
-        });
-        output_result(c.conn.request(body), out)
+        let kind = ipc::CommandKind::try_from(kind as i32).unwrap_or_default();
+        let reply = c.managed.send_command(session_id, kind, argument);
+        // SAFETY: out は NULL でないことを確かめた。
+        unsafe { write_reply(reply, out) }
     })
 }
 
