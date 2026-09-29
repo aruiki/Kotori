@@ -343,3 +343,43 @@ fn shift_arrows_resize_the_focused_segment() {
     assert_eq!(out.candidate_window, None);
     assert_eq!(press(&mut s, "Enter").committed, "京はてんき");
 }
+
+#[test]
+fn function_keys_change_script() {
+    let mut s = session();
+    type_text(&mut s, "kyou");
+    // 入力中の F6 は読み全体を1文節にして変換中にする。
+    let out = press(&mut s, "F6");
+    assert_eq!(s.state(), State::Converting);
+    assert_eq!(preedit(&out), [("きょう", Attribute::Focused)]);
+    for (key, text) in [
+        ("F7", "キョウ"),
+        ("F8", "ｷｮｳ"),
+        ("F9", "ｋｙｏｕ"),
+        ("F10", "kyou"),
+    ] {
+        assert_eq!(press(&mut s, key).preedit[0].0, text, "{key}");
+    }
+    assert_eq!(press(&mut s, "Enter").committed, "kyou");
+
+    // 変換中は注目文節だけを置き換える。文節の生キーは読みの長さで切り出す。
+    type_text(&mut s, "kyouha");
+    press(&mut s, "Space");
+    press(&mut s, "Space");
+    let out = press(&mut s, "F10");
+    assert_eq!(s.state(), State::Converting, "候補ウィンドウは閉じる");
+    assert_eq!(
+        preedit(&out),
+        [("kyou", Attribute::Focused), ("は", Attribute::Converted)]
+    );
+    press(&mut s, "Right");
+    let out = press(&mut s, "F9");
+    assert_eq!(
+        preedit(&out),
+        [("kyou", Attribute::Converted), ("ｈａ", Attribute::Focused)]
+    );
+    // 置き換えた表記は候補の先頭にあり、次候補で元の候補へ移れる。
+    let out = press(&mut s, "Space");
+    assert_eq!(out.candidate_window.unwrap().candidates[0], "ｈａ");
+    assert_eq!(out.preedit[1].0, "は");
+}
