@@ -204,6 +204,18 @@ pub fn default_dict_path() -> Option<std::path::PathBuf> {
     }
 }
 
+/// `--dict` がないときに探すシステム辞書の場所を、探す順に返す(12.1)。
+///
+/// 先頭は実行ファイル `exe` の隣の `data/system.dict`。32 bit のアプリから起動されても
+/// 環境変数に左右されず、配置した場所の辞書を読む。次に [`default_dict_path`] を見る。
+pub fn dict_candidates(exe: Option<&std::path::Path>) -> Vec<std::path::PathBuf> {
+    exe.and_then(std::path::Path::parent)
+        .map(|dir| dir.join("data").join("system.dict"))
+        .into_iter()
+        .chain(default_dict_path())
+        .collect()
+}
+
 /// キーを処理せず、アプリへ渡させる応答。
 fn pass_through() -> response::Body {
     response::Body::Output(ipc::Output {

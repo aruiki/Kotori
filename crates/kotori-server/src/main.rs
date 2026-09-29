@@ -1,8 +1,9 @@
 //! エンジン本体(4章)。
 //!
 //! 使い方: kotori-server [--dict <システム辞書>]
-//! 辞書は既定で同梱の辞書の置き場所(12.1)から読む。読み込みはバックグラウンドで行い、
-//! 終わるまで(または読めなかったとき)はキーをアプリへ渡す。
+//! 辞書は既定で実行ファイルの隣の data/system.dict、なければ同梱の辞書の置き場所(12.1)
+//! から読む。読み込みはバックグラウンドで行い、終わるまで(または読めなかったとき)は
+//! キーをアプリへ渡す。
 
 #[cfg(any(unix, windows))]
 use std::sync::{Arc, Mutex};
@@ -12,7 +13,16 @@ use std::sync::{Arc, Mutex};
 fn load_engine_in_background(server: &Arc<Mutex<kotori_server::Server>>) {
     let path = match std::env::args().skip(1).collect::<Vec<_>>().as_slice() {
         [flag, path] if flag == "--dict" => Some(std::path::PathBuf::from(path)),
-        _ => kotori_server::default_dict_path(),
+        _ => {
+            let exe = std::env::current_exe().ok();
+            let candidates = kotori_server::dict_candidates(exe.as_deref());
+            // どれもなければ最後の候補を読みにいき、読めない警告を出す。
+            candidates
+                .iter()
+                .find(|p| p.is_file())
+                .or(candidates.last())
+                .cloned()
+        }
     };
     let server = Arc::clone(server);
     std::thread::spawn(move || {
