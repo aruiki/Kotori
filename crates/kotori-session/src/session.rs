@@ -236,6 +236,14 @@ impl Session {
                     self.commit(committed);
                 }
             }
+            Command::SelectIndex(i) => {
+                if let Some(c) = &mut self.conversion {
+                    if let Some(seg) = c.focused().filter(|s| i < s.candidates.len()) {
+                        seg.selected = i;
+                        c.window_open = true;
+                    }
+                }
+            }
             Command::Commit => self.commit(committed),
             Command::CancelInput => self.clear(),
             Command::DeleteBack => self.composer.backspace(),
