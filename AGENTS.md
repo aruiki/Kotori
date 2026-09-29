@@ -14,19 +14,21 @@ Kotori IME の実装を担う AI エージェント向けの作業規約(docs/SP
 
 ## 現在のマイルストーン
 
-M2 ニューラルリランク(SPEC 18.3)。
+M3 Windowsフロントエンド(SPEC 18.4)。M2 の完了条件の一部を残したまま進めている(docs/adr/0008)。
 
 - M0 は PR #1〜#8 で完了(#8 で Windows パイプのデッドロックを直したあと、main の CI が両OSで緑)。
 - M1 は PR #7、#10〜#22 で完了。ラティス単体の精度は `eval/README.md` に記録した
-  (AJIMEE-Bench Acc@1 53.0%)。KTB-conv は 7.2 の学習データと人手の確認が要るため未作成で、
-  扱いはメンテナの判断待ち。
-- M2 は PR #24〜#34 まで進めた。llama.cpp の FFI、zenz-v2.5 の GGUF 変換(`just zenz`)、
+  (AJIMEE-Bench Acc@1 53.0%)。
+- M2 は PR #24〜#35 で実装項目を入れた。llama.cpp の FFI、zenz-v2.5 の GGUF 変換(`just zenz`)、
   共有接頭辞のバッチ採点、世代番号による打ち切り、バックグラウンド読み込み、評価への組み込み
   (`just eval-lm`)、遅延の計測(`just bench-lm`)、重みの格子探索(`kotori-eval tune`)がある。
-  zenz-v2.5-small のリランクで AJIMEE-Bench Acc@1 79.5%。残りはメンテナの判断待ち:
-  - REQ-6-1(p95 20ms)は満たせていない(small・K=16 で p95 564ms)。Issue #32。
-  - 重みを調整する開発用データ(7.2 のパイプラインか zenz-v2.5-dataset の標本か)と KTB-conv。
-  - Google 日本語入力の実測(Windows)、変換した zenz-v2.5(CC-BY-SA-4.0)の配布の扱い。
+  zenz-v2.5-small のリランクで AJIMEE-Bench Acc@1 79.5%。完了条件のうち次が残っている:
+  - REQ-6-1(p95 20ms)は満たせていない(small・K=16 で p95 564ms)。2段階応答で進め、数値は
+    Issue #32 と SPEC の PR で扱う。
+  - KTB-conv と重みの調整用の dev セットは、7.2 のパイプラインを作るときに作る。重みは既定値のまま。
+  - Google 日本語入力との比較は、M3 で Windows の計測ツールを作るときに行う。
+- M3 では、状態機械(11.1、11.2)にラティス単体の変換とリランクの差分更新を組み込み、
+  フロントエンドが差分を問い合わせる要求をプロトコルに足す(docs/adr/0008)。
 
 ## コーディング規約の要点(17.2)
 
