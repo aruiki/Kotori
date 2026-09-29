@@ -1,5 +1,5 @@
 # Mozc ベースの Windows 版を作る(docs/adr/0012 の段階 1)。
-# google/mozc をコミットで固定して取得し、mozc/patches/ のパッチを当てて Mozc64.msi を作る。
+# google/mozc をコミットで固定して取得し、mozc/patches/ のパッチを当てて Kotori64.msi を作る。
 # 手順は Mozc の公式 CI(.github/workflows/windows.yaml)と docs/build_mozc_in_windows.md に合わせる。
 name: Mozc (Windows)
 
@@ -23,10 +23,12 @@ env:
 
 jobs:
   build:
-    name: Mozc64.msi (x64)
+    name: Kotori64.msi (x64)
     runs-on: windows-2025
     timeout-minutes: 120
     steps:
+      # Windows のランナーは既定で改行を CRLF にするので、パッチが当たらなくなる。LF のまま取得する。
+      - run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
         with:
           path: kotori
@@ -70,8 +72,12 @@ jobs:
         env:
           ANDROID_NDK_HOME: ""
         run: bazelisk build package --config release_build
+      # パッチで名前を Kotori にしたので、ファイル名も合わせる(docs/adr/0012 の段階 2)。
+      - name: インストーラの名前を変える
+        shell: pwsh
+        run: Copy-Item mozc-src/src/bazel-bin/win32/installer/Mozc64.msi Kotori64.msi
       - uses: actions/upload-artifact@v4
         with:
-          name: Mozc64.msi
-          path: mozc-src/src/bazel-bin/win32/installer/Mozc64.msi
+          name: Kotori64.msi
+          path: Kotori64.msi
           if-no-files-found: error
