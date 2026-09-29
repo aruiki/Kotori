@@ -4,42 +4,38 @@
 エンジン(`kotori-server`)へ送り、返ってきたプリエディットと確定文字列を書く
 (docs/SPEC.md 10.1、docs/adr/0009)。
 
-## 手で入れて試す(インストールスクリプトができるまで)
+## 作って入れる
 
-管理者の PowerShell で、リポジトリの最上位から実行する。Rust・CMake・Visual Studio 2022
-(C++ のデスクトップ開発)が要る。
+リポジトリの最上位から、PowerShell で実行する。Rust・CMake・Visual Studio 2022(C++ の
+デスクトップ開発)が要る。32 bit のアプリ用に i686 のターゲットも入れておく
+(`rustup target add x86_64-pc-windows-msvc i686-pc-windows-msvc`)。
 
 ```powershell
-# 1. 辞書とサーバー
-just dict                                   # target/kotori/system.dict を作る
-cargo build --release -p kotori-server
-# 2. kotori-client の静的ライブラリと TIP(x64)
-$env:RUSTFLAGS = "-C target-feature=+crt-static"
-cargo build --release -p kotori-client --target x86_64-pc-windows-msvc
-Remove-Item Env:RUSTFLAGS
-cmake -S frontends/windows -B build-tip -A x64 "-DKOTORI_CLIENT_LIB=$PWD/target/x86_64-pc-windows-msvc/release/kotori_client.lib"
-cmake --build build-tip --config Release
-# 3. 配置と登録
-$dir = "$env:ProgramFiles\Kotori"
-New-Item -ItemType Directory -Force "$dir\data" | Out-Null
-Copy-Item target/kotori/system.dict "$dir\data\"
-Copy-Item target/release/kotori-server.exe, build-tip/Release/kotori_tip.dll $dir
-regsvr32 "$dir\kotori_tip.dll"
+just dict                             # 1. 辞書を作る(target/kotori/system.dict)
+./frontends/windows/build.ps1         # 2. サーバーと x64・x86 の TIP を作り、dist に集める
+./frontends/windows/install.ps1       # 3. 管理者の PowerShell で。%ProgramFiles%\Kotori に置いて登録する
 ```
 
-サーバーは `--dict` がなければ、自分と同じフォルダの `data\system.dict` を読む
-(なければ `%ProgramFiles%\Kotori\data\system.dict`)。`kotori-server.exe` と `data`
-フォルダは同じフォルダに置く。
+置く形は次のとおり。サーバーは `--dict` がなければ、自分と同じフォルダの `data\system.dict` を読む。
+32 bit の TIP は1つ上のフォルダの `kotori-server.exe` を起動する。
 
-設定の「言語」→「日本語」→「キーボードの追加」で Kotori を選ぶ。サーバーは最初のキーで
-自動で起動する(REQ-4-1)。辞書の読み込み(1 秒弱)が終わるまでは直接入力になる。
+```
+%ProgramFiles%\Kotori\
+  kotori-server.exe
+  kotori_tip.dll          (x64)
+  x86\kotori_tip.dll      (x86)
+  data\system.dict
+```
 
-外すときは `regsvr32 /u "$env:ProgramFiles\Kotori\kotori_tip.dll"` のあと、
-`kotori-server.exe` を終了してからフォルダを消す。
+設定の「時刻と言語」→「言語と地域」→「日本語」→「キーボードの追加」で Kotori を選ぶ。サーバーは
+最初のキーで自動で起動する(REQ-4-1)。辞書の読み込み(1 秒弱)が終わるまでは直接入力になる。
+
+外すときは、管理者の PowerShell で `./frontends/windows/uninstall.ps1` を実行する。登録を外し、
+`kotori-server` を止めてフォルダを消す。アプリが DLL を使っていて消せなければ、再起動後に
+フォルダを消すよう案内が出る。入れ直すときも、先に外す。
 
 今できること: ローマ字入力、変換、次/前候補、注目文節の移動、確定、取消、
 プリエディットの下線(入力中は点線、変換済みは細い実線、注目文節は太い実線)、
 パスワード・暗証番号の欄ではキーをそのままアプリへ渡す(REQ-10-3)、入力の始めにカーソルの左の
 256 文字を左文脈として送る(REQ-10-2)。
-まだないこと: 候補ウィンドウ(候補はプリエディットの中で切り替わる)、
-32 bit アプリ用の DLL の配置、インストールスクリプト。
+まだないこと: 候補ウィンドウ(候補はプリエディットの中で切り替わる)。
