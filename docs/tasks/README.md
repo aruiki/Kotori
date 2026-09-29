@@ -47,6 +47,6 @@
 | 07 | 文節の伸縮(Shift+←/→)(済) | session | なし |
 | 08 | 文字種変換(F6〜F10)(済) | session | なし |
 | 09 | 入力中のカーソル移動(←/→)(済) | composer/session | なし |
-| 10 | SendCommand の候補選択 | server/session | なし |
+| 10 | SendCommand の候補選択(済) | server/session | なし |
 | 11 | 候補ウィンドウの方式を決める(ADR) | docs | なし |
 | 12 | LM リランクをサーバーに組み込む(2段階応答) | proto/server/client | 判断待ち(Issue #32)。ADR 0008 のとおり進めてよい |

@@ -398,3 +398,23 @@ fn arrows_move_the_cursor_while_composing() {
     assert_eq!(out.cursor, 3);
     assert_eq!(press(&mut s, "Enter").committed, "かくき");
 }
+
+#[test]
+fn select_index_picks_a_candidate_and_keeps_the_window() {
+    let mut s = session();
+    type_text(&mut s, "kyouha");
+    press(&mut s, "Space");
+    press(&mut s, "Space");
+    let out = s.command(Command::SelectIndex(2), &Fake);
+    assert_eq!(s.state(), State::Selecting);
+    assert_eq!(out.preedit[0].0, "強");
+    assert_eq!(out.candidate_window.unwrap().focused, 2);
+    // 範囲外は何もしない。
+    let out = s.command(Command::SelectIndex(4), &Fake);
+    assert_eq!(out.candidate_window.unwrap().focused, 2);
+    // 変換していなければ何もしない。
+    let mut s = session();
+    type_text(&mut s, "a");
+    let out = s.command(Command::SelectIndex(0), &Fake);
+    assert_eq!(preedit(&out), [("あ", Attribute::Input)]);
+}

@@ -59,6 +59,9 @@ pub enum Command {
     ForgetCandidate,
     /// 確定を取り消す(9.4)。
     UndoCommit,
+    /// 注目文節の n 番目(0 始まり)の候補を選ぶ。候補ウィンドウのクリック(4.2 の
+    /// SELECT_CANDIDATE)から来る。キーマップには書けない。
+    SelectIndex(usize),
 }
 
 /// 修飾キー付きのキー。

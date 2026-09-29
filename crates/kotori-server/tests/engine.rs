@@ -219,3 +219,30 @@ fn set_context_is_kept_and_grows_on_commit() {
     ));
     assert_eq!(server.left_context(999), None);
 }
+
+#[test]
+fn select_candidate_command_moves_the_selection() {
+    let mut server = Server::with_engine(engine());
+    let id = create(&mut server, ipc::InputScope::Default);
+    let select = |server: &mut Server, index: u32| match server.handle(Some(
+        request::Body::SendCommand(ipc::SendCommand {
+            session_id: id,
+            kind: ipc::CommandKind::SelectCandidate.into(),
+            argument: index,
+        }),
+    )) {
+        response::Body::Output(o) => o,
+        other => panic!("{other:?}"),
+    };
+    type_text(&mut server, id, "kyou");
+    key(&mut server, id, SPACE, "");
+    key(&mut server, id, SPACE, "");
+    let out = select(&mut server, 0);
+    assert_eq!(out.preedit[0].text, "今日");
+    let w = out.candidate_window.unwrap();
+    assert!(w.visible);
+    assert_eq!(w.focused_index, 0);
+    // 範囲外は無視する。
+    let out = select(&mut server, 5);
+    assert_eq!(out.candidate_window.unwrap().focused_index, 0);
+}

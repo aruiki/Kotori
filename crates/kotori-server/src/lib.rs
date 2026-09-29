@@ -159,6 +159,7 @@ impl Server {
 
     fn send_command(&mut self, req: &ipc::SendCommand) -> response::Body {
         let command = match req.kind() {
+            ipc::CommandKind::SelectCandidate => Command::SelectIndex(req.argument as usize),
             ipc::CommandKind::Commit => Command::Commit,
             ipc::CommandKind::Cancel => Command::CancelInput,
             // 候補の選択、文節の伸縮、再変換、モード切替は後続で入れる。
