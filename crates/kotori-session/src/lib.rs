@@ -9,7 +9,7 @@ mod session;
 
 pub use converter::{Converter, LatticeConverter, SegmentCandidates};
 pub use keymap::{Command, Key, Keymap, KeymapError, State};
-pub use session::{Attribute, CandidateWindow, Output, Session, PAGE_SIZE};
+pub use session::{Attribute, CandidateWindow, Output, Session, MAX_LEFT_CONTEXT, PAGE_SIZE};
 
 #[cfg(test)]
 mod session_tests;

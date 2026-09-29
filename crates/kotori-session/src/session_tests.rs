@@ -239,3 +239,25 @@ fn lattice_converter_splits_segments_with_candidates() {
     let out = s.key(parse_key("Enter").unwrap(), "", &conv);
     assert_eq!(out.committed, "今日は天気");
 }
+
+#[test]
+fn left_context_keeps_the_last_256_chars_and_grows_on_commit() {
+    let mut s = session();
+    let long: String = "あいうえお".repeat(60); // 300 文字
+    s.set_left_context(&long);
+    assert_eq!(s.left_context().chars().count(), MAX_LEFT_CONTEXT);
+    assert!(long.ends_with(s.left_context()));
+
+    s.set_left_context("天気は");
+    type_text(&mut s, "kyouha");
+    press(&mut s, "Space");
+    // 変換中の文字入力で確定した分も足す。
+    type_text(&mut s, "a");
+    assert_eq!(s.left_context(), "天気は今日は");
+    press(&mut s, "Enter");
+    assert_eq!(s.left_context(), "天気は今日はあ");
+    // 取消では伸びない。
+    type_text(&mut s, "i");
+    press(&mut s, "Escape");
+    assert_eq!(s.left_context(), "天気は今日はあ");
+}
