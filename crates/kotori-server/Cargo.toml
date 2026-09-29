@@ -15,6 +15,7 @@ workspace = true
 anyhow = "1"
 kotori-composer = { path = "../kotori-composer" }
 kotori-dict = { path = "../kotori-dict" }
+kotori-lm = { path = "../kotori-lm" }
 kotori-proto = { path = "../kotori-proto" }
 kotori-session = { path = "../kotori-session" }
 
