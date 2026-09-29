@@ -54,6 +54,25 @@ jobs:
             git -C mozc-src apply --whitespace=nowarn $p.FullName
             if ($LASTEXITCODE -ne 0) { throw "$($p.Name) を当てられない" }
           }
+      # MSI に同梱するモデル(docs/adr/0012、パッチ 0003)。変換の手順が同じなら前に作ったものを使う。
+      - id: zenz
+        uses: actions/cache@v4
+        with:
+          path: kotori/target/kotori/zenz-v2.5-small-q8_0.gguf
+          key: zenz-v2.5-small-q8_0-${{ hashFiles('kotori/training/zenz/*') }}-${{ hashFiles('kotori/.gitmodules') }}
+      - name: モデルを作る
+        if: steps.zenz.outputs.cache-hit != 'true'
+        shell: bash
+        working-directory: kotori
+        run: |
+          git submodule update --init --depth 1 third_party/llama.cpp
+          python -m pip install -q -r third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
+          bash training/zenz/fetch.sh
+          mkdir -p target/kotori
+          python training/zenz/convert.py training/zenz/models/zenz-v2.5-small target/kotori/zenz-v2.5-small-q8_0.gguf --outtype q8_0
+      - name: モデルを置く
+        shell: pwsh
+        run: Copy-Item kotori/target/kotori/zenz-v2.5-small-q8_0.gguf mozc-src/src/data/kotori/
       - uses: actions/cache@v4
         with:
           path: mozc-src/src/third_party_cache

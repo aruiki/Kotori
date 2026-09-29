@@ -1,0 +1,101 @@
+diff --git a/src/data/kotori/BUILD.bazel b/src/data/kotori/BUILD.bazel
+new file mode 100755
+index 000000000..ed5c84f06
+--- /dev/null
++++ b/src/data/kotori/BUILD.bazel
+@@ -0,0 +1,7 @@
++# Kotori: MSI に同梱するモデル。CI が data/kotori/ に置く(mozc/README.md)。
++package(default_visibility = ["//visibility:public"])
++
++exports_files([
++    "zenz-v2.5-small-q8_0.gguf",
++    "NOTICE-zenz.txt",
++])
+diff --git a/src/data/kotori/NOTICE-zenz.txt b/src/data/kotori/NOTICE-zenz.txt
+new file mode 100755
+index 000000000..5cdf85162
+--- /dev/null
++++ b/src/data/kotori/NOTICE-zenz.txt
+@@ -0,0 +1,12 @@
++Kotori IME に同梱している言語モデル
++
++zenz-v2.5-small (c) Keita Miwa
++  https://huggingface.co/Miwa-Keita/zenz-v2.5-small
++  ライセンス: CC BY-SA 4.0 https://creativecommons.org/licenses/by-sa/4.0/
++  元にしたモデル: ku-nlp/gpt2-small-japanese-char (CC BY-SA 4.0)
++
++変更点: 公開されている重みを llama.cpp の convert_hf_to_gguf.py で GGUF にし、
++8 bit(q8_0)に量子化した。語彙と学習した内容は変えていない。
++このファイル(zenz-v2.5-small-q8_0.gguf)は同じ CC BY-SA 4.0 で利用できる。
++
++llama.cpp (MIT): https://github.com/ggml-org/llama.cpp
+diff --git a/src/win32/installer/BUILD.bazel b/src/win32/installer/BUILD.bazel
+index 1c31b5159..dbb9231f3 100644
+--- a/src/win32/installer/BUILD.bazel
++++ b/src/win32/installer/BUILD.bazel
+@@ -93,6 +93,8 @@ genrule(
+         "//base:mozc_version_txt",
+         "//data/images/win:product_icon.ico",
+         "//data/installer:credits_en.html",
++        "//data/kotori:NOTICE-zenz.txt",
++        "//data/kotori:zenz-v2.5-small-q8_0.gguf",
+         "@qt_win//:bin/Qt6Core.dll",
+         "@wix//:wix.exe",
+     ] + select({
+@@ -117,6 +119,8 @@ genrule(
+         "--custom_action=$(location //win32/custom_action)",
+         "--icon_path=$(location //data/images/win:product_icon.ico)",
+         "--credit_file=$(location //data/installer:credits_en.html)",
++        "--zenz_model=$(location //data/kotori:zenz-v2.5-small-q8_0.gguf)",
++        "--zenz_notice=$(location //data/kotori:NOTICE-zenz.txt)",
+         "--qt_core_dll=$(location @qt_win//:bin/Qt6Core.dll)",
+         "--wxs_path=$(location " + _WXS_FILE + ")",
+         "--wix_path=$(location @wix//:wix.exe)",
+diff --git a/src/win32/installer/build_installer.py b/src/win32/installer/build_installer.py
+index c2e71a077..78834af15 100644
+--- a/src/win32/installer/build_installer.py
++++ b/src/win32/installer/build_installer.py
+@@ -154,6 +154,8 @@ def run_wix4(args) -> None:
+       '-define', f'MozcTIP64Path={mozc_tip64}',
+       '-define', f'MozcBroker64Path={mozc_broker}',
+       '-define', f'MozcServer64Path={mozc_server}',
++      '-define', f'KotoriZenzModelPath={pathlib.Path(args.zenz_model).resolve()}',
++      '-define', f'KotoriZenzNoticePath={pathlib.Path(args.zenz_notice).resolve()}',
+       '-define', f'MozcCacheService64Path={mozc_cache_service}',
+       '-define', f'MozcRenderer64Path={mozc_renderer}',
+       '-define', f'MozcToolPath={mozc_tool}',
+@@ -192,6 +194,8 @@ def main():
+   parser.add_argument('--custom_action', type=str)
+   parser.add_argument('--icon_path', type=str)
+   parser.add_argument('--credit_file', type=str)
++  parser.add_argument('--zenz_model', type=str)
++  parser.add_argument('--zenz_notice', type=str)
+   parser.add_argument('--qt_core_dll', type=str)
+   parser.add_argument('--wxs_path', type=str)
+   parser.add_argument('--wix_path', type=str)
+diff --git a/src/win32/installer/installer_oss_64bit.wxs b/src/win32/installer/installer_oss_64bit.wxs
+index e30c37ad4..ef3b8ea2c 100644
+--- a/src/win32/installer/installer_oss_64bit.wxs
++++ b/src/win32/installer/installer_oss_64bit.wxs
+@@ -148,6 +148,8 @@
+       <?endif?>
+       <ComponentRef Id="MozcBroker" />
+       <ComponentRef Id="MozcConverter" />
++      <ComponentRef Id="KotoriZenzModel" />
++      <ComponentRef Id="KotoriZenzNotice" />
+       <ComponentRef Id="MozcCacheService" />
+       <ComponentRef Id="MozcRenderer" />
+       <ComponentRef Id="MozcTool" />
+@@ -242,6 +244,12 @@
+ 
+     <StandardDirectory Id="ProgramFilesFolder">
+       <Directory Id="MozcDir" Name="Kotori">
++        <Component Id="KotoriZenzModel">
++          <File Id="zenz_model.gguf" Name="zenz-v2.5-small-q8_0.gguf" DiskId="1" Checksum="yes" Source="$(var.KotoriZenzModelPath)" Vital="yes" />
++        </Component>
++        <Component Id="KotoriZenzNotice">
++          <File Id="NOTICE_zenz.txt" Name="NOTICE-zenz.txt" DiskId="1" Source="$(var.KotoriZenzNoticePath)" />
++        </Component>
+         <Component Id="MozcConverter">
+           <File Id="mozc_server.exe" Name="mozc_server.exe" DiskId="1" Checksum="yes" Source="$(var.MozcServer64Path)" Vital="yes" />
+         </Component>
