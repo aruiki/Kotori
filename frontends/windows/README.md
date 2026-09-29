@@ -4,6 +4,17 @@
 エンジン(`kotori-server`)へ送り、返ってきたプリエディットと確定文字列を書く
 (docs/SPEC.md 10.1、docs/adr/0009)。
 
+## リリースから入れる(かんたん)
+
+[Releases](https://github.com/aruiki/Kotori/releases) から `Kotori-<版>-windows.zip` を
+ダウンロードして展開し、`install.cmd` をダブルクリックする(管理者の確認で「はい」)。外すときは
+`uninstall.cmd`。手順は zip の `README.txt`(元は `README.release.txt`)にある。
+
+リリースは `.github/workflows/release.yml` が作る。Actions の「Release」を手で実行して
+バージョン(例 `0.1.0-beta.1`、SPEC 16.3 の `0.x.y-beta` の形)を入れるか、`v` で始まるタグを
+push する。サーバー・x64 と x86 の TIP・辞書・`THIRD_PARTY_NOTICES.txt`・インストールの
+スクリプトを zip にまとめ、プレリリースとして公開する。LM のモデルは同梱しない(docs/licenses.md)。
+
 ## 作って入れる
 
 リポジトリの最上位から、PowerShell で実行する。Rust・CMake・Visual Studio 2022(C++ の

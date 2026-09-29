@@ -1,12 +1,14 @@
-#Requires -RunAsAdministrator
+﻿#Requires -RunAsAdministrator
 # install.ps1 で入れた Kotori を外す(docs/SPEC.md 16.2)。
 #
-#   ./frontends/windows/uninstall.ps1 [-Destination "$env:ProgramFiles\Kotori"]
+#   ./uninstall.ps1 [-Destination "$env:ProgramFiles\Kotori"] [-Pause]
 #
 # 登録を外し、kotori-server を止めてフォルダを消す。アプリが DLL を使っていて消せないときは、
 # 再起動後にフォルダを消すよう案内する(登録は外れているので、再起動後は読み込まれない)。
+# -Pause は終わったあと Enter を待つ(uninstall.cmd から使う)。
 param(
-  [string] $Destination = "$env:ProgramFiles\Kotori"
+  [string] $Destination = "$env:ProgramFiles\Kotori",
+  [switch] $Pause
 )
 $ErrorActionPreference = 'Stop'
 
@@ -35,7 +37,9 @@ if (Test-Path $Destination) {
 
 if ($failed.Count -gt 0) {
   $failed | ForEach-Object { Write-Warning $_ }
+  if ($Pause) { Read-Host 'Enter で閉じる' | Out-Null }
   exit 1
 }
-Write-Host "外した: $Destination"
+Write-Host "外した: $Destination" -ForegroundColor Green
+if ($Pause) { Read-Host 'Enter で閉じる' | Out-Null }
 exit 0

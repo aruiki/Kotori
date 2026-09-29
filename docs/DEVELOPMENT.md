@@ -39,6 +39,8 @@ Rust・just・CMake・C/C++ コンパイラ(gcc か clang)・git があればよ
 | `just zenz` | zenz-v2.5-small を取得して GGUF にする(Python と PyTorch が要る、ADR 0007) |
 | `just eval-lm` / `just bench-lm` | LM リランクの精度 / 遅延を測る |
 | `just tip` | (Windows)TSF TIP を x64 でビルドする |
+| `just notices` | 配布物に同梱する `THIRD_PARTY_NOTICES.txt` を作る(cargo-about が要る、REQ-16-1) |
+| Actions の「Release」 | Windows 版の zip を作ってプレリリースにする(`frontends/windows/README.md`) |
 
 1つのクレートだけ試すときは `cargo test -p kotori-session` のようにする。
 

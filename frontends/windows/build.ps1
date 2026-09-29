@@ -1,4 +1,4 @@
-# Kotori の Windows 版を作り、install.ps1 が使う形で1つのフォルダに集める(docs/SPEC.md 16.2)。
+﻿# Kotori の Windows 版を作り、install.ps1 が使う形で1つのフォルダに集める(docs/SPEC.md 16.2)。
 # リポジトリのどこからでも実行できる。Rust(x86_64 と i686 の msvc ターゲット)・CMake・
 # Visual Studio 2022(C++ のデスクトップ開発)が要る。辞書は先に `just dict` で作っておく。
 #

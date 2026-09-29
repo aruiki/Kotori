@@ -1,0 +1,81 @@
+# Windows 版のリリース(docs/SPEC.md 16.2 の「未署名バイナリ」)。
+# Actions の画面から手で実行する(バージョンを入れる)か、v で始まるタグを push すると動く。
+# サーバー・x64 と x86 の TIP・辞書・ライセンスを zip にまとめ、プレリリースとして公開する。
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: バージョン(例 0.1.0-beta.1。先頭の v は付けない)
+        required: true
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    name: Windows の zip
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # third_party/llama.cpp(サーバーが静的リンクする)
+          submodules: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc,i686-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+      - name: 辞書を作る
+        shell: bash
+        run: |
+          bash data/dict-src/fetch.sh
+          cargo run --release --locked -p kotori-dictc -- data/dict-src/mozc target/kotori/system.dict
+      - name: サーバーと TIP を作る
+        shell: pwsh
+        run: ./frontends/windows/build.ps1 -OutDir dist
+      - name: ライセンスの一覧を作る(REQ-16-1)
+        shell: bash
+        run: bash frontends/windows/notices.sh dist/THIRD_PARTY_NOTICES.txt
+      - name: zip にまとめる
+        shell: pwsh
+        run: |
+          $v = $env:VERSION.TrimStart('v')
+          Copy-Item frontends/windows/install.ps1, frontends/windows/uninstall.ps1 dist
+          Copy-Item frontends/windows/install.cmd, frontends/windows/uninstall.cmd dist
+          Copy-Item frontends/windows/README.release.txt dist/README.txt
+          Copy-Item LICENSE-APACHE, LICENSE-MIT dist
+          # 配置と登録・解除ができることを、zip に入れるのと同じファイルで確かめる。
+          $smoke = Join-Path $env:RUNNER_TEMP 'kotori-smoke'
+          ./dist/install.ps1 -Destination $smoke
+          ./dist/uninstall.ps1 -Destination $smoke
+          if ($LASTEXITCODE -ne 0) { throw 'uninstall.ps1 が失敗した' }
+          $zip = "Kotori-$v-windows.zip"
+          Compress-Archive -Path dist/* -DestinationPath $zip
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          Set-Content -Encoding ascii "$zip.sha256" "$hash  $zip"
+          "ZIP=$zip" >> $env:GITHUB_ENV
+          "TAG=v$v" >> $env:GITHUB_ENV
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: Kotori ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          prerelease: true
+          body_path: frontends/windows/release-notes.md
+          files: |
+            ${{ env.ZIP }}
+            ${{ env.ZIP }}.sha256

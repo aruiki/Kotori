@@ -1,4 +1,4 @@
-# install.ps1 と uninstall.ps1 を試す(CI の x64 のジョブで実行する。管理者権限が要る)。
+﻿# install.ps1 と uninstall.ps1 を試す(CI の x64 のジョブで実行する。管理者権限が要る)。
 # 引数: -Server <kotori-server.exe> -Dll <x64 の kotori_tip.dll>。辞書は中身のない偽物を置く。
 param(
   [Parameter(Mandatory)] [string] $Server,
