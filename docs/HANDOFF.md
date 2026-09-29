@@ -33,7 +33,7 @@
 | `crates/kotori-eval` | 評価(`run`)、遅延の計測(`bench-lm`)、重みの探索(`tune`)、対話 REPL |
 | `frontends/windows` | TSF TIP(C++20、CMake)。`README.md` に手で入れる手順 |
 | `training/zenz` | zenz-v2.5 の取得と GGUF 変換(ADR 0007) |
-| `docs/adr` | 設計判断の記録。0001〜0009 |
+| `docs/adr` | 設計判断の記録。0001〜0010 |
 
 ## 3. メンテナの判断待ち
 
