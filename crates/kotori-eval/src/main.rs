@@ -7,6 +7,8 @@
 //!       評価セットを一括で実行し、<出力>/report.json と report.md を書く(REQ-14-1)。
 //!       --lm を付けると、ラティスの上位 k 件(既定 16、REQ-6-1)を LM でリランクする(6.2)。
 //!       重みは既定でモデルのメタデータから読み、--score-weights で差し替えられる(調整用)。
+//!   kotori-eval bench-lm [--k <件数>] <辞書> <GGUF> <評価セットの JSON>
+//!       REQ-6-1 の条件(読み 20 文字、左文脈 64 文字、K 件)でリランクの遅延を測る(13.2)
 
 use std::io::{BufRead, Write};
 
@@ -52,12 +54,54 @@ fn main() -> Result<()> {
             (opts, [dict, out, sets @ ..]) if !sets.is_empty() => run(&opts, dict, out, sets),
             _ => bail!(USAGE),
         },
+        [cmd, rest @ ..] if cmd == "bench-lm" => match parse_options(rest)? {
+            (opts, [dict, model, set]) if opts.lm.is_none() && opts.weights.is_none() => {
+                bench_lm(opts.k.unwrap_or(DEFAULT_K), dict, model, set)
+            }
+            _ => bail!(USAGE),
+        },
         _ => bail!(USAGE),
     }
 }
 
 const USAGE: &str = "使い方: kotori-eval repl <辞書>
-        kotori-eval run [--lm <GGUF>] [--k <件数>] [--score-weights <JSON>] <辞書> <出力ディレクトリ> <名前>=<評価セット>...";
+        kotori-eval run [--lm <GGUF>] [--k <件数>] [--score-weights <JSON>] <辞書> <出力ディレクトリ> <名前>=<評価セット>...
+        kotori-eval bench-lm [--k <件数>] <辞書> <GGUF> <評価セット>";
+
+/// 計測で各要求を採点する回数。
+const BENCH_ROUNDS: usize = 5;
+
+fn load_items(path: &str) -> Result<Vec<kotori_eval::eval::Item>> {
+    let text = std::fs::read_to_string(path).with_context(|| format!("{path} を読めない"))?;
+    serde_json::from_str(&text).with_context(|| format!("{path} の形式が不正"))
+}
+
+fn bench_lm(k: usize, dict: &str, model: &str, set: &str) -> Result<()> {
+    use kotori_eval::bench;
+    let dict = load_dict(dict)?;
+    let requests = bench::requests(&dict, &load_items(set)?, k);
+    let mut scorer = ZenzScorer::open(std::path::Path::new(model), THREADS)
+        .with_context(|| format!("{model} を LM として読めない"))?;
+    let samples = bench::measure(&mut scorer, &requests, BENCH_ROUNDS);
+    let Some(l) = bench::summarize(&samples) else {
+        bail!(
+            "計測できる問題がない(読みが {} 文字以上の問題が要る)",
+            bench::READING_CHARS
+        );
+    };
+    let cands: usize = requests.iter().map(|r| r.candidates.len()).sum();
+    println!(
+        "問題 {} 件(候補 平均 {:.1} 件)× {BENCH_ROUNDS} 回、推論 {THREADS} スレッド",
+        requests.len(),
+        cands as f64 / requests.len().max(1) as f64
+    );
+    println!("| 件数 | p50 | p95 | p99 | 最大 |\n| ---: | ---: | ---: | ---: | ---: |");
+    println!(
+        "| {} | {:.1}ms | {:.1}ms | {:.1}ms | {:.1}ms |",
+        l.samples, l.p50, l.p95, l.p99, l.max
+    );
+    Ok(())
+}
 
 fn load_dict(path: &str) -> Result<Dictionary> {
     let bytes = std::fs::read(path).with_context(|| format!("{path} を読めない"))?;
@@ -94,9 +138,7 @@ fn run(opts: &RunOptions, dict: &str, out: &str, sets: &[String]) -> Result<()> 
         let (name, path) = set
             .split_once('=')
             .with_context(|| format!("{set}: <名前>=<パス> の形で指定する"))?;
-        let text = std::fs::read_to_string(path).with_context(|| format!("{path} を読めない"))?;
-        let items: Vec<kotori_eval::eval::Item> =
-            serde_json::from_str(&text).with_context(|| format!("{path} の形式が不正"))?;
+        let items = load_items(path)?;
         let reorder = rerank.as_mut().map(|r| (r as &mut dyn Reorder, k));
         reports.push(kotori_eval::eval::evaluate(&dict, name, &items, reorder));
     }
