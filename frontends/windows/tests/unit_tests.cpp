@@ -73,6 +73,19 @@ void TestAttributeGuid() {
   CHECK(IsEqualGUID(AttributeGuid(3), AttributeGuid(0)));
 }
 
+void TestLastChars() {
+  using kotori::LastChars;
+  CHECK(LastChars(L"今日は晴れ", 3) == L"は晴れ");
+  CHECK(LastChars(L"あい", 256) == L"あい");
+  CHECK(LastChars(L"", 3).empty() && LastChars(L"あ", 0).empty());
+  // 𠮷(サロゲートペア)は 1 文字として数え、分断しない。
+  const std::wstring yoshi = L"\xD842\xDFB7";
+  CHECK(LastChars(L"a" + yoshi + L"野家", 3) == yoshi + L"野家");
+  CHECK(LastChars(L"a" + yoshi + L"野家", 2) == L"野家");
+  // 範囲の読み取りで前半分が切れた片割れは落とす。
+  CHECK(LastChars(std::wstring(L"\xDFB7") + L"あ", 5) == L"あ");
+}
+
 void TestInputScope() {
   using kotori::IsPrivateInputScope;
   CHECK(IsPrivateInputScope({IS_PASSWORD}));
@@ -91,6 +104,7 @@ int main() {
   TestComposition();
   TestAttributeGuid();
   TestInputScope();
+  TestLastChars();
   if (g_failures == 0) {
     std::puts("すべて通った");
   }
