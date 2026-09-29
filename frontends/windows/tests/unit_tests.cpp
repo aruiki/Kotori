@@ -1,4 +1,8 @@
 // TSF に依存しない部分の単体テスト(CI の windows ランナーで実行する)。
+#include <windows.h>
+//
+#include <objbase.h>
+
 #include <cstdio>
 #include <string>
 
@@ -52,11 +56,27 @@ void TestComposition() {
   CHECK(c.text.empty() && c.cursor == 0 && c.ranges.empty());
 }
 
+std::wstring GuidString(const GUID& guid) {
+  wchar_t buf[39] = {};
+  return StringFromGUID2(guid, buf, 39) > 0 ? buf : L"";
+}
+
+void TestAttributeGuid() {
+  using kotori::AttributeGuid;
+  // docs/adr/0009 の GUID と一致する。
+  CHECK(GuidString(AttributeGuid(0)) == L"{7A1ECE80-81F1-4304-845D-B78E92E7D75D}");
+  CHECK(GuidString(AttributeGuid(1)) == L"{26898B1A-2ACF-4C7D-B666-11ED66C55053}");
+  CHECK(GuidString(AttributeGuid(2)) == L"{6786DF7D-0858-4447-87D1-ED6710C2E21B}");
+  // 知らない値は入力中。
+  CHECK(IsEqualGUID(AttributeGuid(3), AttributeGuid(0)));
+}
+
 }  // namespace
 
 int main() {
   TestUtf();
   TestComposition();
+  TestAttributeGuid();
   if (g_failures == 0) {
     std::puts("すべて通った");
   }

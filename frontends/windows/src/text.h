@@ -1,6 +1,8 @@
 // 文字列の変換とプリエディットの組み立て(TSF に依存しない部分。単体テストがある)。
 #pragma once
 
+#include <guiddef.h>
+
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -29,6 +31,10 @@ struct Composition {
   std::vector<Range> ranges;
   int32_t cursor = 0;
 };
+
+// IPC の SegmentAttribute の値(0 入力中、1 変換済み、2 注目文節)に対応する表示属性の GUID。
+// 知らない値は入力中として扱う。
+const GUID& AttributeGuid(uint32_t attribute);
 
 // 区間をつなぎ、エンジンのカーソル位置(Unicode の文字数)を UTF-16 の位置に直す。
 Composition MakeComposition(const std::vector<Segment>& segments, uint32_t cursor_chars);

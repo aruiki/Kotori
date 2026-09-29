@@ -22,6 +22,13 @@ $profileKeys = @(
   "HKLM:\SOFTWARE\WOW6432Node\Microsoft\CTF\TIP\$clsid\LanguageProfile\0x00000411\$profileGuid"
 )
 function Test-Profile { @($profileKeys | Where-Object { Test-Path $_ }).Count -gt 0 }
+# 表示属性の提供者のカテゴリ(GUID_TFCAT_DISPLAYATTRIBUTEPROVIDER)。
+$displayAttributeCategory = '{046B8C80-1647-40F7-9B21-B93B81AABC1B}'
+$categoryKeys = @(
+  "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$clsid\Category\Category\$displayAttributeCategory\$clsid",
+  "HKLM:\SOFTWARE\WOW6432Node\Microsoft\CTF\TIP\$clsid\Category\Category\$displayAttributeCategory\$clsid"
+)
+function Test-Category { @($categoryKeys | Where-Object { Test-Path $_ }).Count -gt 0 }
 $dllPath = (Resolve-Path $Dll).Path
 
 function Invoke-Regsvr32([string[]] $Arguments) {
@@ -34,6 +41,7 @@ $server = (Get-ItemProperty $clsidKey).'(default)'
 if ($server -ne $dllPath) { throw "InprocServer32 が $server になっている(期待は $dllPath)" }
 if ((Get-ItemProperty $clsidKey).ThreadingModel -ne 'Apartment') { throw 'ThreadingModel が Apartment でない' }
 if (-not (Test-Profile)) { throw "TSF のプロファイルがない: $profileKeys" }
+if (-not (Test-Category)) { throw "表示属性のカテゴリがない: $categoryKeys" }
 Write-Host "登録を確かめた: $Arch"
 
 Invoke-Regsvr32 @('/u', '/s', "`"$dllPath`"")

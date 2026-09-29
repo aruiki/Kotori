@@ -10,9 +10,11 @@
 namespace kotori {
 namespace {
 
-// TIP として名乗るカテゴリ。キーボード、ストアアプリ対応、タスクバーの入力モード表示。
-constexpr std::array<const GUID*, 3> kCategories = {
+// TIP として名乗るカテゴリ。キーボード、表示属性の提供、ストアアプリ対応、
+// タスクバーの入力モード表示。
+constexpr std::array<const GUID*, 4> kCategories = {
     &GUID_TFCAT_TIP_KEYBOARD,
+    &GUID_TFCAT_DISPLAYATTRIBUTEPROVIDER,
     &GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT,
     &GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT,
 };

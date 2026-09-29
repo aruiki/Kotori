@@ -1,6 +1,19 @@
 #include "text.h"
 
+#include "globals.h"
+
 namespace kotori {
+
+const GUID& AttributeGuid(uint32_t attribute) {
+  switch (attribute) {
+    case 1:
+      return kGuidAttrConverted;
+    case 2:
+      return kGuidAttrFocused;
+    default:
+      return kGuidAttrInput;
+  }
+}
 
 std::wstring Utf8ToWide(std::string_view s) {
   std::wstring out;

@@ -6,18 +6,21 @@
 //
 #include <msctf.h>
 
+#include <array>
 #include <memory>
 #include <optional>
 
+#include "display_attribute.h"
 #include "engine.h"
 
 namespace kotori {
 
 // キーをエンジンに送り、返ってきたプリエディットと確定文字列を TSF のコンポジションに書く。
-// フロントエンドは状態を持たない(REQ-11-1)。表示属性・候補ウィンドウ・左文脈は後続で足す。
+// フロントエンドは状態を持たない(REQ-11-1)。候補ウィンドウ・左文脈は後続で足す。
 class TextService final : public ITfTextInputProcessorEx,
                           public ITfKeyEventSink,
-                          public ITfCompositionSink {
+                          public ITfCompositionSink,
+                          public ITfDisplayAttributeProvider {
  public:
   TextService();
   TextService(const TextService&) = delete;
@@ -46,6 +49,10 @@ class TextService final : public ITfTextInputProcessorEx,
   // ITfCompositionSink
   STDMETHODIMP OnCompositionTerminated(TfEditCookie cookie, ITfComposition* composition) override;
 
+  // ITfDisplayAttributeProvider
+  STDMETHODIMP EnumDisplayAttributeInfo(IEnumTfDisplayAttributeInfo** out) override;
+  STDMETHODIMP GetDisplayAttributeInfo(REFGUID guid, ITfDisplayAttributeInfo** out) override;
+
   // 編集セッションの中で、エンジンの出力をコンポジションに書く。
   HRESULT UpdateComposition(TfEditCookie cookie, ITfContext* context, const EngineOutput& out);
 
@@ -57,6 +64,10 @@ class TextService final : public ITfTextInputProcessorEx,
   std::optional<EngineOutput> Send(WPARAM wparam, LPARAM lparam);
   void Apply(ITfContext* context, const EngineOutput& out);
   void ReleaseComposition();
+  void RegisterAttributeAtoms();
+  void SetAttributes(TfEditCookie cookie, ITfContext* context, ITfRange* range,
+                     const Composition& comp);
+  static void ClearAttributes(TfEditCookie cookie, ITfComposition* composition);
 
   LONG refs_ = 1;
   ITfThreadMgr* thread_mgr_ = nullptr;
@@ -64,6 +75,8 @@ class TextService final : public ITfTextInputProcessorEx,
   bool key_sink_advised_ = false;
   ITfComposition* composition_ = nullptr;
   std::unique_ptr<Engine> engine_;
+  // 表示属性の GUID を TSF に登録した番号。属性番号(0〜2)の順。
+  std::array<TfGuidAtom, kAttributeCount> attribute_atoms_{};
   // OnTestKeyDown で送ったキーの結果。直後の OnKeyDown で使う。
   std::optional<WPARAM> tested_key_;
   std::optional<EngineOutput> tested_output_;

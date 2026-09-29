@@ -96,6 +96,8 @@ STDMETHODIMP TextService::QueryInterface(REFIID riid, void** ppv) {
     *ppv = static_cast<ITfKeyEventSink*>(this);
   } else if (IsEqualIID(riid, IID_ITfCompositionSink)) {
     *ppv = static_cast<ITfCompositionSink*>(this);
+  } else if (IsEqualIID(riid, IID_ITfDisplayAttributeProvider)) {
+    *ppv = static_cast<ITfDisplayAttributeProvider*>(this);
   }
   if (*ppv == nullptr) {
     return E_NOINTERFACE;
@@ -126,6 +128,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_mgr, TfClientId client
   thread_mgr_ = thread_mgr;
   thread_mgr_->AddRef();
   client_id_ = client_id;
+  RegisterAttributeAtoms();
 
   ITfKeystrokeMgr* keystroke = nullptr;
   if (SUCCEEDED(thread_mgr_->QueryInterface(IID_ITfKeystrokeMgr,
@@ -161,7 +164,44 @@ STDMETHODIMP TextService::Deactivate() {
     thread_mgr_ = nullptr;
   }
   client_id_ = TF_CLIENTID_NULL;
+  attribute_atoms_.fill(TF_INVALID_GUIDATOM);
   return S_OK;
+}
+
+void TextService::RegisterAttributeAtoms() {
+  attribute_atoms_.fill(TF_INVALID_GUIDATOM);
+  ITfCategoryMgr* mgr = nullptr;
+  if (FAILED(CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER,
+                              IID_ITfCategoryMgr, reinterpret_cast<void**>(&mgr)))) {
+    return;  // 下線が出ないだけで、入力はできる。
+  }
+  for (ULONG i = 0; i < kAttributeCount; ++i) {
+    if (FAILED(mgr->RegisterGUID(AttributeGuid(i), &attribute_atoms_[i]))) {
+      attribute_atoms_[i] = TF_INVALID_GUIDATOM;
+    }
+  }
+  mgr->Release();
+}
+
+STDMETHODIMP TextService::EnumDisplayAttributeInfo(IEnumTfDisplayAttributeInfo** out) {
+  if (out == nullptr) {
+    return E_INVALIDARG;
+  }
+  *out = NewEnumDisplayAttributeInfo();
+  return *out != nullptr ? S_OK : E_OUTOFMEMORY;
+}
+
+STDMETHODIMP TextService::GetDisplayAttributeInfo(REFGUID guid, ITfDisplayAttributeInfo** out) {
+  if (out == nullptr) {
+    return E_INVALIDARG;
+  }
+  const ULONG index = AttributeIndex(guid);
+  if (index >= kAttributeCount) {
+    *out = nullptr;
+    return E_INVALIDARG;
+  }
+  *out = NewDisplayAttributeInfo(index);
+  return *out != nullptr ? S_OK : E_OUTOFMEMORY;
 }
 
 bool TextService::IsKeyboardOpen() const {
@@ -299,6 +339,7 @@ HRESULT TextService::UpdateComposition(TfEditCookie cookie, ITfContext* context,
   if (!out.committed.empty()) {
     ITfRange* range = nullptr;
     if (composition_ != nullptr && SUCCEEDED(composition_->GetRange(&range))) {
+      ClearAttributes(cookie, composition_);
       range->SetText(cookie, 0, out.committed.c_str(), static_cast<LONG>(out.committed.size()));
       range->Collapse(cookie, TF_ANCHOR_END);
       SetCaret(cookie, context, range);
@@ -325,6 +366,7 @@ HRESULT TextService::UpdateComposition(TfEditCookie cookie, ITfContext* context,
   const Composition comp = MakeComposition(out.preedit, out.cursor);
   if (comp.text.empty()) {
     if (composition_ != nullptr) {
+      ClearAttributes(cookie, composition_);
       ITfRange* range = nullptr;
       if (SUCCEEDED(composition_->GetRange(&range))) {
         range->SetText(cookie, 0, L"", 0);
@@ -366,6 +408,7 @@ HRESULT TextService::UpdateComposition(TfEditCookie cookie, ITfContext* context,
   }
   hr = range->SetText(cookie, 0, comp.text.c_str(), static_cast<LONG>(comp.text.size()));
   if (SUCCEEDED(hr)) {
+    SetAttributes(cookie, context, range, comp);
     // カーソルをプリエディットの中の位置に置く。
     ITfRange* caret = nullptr;
     if (SUCCEEDED(range->Clone(&caret))) {
@@ -381,16 +424,63 @@ HRESULT TextService::UpdateComposition(TfEditCookie cookie, ITfContext* context,
   return hr;
 }
 
-STDMETHODIMP TextService::OnCompositionTerminated(TfEditCookie, ITfComposition* composition) {
+STDMETHODIMP TextService::OnCompositionTerminated(TfEditCookie cookie,
+                                                  ITfComposition* composition) {
   // アプリがコンポジションを終えた(クリックでの確定など)。書かれた文字はそのまま残るので、
-  // エンジンの入力は取り消して状態をそろえる。
+  // 下線を消し、エンジンの入力は取り消して状態をそろえる。
   if (composition == composition_) {
+    ClearAttributes(cookie, composition_);
     ReleaseComposition();
     if (engine_ != nullptr) {
       engine_->SendCommand(KOTORI_COMMAND_CANCEL);
     }
   }
   return S_OK;
+}
+
+void TextService::SetAttributes(TfEditCookie cookie, ITfContext* context, ITfRange* range,
+                                const Composition& comp) {
+  ITfProperty* prop = nullptr;
+  if (FAILED(context->GetProperty(GUID_PROP_ATTRIBUTE, &prop))) {
+    return;
+  }
+  // 前の内容の属性を消してから、区間ごとに付け直す。
+  prop->Clear(cookie, range);
+  for (const Composition::Range& r : comp.ranges) {
+    const TfGuidAtom atom = attribute_atoms_[AttributeIndex(AttributeGuid(r.attribute))];
+    ITfRange* part = nullptr;
+    if (atom == TF_INVALID_GUIDATOM || r.begin >= r.end || FAILED(range->Clone(&part))) {
+      continue;
+    }
+    LONG moved = 0;
+    part->Collapse(cookie, TF_ANCHOR_START);
+    part->ShiftEnd(cookie, r.end, &moved, nullptr);
+    part->ShiftStart(cookie, r.begin, &moved, nullptr);
+    VARIANT v;
+    VariantInit(&v);
+    v.vt = VT_I4;
+    v.lVal = static_cast<LONG>(atom);
+    prop->SetValue(cookie, part, &v);
+    part->Release();
+  }
+  prop->Release();
+}
+
+void TextService::ClearAttributes(TfEditCookie cookie, ITfComposition* composition) {
+  ITfRange* range = nullptr;
+  if (composition == nullptr || FAILED(composition->GetRange(&range))) {
+    return;
+  }
+  ITfContext* context = nullptr;
+  ITfProperty* prop = nullptr;
+  if (SUCCEEDED(range->GetContext(&context))) {
+    if (SUCCEEDED(context->GetProperty(GUID_PROP_ATTRIBUTE, &prop))) {
+      prop->Clear(cookie, range);
+      prop->Release();
+    }
+    context->Release();
+  }
+  range->Release();
 }
 
 void TextService::ReleaseComposition() {

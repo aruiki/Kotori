@@ -29,6 +29,7 @@ endfunction()
 
 add_library(kotori_tip SHARED
   src/dllmain.cpp
+  src/display_attribute.cpp
   src/engine.cpp
   src/register.cpp
   src/text.cpp
@@ -47,3 +48,4 @@ target_link_libraries(kotori_tip PRIVATE
 # TSF に依存しない部分の単体テスト。
 add_executable(kotori_tip_tests tests/unit_tests.cpp src/text.cpp)
 kotori_warnings(kotori_tip_tests)
+target_link_libraries(kotori_tip_tests PRIVATE ole32)
