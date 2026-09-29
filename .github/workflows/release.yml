@@ -1,6 +1,7 @@
 # Windows 版のリリース(docs/SPEC.md 16.2 の「未署名バイナリ」)。
 # Actions の画面から手で実行する(バージョンを入れる)か、v で始まるタグを push すると動く。
 # サーバー・x64 と x86 の TIP・辞書・ライセンスを zip にまとめ、プレリリースとして公開する。
+# 配布物に関わるファイルを変える PR では、zip を作って Actions の成果物に置くだけにする(公開しない)。
 name: Release
 
 on:
@@ -11,6 +12,16 @@ on:
         required: true
   push:
     tags: ['v*']
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - about.hbs
+      - about.toml
+      - frontends/windows/*.cmd
+      - frontends/windows/*.ps1
+      - frontends/windows/notices.sh
+      - frontends/windows/README.release.txt
+      - frontends/windows/release-notes.md
 
 permissions:
   contents: write
@@ -24,7 +35,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 60
     env:
-      VERSION: ${{ inputs.version || github.ref_name }}
+      VERSION: ${{ inputs.version || (github.event_name == 'pull_request' && format('0.0.0-pr{0}', github.event.number)) || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -69,7 +80,15 @@ jobs:
           Set-Content -Encoding ascii "$zip.sha256" "$hash  $zip"
           "ZIP=$zip" >> $env:GITHUB_ENV
           "TAG=v$v" >> $env:GITHUB_ENV
-      - uses: softprops/action-gh-release@v2
+      - if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ZIP }}
+          path: |
+            ${{ env.ZIP }}
+            ${{ env.ZIP }}.sha256
+      - if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
           name: Kotori ${{ env.TAG }}

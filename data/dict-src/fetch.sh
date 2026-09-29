@@ -21,6 +21,7 @@ fi
 
 mkdir -p "$out"
 while read -r expected name; do
+  name="${name%$'\r'}"
   [ -z "$name" ] && continue
   dest="$out/$name"
   if [ -f "$dest" ] && [ "$(sha256 "$dest")" = "$expected" ]; then
