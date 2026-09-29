@@ -3,6 +3,7 @@
 //! M1 では変換の流れ(入力 → 読み → ラティス → 文節 → 候補)と、それを対話的に見る
 //! `repl` と、評価セットの一括実行(14.1、[`eval`])を持つ。
 
+pub mod bench;
 pub mod eval;
 
 use std::fmt::Write as _;

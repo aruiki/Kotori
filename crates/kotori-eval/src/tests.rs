@@ -180,3 +180,57 @@ fn rerank_failure_keeps_lattice_order() {
     assert_eq!(r.results[0].top[..2], ["今日は", "京は"]);
     assert_eq!(r.lm_failures, 1);
 }
+
+#[test]
+fn latency_percentiles_use_nearest_rank() {
+    use crate::bench::summarize;
+    assert_eq!(summarize(&[]), None);
+    let samples: Vec<f64> = (1..=100).rev().map(f64::from).collect();
+    let l = summarize(&samples).unwrap();
+    assert_eq!(
+        (l.samples, l.p50, l.p95, l.p99, l.max),
+        (100, 50.0, 95.0, 99.0, 100.0)
+    );
+    let l = summarize(&[3.0]).unwrap();
+    assert_eq!((l.p50, l.p95, l.max), (3.0, 3.0, 3.0));
+}
+
+#[test]
+fn bench_requests_follow_req_6_1_conditions() {
+    use crate::bench::{measure, requests, CONTEXT_CHARS, READING_CHARS};
+    use crate::eval::Item;
+    let long = "キョウハテンキ".repeat(3);
+    let context = "あ".repeat(70) + "い";
+    let items = vec![
+        Item {
+            index: "1".into(),
+            context_text: context,
+            input: long.clone(),
+            expected_output: vec![],
+        },
+        // 読みが 20 文字に満たない問題は使わない。
+        Item {
+            index: "2".into(),
+            context_text: String::new(),
+            input: "キョウハ".into(),
+            expected_output: vec![],
+        },
+    ];
+    let reqs = requests(&dict(), &items, 3);
+    assert_eq!(reqs.len(), 1);
+    let r = &reqs[0];
+    assert_eq!(r.reading.chars().count(), READING_CHARS);
+    assert!(long.starts_with(&r.reading));
+    assert_eq!(r.left_context.chars().count(), CONTEXT_CHARS);
+    assert!(r.left_context.ends_with('い'));
+    assert_eq!(r.candidates.len(), 3);
+
+    let mut lm = FakeLm {
+        fail: false,
+        seen: vec![],
+    };
+    assert_eq!(measure(&mut lm, &reqs, 4).len(), 4);
+    assert_eq!(lm.seen.len(), 5, "最初の1巡は計測しない");
+    lm.fail = true;
+    assert!(measure(&mut lm, &reqs, 2).is_empty());
+}
