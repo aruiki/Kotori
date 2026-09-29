@@ -5,6 +5,10 @@
 //! パイプの ACL と接続元の確認はサーバーと同じ(REQ-10-4、docs/adr/0011)。
 //! 今は受けた内容をログに出すだけで、ウィンドウは作らない(作業カード 14)。
 
+// 位置の計算はウィンドウを作る変更(作業カード 14 の後半)で使う。
+#[allow(dead_code)]
+mod placement;
+
 #[cfg(windows)]
 fn main() -> anyhow::Result<()> {
     use anyhow::Context;

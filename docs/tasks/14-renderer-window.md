@@ -15,7 +15,7 @@ renderer が受けた `Show` / `Hide` で、候補ウィンドウを出し・更
 - Microsoft のドキュメント: Per-Monitor V2、`WS_EX_NOACTIVATE`、`DwmSetWindowAttribute`
 
 ## 手順
-1. `src/placement.rs`(OS に依存しない): モニタの作業領域、キャレットの矩形、ウィンドウの大きさから
+1. (済)`src/placement.rs`(OS に依存しない): モニタの作業領域、キャレットの矩形、ウィンドウの大きさから
    左上の位置を返す `place(work: Rect, caret: Rect, size: Size) -> Point`。既定はキャレットの下。
    下にはみ出すならキャレットの上、右にはみ出すなら左へ寄せる。入力中の文字(キャレットの矩形)と
    重ならない。
