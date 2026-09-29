@@ -33,6 +33,18 @@ jobs:
       - uses: taiki-e/install-action@just
       - run: just ci
 
+  licenses:
+    # 依存のライセンスが about.toml で認めたものだけか(REQ-16-1、REQ-16-2)。
+    name: licenses
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+      - run: cargo about generate --workspace --locked about.hbs -o /dev/null
+
   msrv:
     name: MSRV (1.80)
     runs-on: ubuntu-latest

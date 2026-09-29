@@ -38,6 +38,10 @@ fetch-dict:
 dict: fetch-dict
     cargo run --release --locked -p kotori-dictc -- data/dict-src/mozc target/kotori/system.dict
 
+# 配布物に同梱する THIRD_PARTY_NOTICES を作る(16.1、REQ-16-1)。cargo-about が要る
+notices: fetch-dict
+    bash frontends/windows/notices.sh target/kotori/THIRD_PARTY_NOTICES.txt
+
 # 読みを入れて変換結果と候補を見る(M1)。先に just dict で辞書を作る
 repl:
     cargo run --release --locked -p kotori-eval -- repl target/kotori/system.dict

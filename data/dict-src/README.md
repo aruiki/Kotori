@@ -20,6 +20,7 @@ just fetch-dict   # data/dict-src/mozc/ に取得する
 - `connection_single_column.txt`: 1 行目が品詞数 N、以降 N×N 個の連接コスト(左の右文脈 ID が行)
 - `suffix.txt`: 接尾辞の語彙
 - ライセンス: IPAdic 由来(NAIST)と沖縄辞書を含む。条文は `README.txt` にあり、
-  生成した辞書を配布するときはこれを同梱する(16 章)
+  生成した辞書を配布するときはこれと Mozc の `LICENSE`(BSD-3-Clause、`fetch.sh` が取得)を
+  同梱する(16 章、`just notices`、`docs/licenses.md`)
 
 補助語彙(SudachiDict)、固有名詞、絵文字、郵便番号は M1 の範囲外で、後から加える。

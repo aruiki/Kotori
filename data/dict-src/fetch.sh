@@ -36,4 +36,18 @@ while read -r expected name; do
   fi
   mv "$dest.part" "$dest"
 done < "$here/mozc.sha256"
+# Mozc 本体のライセンス(BSD-3-Clause)。辞書を配布するときに同梱する(16.1)。
+MOZC_LICENSE_SHA256="44cdd923b91ea9199293abecc2762c70c87dbf1e581c027a94c416368d1a648c"
+dest="$out/LICENSE"
+if ! { [ -f "$dest" ] && [ "$(sha256 "$dest")" = "$MOZC_LICENSE_SHA256" ]; }; then
+  echo "取得: LICENSE" >&2
+  curl -fsSL --retry 3 -o "$dest.part" "https://raw.githubusercontent.com/google/mozc/${MOZC_COMMIT}/LICENSE"
+  actual="$(sha256 "$dest.part")"
+  if [ "$actual" != "$MOZC_LICENSE_SHA256" ]; then
+    rm -f "$dest.part"
+    echo "SHA-256 が一致しない: LICENSE (期待 $MOZC_LICENSE_SHA256, 実際 $actual)" >&2
+    exit 1
+  fi
+  mv "$dest.part" "$dest"
+fi
 echo "辞書ソースを $out に用意した" >&2
