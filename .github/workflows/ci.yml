@@ -64,6 +64,9 @@ jobs:
       RUSTFLAGS: -C target-feature=+crt-static
     steps:
       - uses: actions/checkout@v4
+        with:
+          # インストールの確認で作るサーバーが kotori-lm(third_party/llama.cpp)を使う
+          submodules: true
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
