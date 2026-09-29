@@ -383,3 +383,18 @@ fn function_keys_change_script() {
     assert_eq!(out.candidate_window.unwrap().candidates[0], "ｈａ");
     assert_eq!(out.preedit[1].0, "は");
 }
+
+#[test]
+fn arrows_move_the_cursor_while_composing() {
+    let mut s = session();
+    type_text(&mut s, "kaki");
+    let out = press(&mut s, "Left");
+    assert_eq!(out.cursor, 1);
+    assert_eq!(s.state(), State::Composing);
+    let out = type_text(&mut s, "ku");
+    assert_eq!(preedit(&out), [("かくき", Attribute::Input)]);
+    assert_eq!(out.cursor, 2);
+    let out = press(&mut s, "Right");
+    assert_eq!(out.cursor, 3);
+    assert_eq!(press(&mut s, "Enter").committed, "かくき");
+}

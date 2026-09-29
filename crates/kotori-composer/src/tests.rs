@@ -146,3 +146,36 @@ proptest! {
         }
     }
 }
+
+#[test]
+fn cursor_moves_between_kana_for_insert_and_delete() {
+    let mut c = compose("kaki");
+    assert_eq!(c.cursor(), 2);
+    c.move_left();
+    assert_eq!(c.cursor(), 1);
+    // カーソルの位置に入れる。保留中のキーもその位置に出る。
+    c.push('k');
+    assert_eq!((c.reading().as_str(), c.cursor()), ("カkキ", 2));
+    c.push('u');
+    assert_eq!((c.reading().as_str(), c.cursor()), ("カクキ", 2));
+    assert_eq!(c.raw_keys(), "kakuki");
+    // カーソルの前を消す。
+    c.backspace();
+    assert_eq!((c.reading().as_str(), c.cursor()), ("カキ", 1));
+    // 端より先へは動かない。
+    c.move_left();
+    c.move_left();
+    c.backspace();
+    assert_eq!((c.reading().as_str(), c.cursor()), ("カキ", 0));
+    c.move_right();
+    c.move_right();
+    c.move_right();
+    assert_eq!(c.cursor(), 2);
+    // 動かすと保留中のキーは確定する。
+    c.move_left();
+    c.push('n');
+    c.move_right();
+    assert_eq!((c.reading().as_str(), c.cursor()), ("カンキ", 3));
+    c.clear();
+    assert_eq!(c.cursor(), 0);
+}
