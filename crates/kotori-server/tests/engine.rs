@@ -160,3 +160,23 @@ fn commands_commit_and_cancel() {
         other => panic!("{other:?}"),
     }
 }
+
+#[test]
+fn dict_candidates_prefers_exe_dir() {
+    use std::path::Path;
+    let exe = Path::new("/opt").join("kotori").join("kotori-server");
+    let c = kotori_server::dict_candidates(Some(&exe));
+    let next_to_exe = Path::new("/opt")
+        .join("kotori")
+        .join("data")
+        .join("system.dict");
+    assert_eq!(c[0], next_to_exe);
+    assert_eq!(c.get(1), kotori_server::default_dict_path().as_ref());
+    // 実行ファイルの場所が分からなければ既定の置き場所だけ。
+    assert_eq!(
+        kotori_server::dict_candidates(None),
+        kotori_server::default_dict_path()
+            .into_iter()
+            .collect::<Vec<_>>()
+    );
+}

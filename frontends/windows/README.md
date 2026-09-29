@@ -27,6 +27,10 @@ Copy-Item target/release/kotori-server.exe, build-tip/Release/kotori_tip.dll $di
 regsvr32 "$dir\kotori_tip.dll"
 ```
 
+サーバーは `--dict` がなければ、自分と同じフォルダの `data\system.dict` を読む
+(なければ `%ProgramFiles%\Kotori\data\system.dict`)。`kotori-server.exe` と `data`
+フォルダは同じフォルダに置く。
+
 設定の「言語」→「日本語」→「キーボードの追加」で Kotori を選ぶ。サーバーは最初のキーで
 自動で起動する(REQ-4-1)。辞書の読み込み(1 秒弱)が終わるまでは直接入力になる。
 
