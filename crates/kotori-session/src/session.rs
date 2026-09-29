@@ -136,6 +136,13 @@ impl Session {
         self.output(consumed, committed)
     }
 
+    /// フロントエンドから届いたコマンド(4.2 の SendCommand の確定・取消など)を実行する。
+    pub fn command(&mut self, command: Command, converter: &dyn Converter) -> Output {
+        let mut committed = String::new();
+        self.run(command, converter, &mut committed);
+        self.output(true, committed)
+    }
+
     fn run(&mut self, command: Command, converter: &dyn Converter, committed: &mut String) {
         match command {
             Command::Convert | Command::ConvertPrev => {
