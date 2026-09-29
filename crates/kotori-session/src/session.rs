@@ -10,6 +10,7 @@ use kotori_composer::{Composer, RomajiTable};
 
 use crate::converter::{to_hiragana, Converter, SegmentCandidates};
 use crate::keymap::{Command, Key, Keymap, State};
+use kotori_lattice::to_halfwidth_katakana;
 
 /// 候補ウィンドウの1ページの件数(11.3)。
 pub const PAGE_SIZE: usize = 9;
@@ -255,9 +256,14 @@ impl Session {
                     c.window_open = false;
                 }
             }
+            Command::ToHiragana
+            | Command::ToFullKatakana
+            | Command::ToHalfKatakana
+            | Command::ToFullAscii
+            | Command::ToHalfAscii => self.change_script(command),
             Command::ShrinkSegment => self.resize_focused(-1, converter),
             Command::ExpandSegment => self.resize_focused(1, converter),
-            // カーソル移動、予測、文字種変換、学習の削除、確定アンドゥは
+            // カーソル移動、予測、学習の削除、確定アンドゥは
             // 後続の変更で入れる。キーは飲み込む。
             _ => {}
         }
@@ -275,6 +281,58 @@ impl Session {
                 seg.selected = (seg.selected as isize + delta).rem_euclid(n) as usize;
             }
         }
+    }
+
+    /// 文字種変換(F6〜F10、11.2)。入力中なら読み全体を1文節として変換中にし、
+    /// 変換中なら注目文節の表記を置き換える(候補の先頭に置いて選ぶ)。
+    fn change_script(&mut self, command: Command) {
+        if self.conversion.is_none() {
+            self.composer.flush();
+            let reading = self.composer.reading();
+            if reading.is_empty() {
+                return;
+            }
+            self.conversion = Some(Conversion {
+                segments: vec![Segment {
+                    len: reading.chars().count(),
+                    candidates: Vec::new(),
+                    selected: 0,
+                }],
+                reading,
+                focus: 0,
+                window_open: false,
+            });
+        }
+        let units = self.composer.units();
+        let Some(c) = &mut self.conversion else {
+            return;
+        };
+        let start: usize = c.segments[..c.focus].iter().map(|s| s.len).sum();
+        let Some(seg) = c.segments.get_mut(c.focus) else {
+            return;
+        };
+        let end = start + seg.len;
+        let kana: String = c.reading.chars().skip(start).take(seg.len).collect();
+        // 文節の生キーは、始まりが文節の中にあるかなの生キーをつなげたもの。
+        let mut keys = String::new();
+        let mut pos = 0;
+        for u in units {
+            if (start..end).contains(&pos) {
+                keys.push_str(&u.keys);
+            }
+            pos += u.kana.chars().count();
+        }
+        let text = match command {
+            Command::ToHiragana => to_hiragana(&kana),
+            Command::ToFullKatakana => kana,
+            Command::ToHalfKatakana => to_halfwidth_katakana(&kana),
+            Command::ToFullAscii => to_fullwidth_ascii(&keys),
+            _ => keys,
+        };
+        seg.candidates.retain(|t| *t != text);
+        seg.candidates.insert(0, text);
+        seg.selected = 0;
+        c.window_open = false;
     }
 
     /// 注目文節の読みを `delta` 文字だけ伸縮し、読み全体を変換し直す(11.2、REQ-5-9)。
@@ -378,4 +436,15 @@ impl Session {
         }
         out
     }
+}
+
+/// ASCII の印字可能文字を全角に写す(空白は全角の空白)。
+fn to_fullwidth_ascii(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            ' ' => '\u{3000}',
+            '!'..='~' => char::from_u32(c as u32 + 0xFEE0).unwrap_or(c),
+            _ => c,
+        })
+        .collect()
 }
