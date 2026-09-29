@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Mozc 単体(//converter:converter_main)で AJIMEE-Bench の Acc@1 を測る(docs/adr/0012 段階 3)。
+"""Mozc(//converter:converter_main)で AJIMEE-Bench の Acc@1 を測る(docs/adr/0012 段階 3)。
 
-使い方: python3 mozc/eval_baseline.py <converter_main> [--out report.json]
+使い方: python3 mozc/eval_baseline.py <converter_main> [--out report.json] [--whole]
   <converter_main> は bazel-bin/converter/converter_main。データは runfiles の中にあるので、
   runfiles の _main を作業ディレクトリにして起動する。
 第 1 候補は、各文節の第 1 候補をつないだ文。左文脈は使わない(Rust 版の M1 と同じ条件)。
+LM リランク(docs/adr/0013)は環境変数 KOTORI_ZENZ_MODEL などで有効にする(lm_rewriter.h)。
+--whole は全体を 1 文節にリサイズし、文全体の候補の第 1 候補を見る。
 """
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -22,12 +25,14 @@ SEG = re.compile(r"^-{10} Segment \d+/\d+ \[.*\] -{10}$")
 CAND = re.compile(r"^\s+0/\d+ (.*)$")
 
 
-def convert(exe: Path, cwd: Path, reading: str) -> str:
-    out = subprocess.run(
-        [str(exe.resolve())],
-        input=f"start {reading}\nquit\n",
-        capture_output=True, text=True, cwd=cwd, timeout=60,
+def run(exe: Path, cwd: Path, script: str, env=None) -> str:
+    return subprocess.run(
+        [str(exe.resolve())], input=script, capture_output=True, text=True,
+        cwd=cwd, timeout=120, env={**os.environ, **(env or {})},
     ).stdout
+
+
+def first_candidates(out: str) -> str:
     parts, want = [], False
     for line in out.splitlines():
         if SEG.match(line):
@@ -40,11 +45,24 @@ def convert(exe: Path, cwd: Path, reading: str) -> str:
     return "".join(parts)
 
 
+def convert(exe: Path, cwd: Path, reading: str, whole: bool = False) -> str:
+    if whole:
+        # 全体を 1 文節にして文全体の候補を出す。先頭文節の長さは LM なしで先に調べる。
+        first = run(exe, cwd, f"start {reading}\nquit\n", {"KOTORI_LM_K": "0"}).splitlines()
+        heads = [i for i, l in enumerate(first) if SEG.match(l)]
+        if len(heads) > 1:
+            offset = len(reading) - len(first[heads[0] + 1])
+            out = run(exe, cwd, f"start {reading}\nresize 0 {offset}\nquit\n")
+            return first_candidates(out[out.rindex("---------- Segment 0/1"):])
+    return first_candidates(run(exe, cwd, f"start {reading}\nquit\n"))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("converter_main")
     ap.add_argument("--data", default="eval/data/ajimee-bench.json")
     ap.add_argument("--out", default="")
+    ap.add_argument("--whole", action="store_true", help="全体を 1 文節にして文全体の候補を並べ替える")
     args = ap.parse_args()
 
     exe = Path(args.converter_main)
@@ -52,7 +70,7 @@ def main() -> int:
     items = json.load(open(args.data, encoding="utf-8"))
     rows, hit = [], 0
     for it in items:
-        top = convert(exe, cwd, kata_to_hira(it["input"]))
+        top = convert(exe, cwd, kata_to_hira(it["input"]), args.whole)
         ok = top in it["expected_output"]
         hit += ok
         rows.append({"index": it["index"], "input": it["input"], "top1": top,
