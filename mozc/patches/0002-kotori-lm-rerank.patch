@@ -1,8 +1,8 @@
 diff --git a/src/MODULE.bazel b/src/MODULE.bazel
-index eb74e536e..14b8da003 100644
+index eb74e536e..2e53c117e 100644
 --- a/src/MODULE.bazel
 +++ b/src/MODULE.bazel
-@@ -366,6 +366,15 @@ http_archive(
+@@ -366,6 +366,39 @@ http_archive(
      ],
  )
  
@@ -10,21 +10,49 @@ index eb74e536e..14b8da003 100644
 +http_archive(
 +    name = "llama_cpp",
 +    build_file = "@//bazel:BUILD.llama_cpp.bazel",
-+    sha256 = "a6861d549427f814dc591c439e08206f67ffaba0248344d421589abf18199e67",
-+    strip_prefix = "llama.cpp-7fe450e19305b828c199d602c23a8337aaa1f03b",
-+    url = "https://github.com/ggml-org/llama.cpp/archive/7fe450e19305b828c199d602c23a8337aaa1f03b.tar.gz",
++    sha256 = "8003a54d576f221ef425b499da38282206f755e82fda4a69be70abbbe71a616f",
++    strip_prefix = "llama.cpp-b11259",
++    url = "https://github.com/ggml-org/llama.cpp/archive/refs/tags/b11259.tar.gz",
++)
++
++# llama.cpp の公式 Windows ビルド(Vulkan 版、MIT)。MSI に同梱し、実行時に読み込む。
++http_archive(
++    name = "llama_cpp_win",
++    build_file_content = """
++filegroup(
++    name = "runtime",
++    srcs = glob(["ggml*.dll"]) + ["llama.dll", "libomp.dll"],
++    visibility = ["//visibility:public"],
++)
++exports_files(["llama.dll"])
++""",
++    sha256 = "afb3ddfc5f41413ec38ffb837ffbb81dfa8f1b23f3a775a03ba2afc1f7ce9610",
++    url = "https://github.com/ggml-org/llama.cpp/releases/download/b11259/llama-b11259-bin-win-vulkan-x64.zip",
++)
++
++# WiX の UI 拡張(Kotori のインストーラの画面。WiX と同じ 5.0.2)。
++http_archive(
++    name = "wixui_ext",
++    build_file_content = 'exports_files(["wixext5/WixToolset.UI.wixext.dll"])',
++    sha256 = "5ef2c707614b9f70b6bbadd2d4abcb4124efee215e9b16bfbc80113079a604c7",
++    type = "zip",
++    url = "https://api.nuget.org/v3-flatcontainer/wixtoolset.ui.wixext/5.0.2/wixtoolset.ui.wixext.5.0.2.nupkg",
 +)
 +
  # Japanese Usage Dictionary (2025-01-25)
  JA_USAGE_DICT_TAG = "2025-01-25"
  
 diff --git a/src/bazel/BUILD.llama_cpp.bazel b/src/bazel/BUILD.llama_cpp.bazel
-new file mode 100755
-index 000000000..2c3b3332a
+new file mode 100644
+index 000000000..cbd6e6dc7
 --- /dev/null
 +++ b/src/bazel/BUILD.llama_cpp.bazel
-@@ -0,0 +1,109 @@
-+# llama.cpp(MIT)の CPU 版。x86-64 の AVX2 を前提にする(Kotori は 64 ビットの Windows だけ)。
+@@ -0,0 +1,118 @@
++# llama.cpp(MIT)。Kotori の LM リランク用(docs/adr/0013、0016)。
++#
++# Windows: ヘッダーだけを使い、実行時にインストール先の公式ビルド(llama.dll、ggml*.dll。
++#          GPU は Vulkan)を読み込む(rewriter/llama_runtime.cc)。
++# それ以外(Linux での評価): CPU 版を静的にリンクする。x86-64 の AVX2 を前提にする。
 +load("@bazel_skylib//rules:write_file.bzl", "write_file")
 +load("@rules_cc//cc:defs.bzl", "cc_library")
 +
@@ -41,7 +69,7 @@ index 000000000..2c3b3332a
 +    content = [
 +        "#pragma once",
 +        "#define LLAMA_VERSION \"kotori\"",
-+        "#define LLAMA_COMMIT \"7fe450e\"",
++        "#define LLAMA_COMMIT \"b11259\"",
 +        "",
 +    ],
 +)
@@ -52,36 +80,25 @@ index 000000000..2c3b3332a
 +    content = [
 +        "#pragma once",
 +        "#define GGML_VERSION \"kotori\"",
-+        "#define GGML_COMMIT \"7fe450e\"",
++        "#define GGML_COMMIT \"b11259\"",
 +        "",
 +    ],
 +)
 +
-+_DEFINES = [
-+    "GGML_USE_CPU",
-+    "GGML_SCHED_MAX_COPIES=4",
-+    "_GNU_SOURCE",
-+    "_XOPEN_SOURCE=600",
-+    "_CRT_SECURE_NO_WARNINGS",
-+]
-+
-+_COPTS = select({
-+    "@platforms//os:windows": [
-+        "-mavx2",
-+        "-mfma",
-+        "-mf16c",
-+        "-Wno-everything",
++cc_library(
++    name = "headers",
++    hdrs = glob([
++        "include/*.h",
++        "ggml/include/*.h",
++    ]),
++    includes = [
++        "ggml/include",
++        "include",
 +    ],
-+    "//conditions:default": [
-+        "-mavx2",
-+        "-mfma",
-+        "-mf16c",
-+        "-w",
-+    ],
-+})
++)
 +
 +cc_library(
-+    name = "ggml",
++    name = "ggml_static",
 +    srcs = glob([
 +        "ggml/src/*.c",
 +        "ggml/src/*.cpp",
@@ -89,6 +106,8 @@ index 000000000..2c3b3332a
 +        "ggml/src/ggml-cpu/*.c",
 +        "ggml/src/ggml-cpu/*.cpp",
 +        "ggml/src/ggml-cpu/*.h",
++        "ggml/src/ggml-cpu/tiled/*.cpp",
++        "ggml/src/ggml-cpu/tiled/*.h",
 +        "ggml/src/ggml-cpu/amx/*.cpp",
 +        "ggml/src/ggml-cpu/amx/*.h",
 +        "ggml/src/ggml-cpu/llamafile/*.cpp",
@@ -96,42 +115,56 @@ index 000000000..2c3b3332a
 +        "ggml/src/ggml-cpu/arch/x86/*.c",
 +        "ggml/src/ggml-cpu/arch/x86/*.cpp",
 +    ]) + [":ggml_version_h"],
-+    hdrs = glob(["ggml/include/*.h"]),
-+    copts = _COPTS,
-+    defines = _DEFINES,
++    copts = [
++        "-mavx2",
++        "-mfma",
++        "-mf16c",
++        "-w",
++    ],
++    defines = [
++        "GGML_USE_CPU",
++        "GGML_SCHED_MAX_COPIES=4",
++        "_GNU_SOURCE",
++        "_XOPEN_SOURCE=600",
++    ],
 +    includes = [
-+        "ggml/include",
 +        "ggml/src",
 +        "ggml/src/ggml-cpu",
 +    ],
-+    linkopts = select({
-+        "@platforms//os:windows": [],
-+        "//conditions:default": [
-+            "-lpthread",
-+            "-lm",
-+            "-ldl",
-+        ],
-+    }),
++    linkopts = [
++        "-lpthread",
++        "-lm",
++        "-ldl",
++    ],
++    textual_hdrs = glob(
++        ["ggml/src/**/*.inc"],
++        allow_empty = True,
++    ),
++    deps = [":headers"],
 +)
 +
 +cc_library(
-+    name = "llama",
++    name = "llama_static",
 +    srcs = glob([
 +        "src/*.cpp",
 +        "src/*.h",
 +        "src/models/*.cpp",
 +        "src/models/*.h",
 +    ]) + [":llama_version_h"],
-+    hdrs = glob(["include/*.h"]),
-+    copts = select({
-+        "@platforms//os:windows": ["-Wno-everything"],
-+        "//conditions:default": ["-w"],
-+    }),
-+    includes = [
-+        "include",
-+        "src",
++    copts = ["-w"],
++    includes = ["src"],
++    deps = [
++        ":ggml_static",
++        ":headers",
 +    ],
-+    deps = [":ggml"],
++)
++
++alias(
++    name = "llama",
++    actual = select({
++        "@platforms//os:windows": ":headers",
++        "//conditions:default": ":llama_static",
++    }),
 +)
 diff --git a/src/converter/immutable_converter.cc b/src/converter/immutable_converter.cc
 index 448b6c25a..d62a1ff22 100644
@@ -218,15 +251,16 @@ index dff166325..b6ba3fe95 100644
  };
  
 diff --git a/src/gui/config_dialog/config_dialog.cc b/src/gui/config_dialog/config_dialog.cc
-index abbf55d68..1f82df809 100644
+index abbf55d68..81d6ee32c 100644
 --- a/src/gui/config_dialog/config_dialog.cc
 +++ b/src/gui/config_dialog/config_dialog.cc
-@@ -30,7 +30,15 @@
+@@ -30,7 +30,16 @@
  // Qt component of configure dialog for Mozc
  #include "gui/config_dialog/config_dialog.h"
  
 +#include <QCheckBox>
 +#include <QComboBox>
++#include <QFrame>
 +#include <QFileDialog>
 +#include <QHBoxLayout>
 +#include <QLabel>
@@ -237,17 +271,75 @@ index abbf55d68..1f82df809 100644
  #include <algorithm>
  #include <cstdint>
  #include <istream>
-@@ -152,6 +160,61 @@ ConfigDialog::ConfigDialog()
+@@ -83,6 +92,33 @@ void Connect(const QList<T *> &objects, const char *signal,
+ 
+ namespace mozc {
+ namespace gui {
++namespace {
++
++// Fluent 2(Windows 11)の配色と形。ブランド色 #0F6CBD、角丸 4px/8px、Segoe UI Variable。
++constexpr char kKotoriFluentStyle[] = R"(
++QDialog { background: #F3F3F3; font-family: "Segoe UI Variable Text", "Yu Gothic UI"; font-size: 10pt; color: #1A1A1A; }
++QTabWidget::pane { border: 1px solid #E5E5E5; border-radius: 8px; background: #FBFBFB; top: -1px; }
++QTabBar::tab { background: transparent; color: #5C5C5C; padding: 8px 14px; margin-right: 2px; border: none; }
++QTabBar::tab:hover { color: #1A1A1A; background: #EAEAEA; border-radius: 4px; }
++QTabBar::tab:selected { color: #1A1A1A; font-weight: 600; border-bottom: 3px solid #0F6CBD; }
++QGroupBox { background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 8px; margin-top: 18px; padding: 12px 10px 8px 10px; font-weight: 600; }
++QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 4px; color: #1A1A1A; }
++QPushButton { background: #FFFFFF; border: 1px solid #D1D1D1; border-bottom-color: #B3B3B3; border-radius: 4px; padding: 5px 14px; min-height: 20px; }
++QPushButton:hover { background: #F6F6F6; }
++QPushButton:pressed { background: #EBEBEB; color: #5C5C5C; }
++QPushButton:default { background: #0F6CBD; color: #FFFFFF; border: 1px solid #115EA3; }
++QPushButton:default:hover { background: #115EA3; }
++QPushButton:disabled { background: #F0F0F0; color: #A0A0A0; border-color: #E0E0E0; }
++QComboBox, QLineEdit, QSpinBox { background: #FFFFFF; border: 1px solid #D1D1D1; border-bottom: 1px solid #8A8A8A; border-radius: 4px; padding: 4px 8px; min-height: 20px; }
++QComboBox:focus, QLineEdit:focus, QSpinBox:focus { border-bottom: 2px solid #0F6CBD; }
++QComboBox::drop-down { border: none; width: 24px; }
++QComboBox QAbstractItemView { background: #FFFFFF; border: 1px solid #E5E5E5; selection-background-color: #EBF3FC; selection-color: #1A1A1A; }
++QCheckBox, QRadioButton { spacing: 8px; }
++QLabel#kotoriNote { color: #5C5C5C; font-size: 9pt; }
++QFrame#kotoriCard { background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 8px; }
++)";
++
++}  // namespace
+ 
+ using ::mozc::config::StatsConfigUtil;
+ 
+@@ -152,6 +188,91 @@ ConfigDialog::ConfigDialog()
    symbolsSettingComboBox->addItem(QString::fromUtf8("「」／"));
    symbolsSettingComboBox->addItem(QString::fromUtf8("[]・"));
  
 +  // Kotori: 「AI変換」タブ(docs/adr/0013)。
 +  {
 +    auto *page = new QWidget();
-+    auto *layout = new QVBoxLayout(page);
++    auto *outer = new QVBoxLayout(page);
++    outer->setContentsMargins(16, 16, 16, 16);
++    auto *title = new QLabel(QString::fromUtf8("AI 変換"), page);
++    title->setStyleSheet("font-size: 16pt; font-weight: 600;");
++    outer->addWidget(title);
++    auto *lead = new QLabel(QString::fromUtf8(
++        "AI が文全体と前の文を読んで、変換を選び直します。処理はすべてこの PC の中で行います。"), page);
++    lead->setObjectName("kotoriNote");
++    lead->setWordWrap(true);
++    outer->addWidget(lead);
++    auto *card = new QFrame(page);
++    card->setObjectName("kotoriCard");
++    auto *layout = new QVBoxLayout(card);
++    layout->setContentsMargins(16, 14, 16, 14);
++    layout->setSpacing(10);
++    outer->addWidget(card);
 +    kotoriLmEnabledCheckBox_ = new QCheckBox(
 +        QString::fromUtf8("AI(zenz)で変換候補を並べ替える"), page);
 +    layout->addWidget(kotoriLmEnabledCheckBox_);
++    auto *model_row = new QHBoxLayout();
++    model_row->addWidget(new QLabel(QString::fromUtf8("AI モデル"), page));
++    kotoriLmModelComboBox_ = new QComboBox(page);
++    kotoriLmModelComboBox_->addItem(QString::fromUtf8("自動(おすすめ。GPU があれば LLM も使う)"));
++    kotoriLmModelComboBox_->addItem(QString::fromUtf8("zenz のみ(軽い。CPU でも速い)"));
++    kotoriLmModelComboBox_->addItem(QString::fromUtf8("zenz + LLM(高精度。GPU 向け)"));
++    model_row->addWidget(kotoriLmModelComboBox_);
++    model_row->addStretch();
++    layout->addLayout(model_row);
 +    auto *quality_row = new QHBoxLayout();
 +    quality_row->addWidget(new QLabel(QString::fromUtf8("変換の品質"), page));
 +    kotoriLmQualityComboBox_ = new QComboBox(page);
@@ -262,30 +354,36 @@ index abbf55d68..1f82df809 100644
 +        "Low は zenz-v2.5-xsmall-q8_0.gguf、Unreal は zenz-v2.5-medium-q8_0.gguf を"
 +        "インストール先に置くと使う。ないときは標準のモデルで動く。"), page);
 +    quality_note->setWordWrap(true);
++    quality_note->setObjectName("kotoriNote");
 +    layout->addWidget(quality_note);
-+    layout->addWidget(new QLabel(QString::fromUtf8("モデルのファイル(GGUF)"), page));
++    layout->addWidget(new QLabel(QString::fromUtf8("LLM のファイル(GGUF、空欄なら同梱のもの)"), page));
 +    auto *row = new QHBoxLayout();
 +    kotoriLmModelPathEdit_ = new QLineEdit(page);
 +    kotoriLmModelPathEdit_->setPlaceholderText(QString::fromUtf8(
-+        "空欄のときは、インストール先の zenz-v2.5-small-q8_0.gguf を使う"));
++        "空欄のときは、同梱の TinySwallow-1.5B を使う"));
 +    auto *browse = new QPushButton(QString::fromUtf8("参照..."), page);
 +    row->addWidget(kotoriLmModelPathEdit_);
 +    row->addWidget(browse);
 +    layout->addLayout(row);
 +    auto *note = new QLabel(
 +        QString::fromUtf8(
-+            "zenz-v2.5 と同じ語彙の GGUF を選べる(既定は zenz-v2.5-small を 8 bit にしたもの)。"
-+            "変更は次の変換から効く。ファイルがないときは、AI なしで変換する。"),
++            "llama.cpp で読める日本語の LLM(GGUF)を選べます。変更は次の変換から効きます。"),
 +        page);
 +    note->setWordWrap(true);
++    note->setObjectName("kotoriNote");
 +    layout->addWidget(note);
-+    layout->addStretch();
-+    configDialogTabWidget->addTab(page, QString::fromUtf8("AI変換"));
++    outer->addStretch();
++    configDialogTabWidget->insertTab(0, page, QString::fromUtf8("AI 変換"));
++    configDialogTabWidget->setCurrentIndex(0);
++    // Kotori: Fluent 2 風の見た目(Windows 11 の設定アプリに合わせる。docs/adr/0017)。
++    setStyleSheet(QString::fromUtf8(kKotoriFluentStyle));
 +    QObject::connect(kotoriLmEnabledCheckBox_, SIGNAL(stateChanged(int)), this,
 +                     SLOT(EnableApplyButton()));
 +    QObject::connect(kotoriLmModelPathEdit_, SIGNAL(textChanged(QString)), this,
 +                     SLOT(EnableApplyButton()));
 +    QObject::connect(kotoriLmQualityComboBox_, SIGNAL(currentIndexChanged(int)),
++                     this, SLOT(EnableApplyButton()));
++    QObject::connect(kotoriLmModelComboBox_, SIGNAL(currentIndexChanged(int)),
 +                     this, SLOT(EnableApplyButton()));
 +    QObject::connect(browse, &QPushButton::clicked, this, [this]() {
 +      const QString path = QFileDialog::getOpenFileName(
@@ -299,7 +397,7 @@ index abbf55d68..1f82df809 100644
    keymapSettingComboBox->addItem(tr("Custom keymap"));
    keymapSettingComboBox->addItem(tr("ATOK"));
    keymapSettingComboBox->addItem(tr("MS-IME"));
-@@ -524,6 +587,14 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
+@@ -524,6 +645,16 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
    custom_keymap_table_ = config.custom_keymap_table();
    custom_roman_table_ = config.custom_roman_table();
  
@@ -307,6 +405,8 @@ index abbf55d68..1f82df809 100644
 +  kotoriLmEnabledCheckBox_->setChecked(config.kotori_lm_enabled());
 +  kotoriLmQualityComboBox_->setCurrentIndex(
 +      static_cast<int>(config.kotori_lm_quality()));
++  kotoriLmModelComboBox_->setCurrentIndex(
++      static_cast<int>(config.kotori_lm_model()));
 +  kotoriLmModelPathEdit_->setText(
 +      QString::fromUtf8(config.kotori_lm_model_path().data(),
 +                        static_cast<int>(config.kotori_lm_model_path().size())));
@@ -314,7 +414,7 @@ index abbf55d68..1f82df809 100644
    // tab2
    SET_COMBOBOX(historyLearningLevelComboBox, HistoryLearningLevel,
                 history_learning_level);
-@@ -612,6 +683,13 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
+@@ -612,6 +743,15 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
      config->set_custom_roman_table(custom_roman_table_);
    }
  
@@ -322,6 +422,8 @@ index abbf55d68..1f82df809 100644
 +  config->set_kotori_lm_enabled(kotoriLmEnabledCheckBox_->isChecked());
 +  config->set_kotori_lm_quality(static_cast<config::Config::KotoriLmQuality>(
 +      kotoriLmQualityComboBox_->currentIndex()));
++  config->set_kotori_lm_model(static_cast<config::Config::KotoriLmModel>(
++      kotoriLmModelComboBox_->currentIndex()));
 +  config->set_kotori_lm_model_path(
 +      kotoriLmModelPathEdit_->text().trimmed().toUtf8().toStdString());
 +
@@ -329,7 +431,7 @@ index abbf55d68..1f82df809 100644
    GET_COMBOBOX(historyLearningLevelComboBox, HistoryLearningLevel,
                 history_learning_level);
 diff --git a/src/gui/config_dialog/config_dialog.h b/src/gui/config_dialog/config_dialog.h
-index 85e1c0075..c9bf8602a 100644
+index 85e1c0075..e6aad51f1 100644
 --- a/src/gui/config_dialog/config_dialog.h
 +++ b/src/gui/config_dialog/config_dialog.h
 @@ -33,6 +33,10 @@
@@ -343,7 +445,7 @@ index 85e1c0075..c9bf8602a 100644
  #include <QTimer>
  #include <map>
  #include <memory>
-@@ -48,6 +52,11 @@ namespace gui {
+@@ -48,6 +52,12 @@ namespace gui {
  class ConfigDialog : public QDialog, private Ui::ConfigDialog {
    Q_OBJECT;
  
@@ -351,15 +453,16 @@ index 85e1c0075..c9bf8602a 100644
 +  QCheckBox *kotoriLmEnabledCheckBox_ = nullptr;
 +  QLineEdit *kotoriLmModelPathEdit_ = nullptr;
 +  QComboBox *kotoriLmQualityComboBox_ = nullptr;
++  QComboBox *kotoriLmModelComboBox_ = nullptr;
 +
   public:
    ConfigDialog();
  
 diff --git a/src/protocol/config.proto b/src/protocol/config.proto
-index 7d735374e..387a09cb7 100644
+index 7d735374e..ebfd5cbfe 100644
 --- a/src/protocol/config.proto
 +++ b/src/protocol/config.proto
-@@ -360,6 +360,20 @@ message Config {
+@@ -360,6 +360,27 @@ message Config {
    // Use mode indicator feature.
    optional bool use_mode_indicator = 120 [default = true];
  
@@ -376,12 +479,19 @@ index 7d735374e..387a09cb7 100644
 +  }
 +  optional KotoriLmQuality kotori_lm_quality = 202
 +      [default = KOTORI_LM_STANDARD];
++  // AI モデル。自動なら、GPU があるときは LLM、ないときは zenz を使う。
++  enum KotoriLmModel {
++    KOTORI_LM_MODEL_AUTO = 0;
++    KOTORI_LM_MODEL_ZENZ = 1;  // zenz-v2.5(変換専用の小さなモデル。CPU でも速い)
++    KOTORI_LM_MODEL_LLM = 2;   // TinySwallow-1.5B(汎用の LLM。GPU 向け)
++  }
++  optional KotoriLmModel kotori_lm_model = 203 [default = KOTORI_LM_MODEL_AUTO];
 +
    //////////////////////////////////////////////////////////////
    //
    // Cloud (300-319)
 diff --git a/src/rewriter/BUILD.bazel b/src/rewriter/BUILD.bazel
-index 4bbcddeca..52cbe1c4d 100644
+index 4bbcddeca..3addc3607 100644
 --- a/src/rewriter/BUILD.bazel
 +++ b/src/rewriter/BUILD.bazel
 @@ -1536,6 +1536,7 @@ mozc_cc_library(
@@ -392,17 +502,25 @@ index 4bbcddeca..52cbe1c4d 100644
          ":merger_rewriter",
          ":number_rewriter",
          ":remove_redundant_candidate_rewriter",
-@@ -1743,3 +1744,33 @@ mozc_cc_test(
+@@ -1743,3 +1744,46 @@ mozc_cc_test(
          "//testing:gunit_main",
      ],
  )
 +
 +# Kotori: zenz-v2.5 による並べ替え(docs/adr/0013)。
 +mozc_cc_library(
++    name = "llama_runtime",
++    srcs = ["llama_runtime.cc"],
++    hdrs = ["llama_runtime.h"],
++    deps = ["@llama_cpp//:llama"],
++)
++
++mozc_cc_library(
 +    name = "zenz_scorer",
 +    srcs = ["zenz_scorer.cc"],
 +    hdrs = ["zenz_scorer.h"],
 +    deps = [
++        ":llama_runtime",
 +        "@com_google_absl//absl/strings",
 +        "@llama_cpp//:llama",
 +    ],
@@ -414,53 +532,315 @@ index 4bbcddeca..52cbe1c4d 100644
 +    hdrs = ["lm_rewriter.h"],
 +    visibility = ["//converter:__pkg__"],
 +    deps = [
++        ":llama_runtime",
 +        ":rewriter_interface",
 +        ":zenz_scorer",
 +        "//base:file_util",
 +        "//base:system_util",
 +        "//base:util",
 +        "//converter:segments",
++        "//dictionary:dictionary_interface",
++        "//dictionary:dictionary_token",
++        "//dictionary:single_kanji_dictionary",
 +        "//protocol:config_cc_proto",
 +        "//request:conversion_request",
 +        "@com_google_absl//absl/base:core_headers",
++        "@com_google_absl//absl/container:flat_hash_map",
 +        "@com_google_absl//absl/synchronization",
 +    ],
 +)
+diff --git a/src/rewriter/llama_runtime.cc b/src/rewriter/llama_runtime.cc
+new file mode 100644
+index 000000000..120ff6f4f
+--- /dev/null
++++ b/src/rewriter/llama_runtime.cc
+@@ -0,0 +1,212 @@
++// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
++
++#include "rewriter/llama_runtime.h"
++
++#include <string>
++
++#include "llama.h"
++
++#ifdef _WIN32
++#include <windows.h>
++
++#include "ggml-backend.h"
++#endif  // _WIN32
++
++namespace mozc {
++namespace {
++
++void QuietLog(ggml_log_level, const char*, void*) {}
++
++}  // namespace
++
++#ifndef _WIN32
++
++bool EnsureLlamaRuntime(const std::string& dir) {
++  static const bool ok = [] {
++    llama_log_set(QuietLog, nullptr);
++    llama_backend_init();
++    return true;
++  }();
++  return ok;
++}
++
++bool LlamaHasGpu() { return llama_supports_gpu_offload(); }
++
++#else  // _WIN32
++
++// llama.dll と ggml.dll の関数を実行時に引く。インポートライブラリを使わないので、
++// DLL がなくても mozc_server は起動でき、そのときは AI なしで変換する。
++namespace {
++
++#define KOTORI_LLAMA_FUNCTIONS(X)                                              \
++  X(llama_log_set)                                                             \
++  X(llama_backend_init)                                                        \
++  X(llama_model_default_params)                                                \
++  X(llama_model_load_from_file)                                                \
++  X(llama_model_free)                                                          \
++  X(llama_context_default_params)                                              \
++  X(llama_init_from_model)                                                     \
++  X(llama_free)                                                                \
++  X(llama_model_get_vocab)                                                     \
++  X(llama_vocab_n_tokens)                                                      \
++  X(llama_vocab_eos)                                                           \
++  X(llama_vocab_bos)                                                           \
++  X(llama_vocab_get_add_bos)                                                   \
++  X(llama_tokenize)                                                            \
++  X(llama_get_memory)                                                          \
++  X(llama_memory_clear)                                                        \
++  X(llama_memory_seq_cp)                                                       \
++  X(llama_memory_seq_rm)                                                       \
++  X(llama_token_to_piece)                                                      \
++  X(llama_batch_init)                                                          \
++  X(llama_batch_free)                                                          \
++  X(llama_decode)                                                              \
++  X(llama_get_logits_ith)                                                      \
++  X(llama_supports_gpu_offload)
++
++struct Api {
++#define KOTORI_DECLARE(name) decltype(&::name) name = nullptr;
++  KOTORI_LLAMA_FUNCTIONS(KOTORI_DECLARE)
++#undef KOTORI_DECLARE
++  decltype(&::ggml_backend_load_all_from_path) load_all = nullptr;
++};
++
++Api g_api;
++bool g_loaded = false;
++
++std::wstring Widen(const std::string& s) {
++  if (s.empty()) return std::wstring();
++  const int n = MultiByteToWideChar(CP_UTF8, 0, s.data(),
++                                    static_cast<int>(s.size()), nullptr, 0);
++  std::wstring w(n, L'\0');
++  MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
++                      w.data(), n);
++  return w;
++}
++
++bool Load(const std::string& dir) {
++  const std::wstring wdir = Widen(dir);
++  // 同梱の DLL だけを探す(カレントディレクトリや PATH の DLL を読まない)。
++  constexpr DWORD kFlags =
++      LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32;
++  HMODULE ggml = LoadLibraryExW((wdir + L"\\ggml.dll").c_str(), nullptr, kFlags);
++  HMODULE llama =
++      LoadLibraryExW((wdir + L"\\llama.dll").c_str(), nullptr, kFlags);
++  if (ggml == nullptr || llama == nullptr) return false;
++#define KOTORI_RESOLVE(name)                                              \
++  g_api.name = reinterpret_cast<decltype(g_api.name)>(                    \
++      GetProcAddress(llama, #name));                                      \
++  if (g_api.name == nullptr) return false;
++  KOTORI_LLAMA_FUNCTIONS(KOTORI_RESOLVE)
++#undef KOTORI_RESOLVE
++  g_api.load_all = reinterpret_cast<decltype(g_api.load_all)>(
++      GetProcAddress(ggml, "ggml_backend_load_all_from_path"));
++  if (g_api.load_all == nullptr) return false;
++  g_api.llama_log_set(QuietLog, nullptr);
++  // GPU(Vulkan)と CPU の DLL のうち、この PC で使えるものを読み込む。
++  g_api.load_all(dir.c_str());
++  g_api.llama_backend_init();
++  return true;
++}
++
++}  // namespace
++
++bool EnsureLlamaRuntime(const std::string& dir) {
++  static const bool ok = [&dir] {
++    g_loaded = Load(dir);
++    return g_loaded;
++  }();
++  return ok;
++}
++
++bool LlamaHasGpu() {
++  return g_loaded && g_api.llama_supports_gpu_offload();
++}
++
++#endif  // _WIN32
++
++}  // namespace mozc
++
++#ifdef _WIN32
++// zenz_scorer.cc などが呼ぶ llama.cpp の関数。読み込んだ DLL の関数へ渡す。
++// EnsureLlamaRuntime が true を返した後にだけ呼ばれる。
++using mozc::g_api;
++extern "C" {
++void llama_log_set(ggml_log_callback cb, void* data) {
++  g_api.llama_log_set(cb, data);
++}
++void llama_backend_init(void) { g_api.llama_backend_init(); }
++llama_model_params llama_model_default_params(void) {
++  return g_api.llama_model_default_params();
++}
++llama_model* llama_model_load_from_file(const char* path,
++                                        llama_model_params params) {
++  return g_api.llama_model_load_from_file(path, params);
++}
++void llama_model_free(llama_model* model) { g_api.llama_model_free(model); }
++llama_context_params llama_context_default_params(void) {
++  return g_api.llama_context_default_params();
++}
++llama_context* llama_init_from_model(llama_model* model,
++                                     llama_context_params params) {
++  return g_api.llama_init_from_model(model, params);
++}
++void llama_free(llama_context* ctx) { g_api.llama_free(ctx); }
++const llama_vocab* llama_model_get_vocab(const llama_model* model) {
++  return g_api.llama_model_get_vocab(model);
++}
++int32_t llama_vocab_n_tokens(const llama_vocab* vocab) {
++  return g_api.llama_vocab_n_tokens(vocab);
++}
++llama_token llama_vocab_eos(const llama_vocab* vocab) {
++  return g_api.llama_vocab_eos(vocab);
++}
++llama_token llama_vocab_bos(const llama_vocab* vocab) {
++  return g_api.llama_vocab_bos(vocab);
++}
++bool llama_vocab_get_add_bos(const llama_vocab* vocab) {
++  return g_api.llama_vocab_get_add_bos(vocab);
++}
++int32_t llama_tokenize(const llama_vocab* vocab, const char* text,
++                       int32_t text_len, llama_token* tokens,
++                       int32_t n_tokens_max, bool add_special,
++                       bool parse_special) {
++  return g_api.llama_tokenize(vocab, text, text_len, tokens, n_tokens_max,
++                              add_special, parse_special);
++}
++llama_memory_t llama_get_memory(const llama_context* ctx) {
++  return g_api.llama_get_memory(ctx);
++}
++void llama_memory_clear(llama_memory_t mem, bool data) {
++  g_api.llama_memory_clear(mem, data);
++}
++void llama_memory_seq_cp(llama_memory_t mem, llama_seq_id src,
++                         llama_seq_id dst, llama_pos p0, llama_pos p1) {
++  g_api.llama_memory_seq_cp(mem, src, dst, p0, p1);
++}
++bool llama_memory_seq_rm(llama_memory_t mem, llama_seq_id seq, llama_pos p0,
++                         llama_pos p1) {
++  return g_api.llama_memory_seq_rm(mem, seq, p0, p1);
++}
++int32_t llama_token_to_piece(const llama_vocab* vocab, llama_token token,
++                             char* buf, int32_t length, int32_t lstrip,
++                             bool special) {
++  return g_api.llama_token_to_piece(vocab, token, buf, length, lstrip,
++                                    special);
++}
++llama_batch llama_batch_init(int32_t n_tokens, int32_t embd,
++                             int32_t n_seq_max) {
++  return g_api.llama_batch_init(n_tokens, embd, n_seq_max);
++}
++void llama_batch_free(llama_batch batch) { g_api.llama_batch_free(batch); }
++int32_t llama_decode(llama_context* ctx, llama_batch batch) {
++  return g_api.llama_decode(ctx, batch);
++}
++float* llama_get_logits_ith(llama_context* ctx, int32_t i) {
++  return g_api.llama_get_logits_ith(ctx, i);
++}
++bool llama_supports_gpu_offload(void) {
++  return g_api.llama_supports_gpu_offload();
++}
++}  // extern "C"
++#endif  // _WIN32
+diff --git a/src/rewriter/llama_runtime.h b/src/rewriter/llama_runtime.h
+new file mode 100644
+index 000000000..9573fd721
+--- /dev/null
++++ b/src/rewriter/llama_runtime.h
+@@ -0,0 +1,25 @@
++// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
++//
++// Kotori: llama.cpp の実行時の準備(docs/adr/0016)。
++//
++// Windows では、インストール先に同梱した llama.cpp の公式ビルド(llama.dll、ggml*.dll)を
++// 実行時に読み込む。ggml は GPU(Vulkan)と CPU の種類ごとの DLL から使えるものを自動で選ぶので、
++// ユーザーは CUDA Toolkit などを入れなくてよい。Windows 以外は静的にリンクした CPU 版を使う。
++
++#ifndef MOZC_REWRITER_LLAMA_RUNTIME_H_
++#define MOZC_REWRITER_LLAMA_RUNTIME_H_
++
++#include <string>
++
++namespace mozc {
++
++// llama.cpp を使える状態にする。dir は DLL のあるフォルダ(Windows のみ使う)。
++// 2 回目以降は前の結果を返す。
++bool EnsureLlamaRuntime(const std::string& dir);
++
++// GPU に載せられるか(Vulkan などの GPU が見つかったか)。EnsureLlamaRuntime の後に呼ぶ。
++bool LlamaHasGpu();
++
++}  // namespace mozc
++
++#endif  // MOZC_REWRITER_LLAMA_RUNTIME_H_
 diff --git a/src/rewriter/lm_rewriter.cc b/src/rewriter/lm_rewriter.cc
-new file mode 100755
-index 000000000..8df16f484
+new file mode 100644
+index 000000000..ae344364d
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.cc
-@@ -0,0 +1,308 @@
+@@ -0,0 +1,571 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/lm_rewriter.h"
 +
 +#include <algorithm>
++#include <cctype>
 +#include <cstdint>
 +#include <cstdio>
 +#include <cstdlib>
++#include <fstream>
 +#include <numeric>
 +#include <optional>
 +#include <string>
 +#include <utility>
 +#include <vector>
 +
++#include "absl/container/flat_hash_map.h"
 +#include "absl/synchronization/mutex.h"
 +#include "base/file_util.h"
 +#include "base/system_util.h"
 +#include "base/util.h"
 +#include "converter/candidate.h"
 +#include "converter/segments.h"
++#include "dictionary/dictionary_interface.h"
++#include "dictionary/dictionary_token.h"
++#include "dictionary/single_kanji_dictionary.h"
 +#include "protocol/config.pb.h"
 +#include "request/conversion_request.h"
++#include "rewriter/llama_runtime.h"
 +
 +namespace mozc {
 +namespace {
 +
 +constexpr char kDefaultModelName[] = "zenz-v2.5-small-q8_0.gguf";
++// 汎用の LLM(TinySwallow-1.5B、Apache-2.0)。GPU 向け(docs/adr/0016)。
++constexpr char kLlmModelName[] = "tinyswallow-1.5b-q5_k_m.gguf";
 +constexpr size_t kMaxContextBytes = 240;  // 40 文字ぶん以上
-+constexpr size_t kMaxSentences = 16;
 +
 +struct Quality {
 +  size_t k;
@@ -490,11 +870,183 @@ index 000000000..8df16f484
 +                                     : s;
 +}
 +
++std::string ConversionReading(const Segments& segments);
++
++// UTF-8 の文字列を 1 文字ずつに分ける。
++std::vector<std::string> Chars(absl::string_view s) {
++  std::vector<std::string> out;
++  for (size_t i = 0; i < s.size();) {
++    const unsigned char c = s[i];
++    size_t n = c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
++    n = std::min(n, s.size() - i);
++    out.emplace_back(s.substr(i, n));
++    i += n;
++  }
++  return out;
++}
++
++// カタカナ 1 文字をひらがなにする(それ以外はそのまま)。
++std::string ToHiragana(const std::string& c) {
++  if (c.size() == 3 && static_cast<unsigned char>(c[0]) == 0xE3) {
++    const uint32_t cp =
++        ((c[0] & 0x0F) << 12) | ((c[1] & 0x3F) << 6) | (c[2] & 0x3F);
++    if (cp >= 0x30A1 && cp <= 0x30F6) {
++      const uint32_t h = cp - 0x60;
++      std::string out;
++      out += static_cast<char>(0xE0 | (h >> 12));
++      out += static_cast<char>(0x80 | ((h >> 6) & 0x3F));
++      out += static_cast<char>(0x80 | (h & 0x3F));
++      return out;
++    }
++  }
++  return c;
++}
++
++// 先頭の 1 文字の濁点・半濁点を外す(「が」→「か」、「ぱ」→「は」)。
++std::string Unvoice(const std::string& key) {
++  if (key.size() < 3 || static_cast<unsigned char>(key[0]) != 0xE3) return key;
++  const uint32_t cp =
++      ((key[0] & 0x0F) << 12) | ((key[1] & 0x3F) << 6) | (key[2] & 0x3F);
++  uint32_t base = cp;
++  if ((cp >= 0x304C && cp <= 0x3062 && cp % 2 == 0) ||   // が〜ぢ
++      (cp >= 0x3065 && cp <= 0x3069 && cp % 2 == 1)) {   // づ〜ど
++    base = cp - 1;
++  } else if (cp >= 0x3070 && cp <= 0x307D) {             // ば〜ぽ
++    const uint32_t m = (cp - 0x306F) % 3;                // 1: 濁音、2: 半濁音
++    if (m != 0) base = cp - m;
++  }
++  if (base == cp) return key;
++  std::string out;
++  out += static_cast<char>(0xE0 | (base >> 12));
++  out += static_cast<char>(0x80 | ((base >> 6) & 0x3F));
++  out += static_cast<char>(0x80 | (base & 0x3F));
++  return out + key.substr(3);
++}
++
++// 数字・英字(半角と全角)。読みを数文字ずつ消費してよい文字として扱う。
++bool IsAlnum(const std::string& c) {
++  if (c.size() == 1) return std::isalnum(static_cast<unsigned char>(c[0]));
++  if (c.size() == 3 && static_cast<unsigned char>(c[0]) == 0xEF) {
++    const uint32_t cp =
++        ((c[0] & 0x0F) << 12) | ((c[1] & 0x3F) << 6) | (c[2] & 0x3F);
++    return (cp >= 0xFF10 && cp <= 0xFF19) || (cp >= 0xFF21 && cp <= 0xFF3A) ||
++           (cp >= 0xFF41 && cp <= 0xFF5A);
++  }
++  return false;
++}
++
++class PrefixCollector : public dictionary::DictionaryInterface::Callback {
++ public:
++  ResultType OnToken(absl::string_view, absl::string_view,
++                     dictionary::Token token) override {
++    found.emplace_back(std::move(token.key), std::move(token.value));
++    return TRAVERSE_CONTINUE;
++  }
++  std::vector<std::pair<std::string, std::string>> found;  // (読み, 表記)
++};
++
++// 生成した文 text が読み reading に過不足なく合うか、辞書で確かめる。読みの先頭から、
++// 辞書の語(読みが前方一致し、表記が text の続きに合うもの)、同じかな・記号、数字と英字
++// (1 文字で読み 1〜6 文字)をたどり、両方の終わりに着けば合う。
++bool MatchesReading(const dictionary::DictionaryInterface& dic,
++                    const dictionary::SingleKanjiDictionary* single_kanji,
++                    absl::string_view text, absl::string_view reading) {
++  const std::vector<std::string> t = Chars(text);
++  const std::vector<std::string> r = Chars(reading);
++  std::vector<size_t> r_off(r.size() + 1, 0);
++  for (size_t j = 0; j < r.size(); ++j) r_off[j + 1] = r_off[j] + r[j].size();
++  std::vector<std::string> t_prefix(t.size() + 1);  // t_prefix[i] = t[i..] の UTF-8
++  for (size_t i = t.size(); i-- > 0;) t_prefix[i] = t[i] + t_prefix[i + 1];
++  std::vector<std::vector<bool>> seen(t.size() + 1,
++                                      std::vector<bool>(r.size() + 1, false));
++  std::vector<std::optional<PrefixCollector>> lookups(r.size());
++  absl::flat_hash_map<std::string, std::vector<std::string>> kanji_cache;
++  std::vector<std::pair<size_t, size_t>> stack = {{0, 0}};
++  seen[0][0] = true;
++  auto push = [&](size_t i, size_t j) {
++    if (i <= t.size() && j <= r.size() && !seen[i][j]) {
++      seen[i][j] = true;
++      stack.emplace_back(i, j);
++    }
++  };
++  while (!stack.empty()) {
++    const auto [i, j] = stack.back();
++    stack.pop_back();
++    if (i == t.size() && j == r.size()) return true;
++    if (i < t.size() && j < r.size() && ToHiragana(t[i]) == r[j]) {
++      push(i + 1, j + 1);
++    }
++    if (i < t.size() && IsAlnum(t[i])) {
++      for (size_t k = 1; k <= 6; ++k) push(i + 1, j + k);
++    }
++    // 辞書にない語(「夜駆け」など)は、漢字 1 文字ずつの読み(単漢字辞書)で確かめる。
++    if (single_kanji != nullptr && i < t.size() && t[i].size() >= 3) {
++      for (size_t k = 1; k <= 4 && j + k <= r.size(); ++k) {
++        const std::string key = std::string(
++            reading.substr(r_off[j], r_off[j + k] - r_off[j]));
++        // 連濁(「よがけ」の「が」→「駆(か)」)も認める。
++        for (const std::string& variant : {key, Unvoice(key)}) {
++          auto it = kanji_cache.find(variant);
++          if (it == kanji_cache.end()) {
++            it = kanji_cache
++                     .emplace(variant,
++                              single_kanji->LookupKanjiEntries(variant, false))
++                     .first;
++          }
++          if (std::find(it->second.begin(), it->second.end(), t[i]) !=
++              it->second.end()) {
++            push(i + 1, j + k);
++          }
++        }
++      }
++    }
++    if (i < t.size() && j < r.size()) {
++      if (!lookups[j]) {
++        lookups[j].emplace();
++        dic.LookupPrefix(reading.substr(r_off[j]), &*lookups[j]);
++      }
++      for (const auto& [key, value] : lookups[j]->found) {
++        if (value.empty() || key.empty()) continue;
++        if (absl::string_view(t_prefix[i]).substr(0, value.size()) != value) {
++          continue;
++        }
++        push(i + Chars(value).size(), j + Chars(key).size());
++      }
++    }
++  }
++  return false;
++}
++
++// 評価用: KOTORI_LM_CONTEXT_MAP に「読み<TAB>前の文」の行を書いたファイル(UTF-8)を渡すと、
++// 変換中の読みに合う前の文を左の文脈にする(1 回の起動で多くの問題を解くため)。
++const absl::flat_hash_map<std::string, std::string>& ContextMap() {
++  static const auto* map = [] {
++    auto* m = new absl::flat_hash_map<std::string, std::string>();
++    if (const char* path = Env("KOTORI_LM_CONTEXT_MAP")) {
++      std::ifstream in(path, std::ios::binary);
++      std::string line;
++      while (std::getline(in, line)) {
++        if (!line.empty() && line.back() == '\r') line.pop_back();
++        const size_t tab = line.find('\t');
++        if (tab != std::string::npos) {
++          (*m)[line.substr(0, tab)] = line.substr(tab + 1);
++        }
++      }
++    }
++    return m;
++  }();
++  return *map;
++}
++
 +// 左の文脈。アプリが渡す直前の文(TSF の preceding_text)があればそれを使い、
 +// なければ確定済みの文節(履歴)の値をつなぐ。KOTORI_LM_PRECEDING は評価用。
 +std::string HistoryContext(const ConversionRequest& request,
 +                           const Segments& segments) {
 +  if (const char* v = Env("KOTORI_LM_PRECEDING")) return Tail(v);
++  if (!ContextMap().empty()) {
++    const auto it = ContextMap().find(ConversionReading(segments));
++    return it == ContextMap().end() ? std::string() : Tail(it->second);
++  }
 +  std::string preceding = request.GetSurroundingContext().first;
 +  if (!preceding.empty()) return Tail(preceding);
 +  std::string context;
@@ -514,11 +1066,14 @@ index 000000000..8df16f484
 +
 +}  // namespace
 +
-+LmRewriter::LmRewriter() {
++LmRewriter::LmRewriter(const dictionary::DictionaryInterface* dictionary,
++                       const dictionary::SingleKanjiDictionary* single_kanji)
++    : dictionary_(dictionary), single_kanji_(single_kanji) {
 +  if (const char* v = Env("KOTORI_LM_K")) {
 +    k_override_ = std::strtoul(v, nullptr, 10);
 +  }
 +  if (const char* v = Env("KOTORI_LM_SENTENCE")) sentence_ = *v != '0';
++  if (const char* v = Env("KOTORI_LM_POST")) post_segment_ = *v != '0';
 +  if (const char* v = Env("KOTORI_LM_RIGHT")) right_context_ = *v != '0';
 +  if (const char* v = Env("KOTORI_LM_THREADS")) {
 +    threads_ = std::max(1, std::atoi(v));
@@ -532,7 +1087,17 @@ index 000000000..8df16f484
 +    }
 +  }
 +  if (const char* v = Env("KOTORI_ZENZ_MODEL")) env_model_path_ = v;
++  if (const char* v = Env("KOTORI_LLM_MODEL")) env_llm_path_ = v;
++  if (const char* v = Env("KOTORI_LM_BEAMS")) beams_override_ = std::atoi(v);
++  if (const char* v = Env("KOTORI_LM_NSENT")) {
++    max_sentences_ = std::max(1, std::atoi(v));
++  }
++  if (const char* v = Env("KOTORI_LM_LLM_WEIGHT")) lambda_llm_ = std::atof(v);
 +  model_dir_ = SystemUtil::GetServerDirectory();
++  // llama.cpp の DLL とモデルのフォルダ(評価用に差し替えられる)。
++  runtime_dir_ = model_dir_;
++  if (const char* v = Env("KOTORI_RUNTIME_DIR")) runtime_dir_ = v;
++  if (const char* v = Env("KOTORI_MODEL_DIR")) model_dir_ = v;
 +}
 +
 +void LmRewriter::EnsureLoaded(const std::string& path) const {
@@ -541,18 +1106,30 @@ index 000000000..8df16f484
 +  loaded_path_ = path;
 +  scorer_.reset();
 +  if (!FileUtil::FileExists(path).ok()) return;
-+  scorer_ = ZenzScorer::Open(path, threads_);
++  scorer_ = ZenzScorer::Open(path, threads_, runtime_dir_);
 +}
 +
-+ZenzScorer* LmRewriter::Prepare(const ConversionRequest& request,
-+                                size_t* k) const {
++void LmRewriter::EnsureLlmLoaded(const std::string& path) const {
++  if (llm_loaded_ && llm_path_ == path) return;
++  llm_loaded_ = true;
++  llm_path_ = path;
++  llm_.reset();
++  if (path.empty() || !FileUtil::FileExists(path).ok()) return;
++  llm_ = ZenzScorer::Open(path, threads_, runtime_dir_);
++}
++
++ZenzScorer* LmRewriter::Prepare(const ConversionRequest& request, size_t* k,
++                                ZenzScorer** llm, int* beams) const {
++  *llm = nullptr;
 +  const config::Config& config = request.config();
 +  if (!config.kotori_lm_enabled()) return nullptr;
 +  const Quality quality = QualityOf(config.kotori_lm_quality());
 +  *k = k_override_.value_or(quality.k);
++  *beams = beams_override_.value_or(
++      config.kotori_lm_quality() == config::Config::KOTORI_LM_LOW ? 2 : 8);
 +  if (*k < 2) return nullptr;
-+  std::string path = config.kotori_lm_model_path();
-+  if (path.empty()) path = env_model_path_;
++  // zenz(生成と採点。常に使う): KOTORI_ZENZ_MODEL → 品質の段階の zenz → 同梱の zenz。
++  std::string path = env_model_path_;
 +  if (path.empty()) {
 +    path = FileUtil::JoinPath(model_dir_, quality.model);
 +    if (!FileUtil::FileExists(path).ok()) {
@@ -560,6 +1137,21 @@ index 000000000..8df16f484
 +    }
 +  }
 +  EnsureLoaded(path);
++  // LLM(文全体の採点に加える): AI モデルが LLM か、自動で GPU があるとき(docs/adr/0016)。
++  // ファイルは設定のパス → KOTORI_LLM_MODEL → 同梱の LLM。
++  const config::Config::KotoriLmModel kind = config.kotori_lm_model();
++  const bool want_llm =
++      kind == config::Config::KOTORI_LM_MODEL_LLM ||
++      (kind == config::Config::KOTORI_LM_MODEL_AUTO &&
++       EnsureLlamaRuntime(runtime_dir_) && LlamaHasGpu());
++  std::string llm_path;
++  if (want_llm) {
++    llm_path = config.kotori_lm_model_path();
++    if (llm_path.empty()) llm_path = env_llm_path_;
++    if (llm_path.empty()) llm_path = FileUtil::JoinPath(model_dir_, kLlmModelName);
++  }
++  EnsureLlmLoaded(llm_path);
++  *llm = llm_.get();
 +  return scorer_.get();
 +}
 +
@@ -569,15 +1161,23 @@ index 000000000..8df16f484
 +  if (!sentence_) return std::nullopt;
 +  const std::vector<converter::Candidate>& sentences =
 +      segments.kotori_sentences();
-+  if (sentences.size() < 2) return std::nullopt;
++  if (Env("KOTORI_LM_DEBUG") != nullptr) {
++    std::fprintf(stderr, "[kotori] sentences=%zu segments=%zu\n",
++                 sentences.size(), segments.conversion_segments_size());
++  }
++  // 文全体の候補は、区切りが決まっていない最初の変換のときだけある(切り直した後の変換では空)。
++  if (sentences.empty()) return std::nullopt;
 +  absl::MutexLock lock(mutex_);
 +  best_.reset();
 +  size_t k = 0;
-+  ZenzScorer* scorer = Prepare(request, &k);
++  int beams = 0;
++  ZenzScorer* llm = nullptr;
++  ZenzScorer* scorer = Prepare(request, &k, &llm, &beams);
 +  if (scorer == nullptr) return std::nullopt;
 +
 +  const std::string reading = ConversionReading(segments);
 +  const std::string context = HistoryContext(request, segments);
++  // 候補 = ラティスの文全体の候補(区切り付き)+ zenz が読みから生成した文(区切りなし)。
 +  std::vector<const converter::Candidate*> cands;
 +  std::vector<std::string> values;
 +  for (const converter::Candidate& c : sentences) {
@@ -587,16 +1187,42 @@ index 000000000..8df16f484
 +    }
 +    cands.push_back(&c);
 +    values.push_back(c.value);
-+    if (cands.size() >= kMaxSentences) break;
++    if (cands.size() >= max_sentences_) break;
 +  }
-+  if (cands.size() < 2) return std::nullopt;
-+  const std::optional<std::vector<float>> logp =
++  if (beams > 0 && Util::CharsLen(reading) <= 255) {
++    for (const std::string& g : scorer->Generate(context, reading, beams)) {
++      if (std::find(values.begin(), values.end(), g) != values.end()) continue;
++      // 読みを落とした文や、読みにない語を足した文を除く。
++      if (dictionary_ != nullptr &&
++          !MatchesReading(*dictionary_, single_kanji_, g, reading)) {
++        if (Env("KOTORI_LM_DEBUG") != nullptr) {
++          std::fprintf(stderr, "[kotori] rejected %s\n", g.c_str());
++        }
++        continue;
++      }
++      cands.push_back(nullptr);
++      values.push_back(g);
++    }
++  }
++  if (values.size() < 2) return std::nullopt;
++  // 点数 = zenz の log P(文 | 読み、前の文) + LLM の log P(文 | 前の文)(docs/adr/0016)。
++  // LLM がないときは zenz だけで選ぶ。
++  const std::optional<std::vector<float>> zlogp =
 +      scorer->Score(context, reading, values);
-+  if (!logp) return std::nullopt;
++  if (!zlogp) return std::nullopt;
++  std::optional<std::vector<float>> llogp;
++  if (llm != nullptr) llogp = llm->Score(context, reading, values);
 +  size_t top = 0;
 +  double top_score = 0;
-+  for (size_t i = 0; i < cands.size(); ++i) {
-+    const double s = Combine((*logp)[i], cands[i]->cost);
++  const bool debug = Env("KOTORI_LM_DEBUG") != nullptr;
++  for (size_t i = 0; i < values.size(); ++i) {
++    double s = lambda_lm_ * (*zlogp)[i];
++    if (llogp) s += lambda_llm_ * (*llogp)[i];
++    if (debug) {
++      std::fprintf(stderr, "[kotori] %s zenz=%.2f llm=%.2f %s score=%.2f\n",
++                   values[i].c_str(), (*zlogp)[i], llogp ? (*llogp)[i] : 0.f,
++                   cands[i] == nullptr ? "gen" : "lattice", s);
++    }
 +    if (i == 0 || s > top_score) {
 +      top = i;
 +      top_score = s;
@@ -604,9 +1230,15 @@ index 000000000..8df16f484
 +  }
 +
 +  Best best{reading, context, {}, {}};
-+  for (const auto& inner : cands[top]->inner_segments()) {
-+    best.keys.emplace_back(inner.GetKey());
-+    best.values.emplace_back(inner.GetValue());
++  if (cands[top] == nullptr) {
++    // 生成した文は区切りを持たないので、全体を 1 つの文節にする。
++    best.keys.push_back(reading);
++    best.values.push_back(values[top]);
++  } else {
++    for (const auto& inner : cands[top]->inner_segments()) {
++      best.keys.emplace_back(inner.GetKey());
++      best.values.emplace_back(inner.GetValue());
++    }
 +  }
 +  if (best.keys.empty()) return std::nullopt;
 +
@@ -730,25 +1362,28 @@ index 000000000..8df16f484
 +                         Segments* segments) const {
 +  absl::MutexLock lock(mutex_);
 +  size_t k = 0;
-+  ZenzScorer* scorer = Prepare(request, &k);
++  int beams = 0;
++  ZenzScorer* llm = nullptr;
++  ZenzScorer* scorer = Prepare(request, &k, &llm, &beams);
 +  if (scorer == nullptr) return false;
-+  // 文全体で選んだ文が今の区切りに合えば、それを使う。
-+  if (sentence_ && ApplyBest(segments, HistoryContext(request, *segments))) {
-+    return true;
-+  }
-+  return RewriteEachSegment(request, scorer, k, segments);
++  // 文全体で選んだ文が今の区切りに合えば、それを先頭に置く。
++  const bool applied =
++      sentence_ && ApplyBest(segments, HistoryContext(request, *segments));
++  if (applied && !post_segment_) return true;
++  // 文節ごとにも見直す(数字の書き方など、文全体の候補にない変種を比べる)。
++  return RewriteEachSegment(request, scorer, k, segments) || applied;
 +}
 +
 +}  // namespace mozc
 diff --git a/src/rewriter/lm_rewriter.h b/src/rewriter/lm_rewriter.h
-new file mode 100755
-index 000000000..1666bfb1b
+new file mode 100644
+index 000000000..4808cc2fa
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.h
-@@ -0,0 +1,96 @@
+@@ -0,0 +1,121 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
-+// Kotori: zenz-v2.5 による変換候補の並べ替え(docs/adr/0013、0015)。
++// Kotori: AI による変換(docs/adr/0013、0015、0016)。
 +
 +#ifndef MOZC_REWRITER_LM_REWRITER_H_
 +#define MOZC_REWRITER_LM_REWRITER_H_
@@ -762,33 +1397,42 @@ index 000000000..1666bfb1b
 +#include "absl/base/thread_annotations.h"
 +#include "absl/synchronization/mutex.h"
 +#include "converter/segments.h"
++#include "dictionary/dictionary_interface.h"
++#include "dictionary/single_kanji_dictionary.h"
 +#include "request/conversion_request.h"
 +#include "rewriter/rewriter_interface.h"
 +#include "rewriter/zenz_scorer.h"
 +
 +namespace mozc {
 +
-+// 2 段で並べ替える。
++// 2 段で変換を選ぶ。
 +//
-+// 1. 文全体: ImmutableConverter が Segments::kotori_sentences() に入れた文全体の
-+//    候補(区切りの違う文を含む)を zenz で採点し、最良の文の区切りで文節を切り直す
-+//    (CheckResizeSegmentsRequest)。切り直した後の Rewrite で、各文節の先頭に
-+//    最良の文の値を置く。
-+// 2. 文節ごと: 文全体の結果が使えないとき、上位 K 件を前後の文節とともに採点する。
++// 1. 文全体: ImmutableConverter が Segments::kotori_sentences() に入れた文全体の候補
++//    (区切りの違う文を含む)に、zenz が読みから生成した文(ビームサーチ)を加え、
++//    zenz と LLM(GPU があるとき)の点数の和で選ぶ。最良の文の区切りで文節を切り直し
++//    (CheckResizeSegmentsRequest。生成した文は全体を 1 文節にする)、Rewrite で
++//    各文節の先頭に置く。
++// 2. 文節ごと: 文全体の結果が使えないとき、上位 K 件を前後の文節とともに zenz で採点する。
 +//
-+// モデルがなければ何もしない。モデルは、設定のパス → KOTORI_ZENZ_MODEL → 品質の段階の
-+// モデル(mozc_server と同じフォルダ)→ 同梱の zenz-v2.5-small-q8_0.gguf の順に探す。
++// モデルがなければ何もしない。zenz は KOTORI_ZENZ_MODEL → 品質の段階のモデル → 同梱の
++// zenz-v2.5-small-q8_0.gguf、LLM は設定のパス → KOTORI_LLM_MODEL → 同梱の
++// tinyswallow-1.5b-q5_k_m.gguf(mozc_server と同じフォルダ)。
 +//
 +// 環境変数(評価と調整用):
-+//   KOTORI_ZENZ_MODEL  GGUF のパス(設定のパスが空のとき)
-+//   KOTORI_LM_K        文節ごとに並べ替える候補の数(品質の段階より優先。0 で無効)
-+//   KOTORI_LM_SENTENCE 0 で文全体の並べ替えを切る
-+//   KOTORI_LM_WEIGHTS  "λ_lm,λ_lattice,T"(既定 "1,1,1000")
-+//   KOTORI_LM_THREADS  推論のスレッド数(既定 4)
-+//   KOTORI_LM_PRECEDING 左の文脈を差し替える(評価用)
++//   KOTORI_ZENZ_MODEL / KOTORI_LLM_MODEL  モデルのパス
++//   KOTORI_MODEL_DIR / KOTORI_RUNTIME_DIR  モデルと llama.cpp の DLL のフォルダ
++//   KOTORI_LM_K          文節ごとに並べ替える候補の数(0 で無効)
++//   KOTORI_LM_BEAMS      zenz で生成する文の数(0 で生成しない)
++//   KOTORI_LM_SENTENCE   0 で文全体の選択を切る
++//   KOTORI_LM_WEIGHTS    "λ_zenz,λ_lattice,T"(既定 "1,1,1000")
++//   KOTORI_LM_LLM_WEIGHT LLM の重み(既定 1)
++//   KOTORI_LM_THREADS    推論のスレッド数(既定 4)
++//   KOTORI_LM_PRECEDING / KOTORI_LM_CONTEXT_MAP  左の文脈を差し替える(評価用)
 +class LmRewriter : public RewriterInterface {
 + public:
-+  LmRewriter();
++  // dictionary は生成した文が読みに合うかを確かめるのに使う(nullptr なら確かめない)。
++  LmRewriter(const dictionary::DictionaryInterface* dictionary,
++             const dictionary::SingleKanjiDictionary* single_kanji);
 +
 +  int capability(const ConversionRequest& request) const override {
 +    return CONVERSION;
@@ -809,10 +1453,14 @@ index 000000000..1666bfb1b
 +    std::vector<std::string> values;
 +  };
 +
-+  // 設定に合わせてモデルを用意する。使えなければ nullptr。*k は文節ごとの候補数。
-+  ZenzScorer* Prepare(const ConversionRequest& request, size_t* k) const
++  // 設定に合わせてモデルを用意する。zenz を返し(使えなければ nullptr)、*llm に LLM
++  // (使わないなら nullptr)、*k に文節ごとの候補数、*beams に生成する文の数を入れる。
++  ZenzScorer* Prepare(const ConversionRequest& request, size_t* k,
++                      ZenzScorer** llm, int* beams) const
 +      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 +  void EnsureLoaded(const std::string& path) const
++      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
++  void EnsureLlmLoaded(const std::string& path) const
 +      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 +  bool ApplyBest(Segments* segments, const std::string& context) const
 +      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
@@ -823,27 +1471,39 @@ index 000000000..1666bfb1b
 +    return lambda_lm_ * logp - lambda_lattice_ * cost / temperature_;
 +  }
 +
++  const dictionary::DictionaryInterface* dictionary_;
++  const dictionary::SingleKanjiDictionary* single_kanji_;
 +  mutable absl::Mutex mutex_;
 +  mutable std::string loaded_path_ ABSL_GUARDED_BY(mutex_);
 +  mutable bool loaded_ ABSL_GUARDED_BY(mutex_) = false;
 +  mutable std::unique_ptr<ZenzScorer> scorer_ ABSL_GUARDED_BY(mutex_);
++  mutable std::string llm_path_ ABSL_GUARDED_BY(mutex_);
++  mutable bool llm_loaded_ ABSL_GUARDED_BY(mutex_) = false;
++  mutable std::unique_ptr<ZenzScorer> llm_ ABSL_GUARDED_BY(mutex_);
 +  mutable std::optional<Best> best_ ABSL_GUARDED_BY(mutex_);
 +  std::optional<size_t> k_override_;
++  std::optional<int> beams_override_;
++  // 文全体の選択に入れる、ラティスの文全体の候補の数(KOTORI_LM_NSENT)。
++  size_t max_sentences_ = 4;
 +  bool sentence_ = true;
++  bool post_segment_ = false;
 +  bool right_context_ = true;
 +  double lambda_lm_ = 1.0;
++  double lambda_llm_ = 1.0;
 +  double lambda_lattice_ = 1.0;
 +  double temperature_ = 1000.0;
 +  int threads_ = 4;
 +  std::string env_model_path_;
++  std::string env_llm_path_;
 +  std::string model_dir_;
++  std::string runtime_dir_;
 +};
 +
 +}  // namespace mozc
 +
 +#endif  // MOZC_REWRITER_LM_REWRITER_H_
 diff --git a/src/rewriter/rewriter.cc b/src/rewriter/rewriter.cc
-index d92e814fd..526b387ce 100644
+index d92e814fd..792ecb2c2 100644
 --- a/src/rewriter/rewriter.cc
 +++ b/src/rewriter/rewriter.cc
 @@ -51,6 +51,7 @@
@@ -854,28 +1514,31 @@ index d92e814fd..526b387ce 100644
  #include "rewriter/number_rewriter.h"
  #include "rewriter/remove_redundant_candidate_rewriter.h"
  #include "rewriter/single_kanji_rewriter.h"
-@@ -136,6 +137,9 @@ Rewriter::Rewriter(const engine::Modules& modules) {
+@@ -136,6 +137,10 @@ Rewriter::Rewriter(const engine::Modules& modules) {
    const dictionary::SingleKanjiDictionary& single_kanji_dictionary =
        modules.GetSingleKanjiDictionary();
  
 +  // Kotori: 辞書の候補を LM で並べ替える(履歴などの学習は後の書き換えで優先される)。
-+  AddRewriter(std::make_unique<LmRewriter>());
++  AddRewriter(std::make_unique<LmRewriter>(&dictionary,
++                                           &single_kanji_dictionary));
 +
  #ifdef MOZC_USER_DICTIONARY_REWRITER
    AddRewriter(std::make_unique<UserDictionaryRewriter>());
  #endif  // MOZC_USER_DICTIONARY_REWRITER
 diff --git a/src/rewriter/zenz_scorer.cc b/src/rewriter/zenz_scorer.cc
-new file mode 100755
-index 000000000..adc6f30bd
+new file mode 100644
+index 000000000..0c77cce71
 --- /dev/null
 +++ b/src/rewriter/zenz_scorer.cc
-@@ -0,0 +1,231 @@
+@@ -0,0 +1,395 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/zenz_scorer.h"
 +
 +#include <algorithm>
 +#include <cmath>
++#include <cstdio>
++#include <cstdlib>
 +#include <cstdint>
 +#include <limits>
 +#include <memory>
@@ -886,15 +1549,14 @@ index 000000000..adc6f30bd
 +
 +#include "absl/strings/string_view.h"
 +#include "llama.h"
++#include "rewriter/llama_runtime.h"
 +
 +namespace mozc {
 +namespace {
 +
-+constexpr uint32_t kNumContext = 1024;
++constexpr uint32_t kNumContext = 4096;
 +constexpr int kMaxCandidates = 32;
 +constexpr size_t kMaxContextChars = 40;
-+
-+void QuietLog(ggml_log_level, const char*, void*) {}
 +
 +// UTF-8 の文字列を文字(コードポイント)ごとの文字列にする。
 +std::vector<std::string> SplitChars(absl::string_view s) {
@@ -983,11 +1645,12 @@ index 000000000..adc6f30bd
 +}
 +
 +std::unique_ptr<ZenzScorer> ZenzScorer::Open(const std::string& path,
-+                                             int threads) {
-+  llama_log_set(QuietLog, nullptr);
-+  llama_backend_init();
++                                             int threads,
++                                             const std::string& runtime_dir) {
++  if (!EnsureLlamaRuntime(runtime_dir)) return nullptr;
 +  llama_model_params mp = llama_model_default_params();
-+  mp.n_gpu_layers = 0;
++  // GPU があれば全部の層を載せる(なければ CPU で動く)。
++  mp.n_gpu_layers = LlamaHasGpu() ? 999 : 0;
 +  llama_model* model = llama_model_load_from_file(path.c_str(), mp);
 +  if (model == nullptr) return nullptr;
 +  llama_context_params cp = llama_context_default_params();
@@ -1007,6 +1670,9 @@ index 000000000..adc6f30bd
 +  s->model_ = model;
 +  s->ctx_ = ctx;
 +  s->max_seq_ = kMaxCandidates;
++  // zenz は 1 文字ずつの小さな語彙(6000)を持つ。汎用の LLM(語彙が数万以上)なら、
++  // 読みを使わず log P(候補 | 左の文脈) で採点する(docs/adr/0016)。
++  s->zenz_ = llama_vocab_n_tokens(llama_model_get_vocab(model)) <= 16000;
 +  return s;
 +}
 +
@@ -1025,17 +1691,39 @@ index 000000000..adc6f30bd
 +  const llama_vocab* vocab = llama_model_get_vocab(model_);
 +  const int n_vocab = llama_vocab_n_tokens(vocab);
 +  const llama_token eos = llama_vocab_eos(vocab);
-+  const std::vector<llama_token> prefix =
-+      Tokenize(vocab, Prompt(left_context, reading));
++  std::vector<llama_token> prefix;
++  if (zenz_) {
++    prefix = Tokenize(vocab, Prompt(left_context, reading));
++  } else {
++    // 先頭のトークンを足すのは、モデルが付けるよう求めるときだけ(Qwen 系は付けない)。
++    const llama_token bos = llama_vocab_bos(vocab);
++    if (bos >= 0 && llama_vocab_get_add_bos(vocab)) prefix.push_back(bos);
++    std::string ctx(left_context);
++    if (ctx.empty() && prefix.empty()) ctx = "\n";
++    const std::vector<llama_token> t = Tokenize(vocab, ctx);
++    prefix.insert(prefix.end(), t.begin(), t.end());
++  }
 +  if (prefix.empty()) return std::nullopt;
 +  std::vector<std::vector<llama_token>> cands;
 +  size_t total = prefix.size();
 +  for (const std::string& c : candidates) {
-+    cands.push_back(Tokenize(vocab, Normalize(c)));
-+    cands.back().push_back(eos);
++    if (zenz_) {
++      cands.push_back(Tokenize(vocab, Normalize(c)));
++      cands.back().push_back(eos);
++    } else {
++      cands.push_back(Tokenize(vocab, c));
++    }
++    if (cands.back().empty()) return std::nullopt;
 +    total += cands.back().size();
 +  }
 +  if (total > kNumContext) return std::nullopt;
++  if (std::getenv("KOTORI_LM_DEBUG") != nullptr) {
++    std::fprintf(stderr, "[zenz] n_vocab=%d prefix:", n_vocab);
++    for (llama_token t : prefix) std::fprintf(stderr, " %d", t);
++    std::fprintf(stderr, " | cand0:");
++    for (llama_token t : cands[0]) std::fprintf(stderr, " %d", t);
++    std::fprintf(stderr, "\n");
++  }
 +
 +  llama_memory_t mem = llama_get_memory(ctx_);
 +  llama_memory_clear(mem, true);
@@ -1100,13 +1788,150 @@ index 000000000..adc6f30bd
 +  return result;
 +}
 +
++std::vector<std::string> ZenzScorer::Generate(absl::string_view left_context,
++                                              absl::string_view reading,
++                                              int beams) {
++  std::vector<std::string> out;
++  if (!zenz_ || beams < 1 || 2 * beams + 1 > max_seq_) return out;
++  const llama_vocab* vocab = llama_model_get_vocab(model_);
++  const int n_vocab = llama_vocab_n_tokens(vocab);
++  const llama_token eos = llama_vocab_eos(vocab);
++  const std::vector<llama_token> prefix =
++      Tokenize(vocab, Prompt(left_context, reading));
++  const int max_len = static_cast<int>(SplitChars(reading).size()) + 8;
++  if (prefix.empty() || prefix.size() + max_len + 1 > kNumContext) return out;
++
++  llama_memory_t mem = llama_get_memory(ctx_);
++  llama_memory_clear(mem, true);
++  {
++    llama_batch b = llama_batch_init(prefix.size(), 0, 1);
++    for (size_t i = 0; i < prefix.size(); ++i) {
++      b.token[i] = prefix[i];
++      b.pos[i] = i;
++      b.n_seq_id[i] = 1;
++      b.seq_id[i][0] = 0;
++      b.logits[i] = i + 1 == prefix.size();
++    }
++    b.n_tokens = prefix.size();
++    const int rc = llama_decode(ctx_, b);
++    llama_batch_free(b);
++    if (rc != 0) {
++      llama_memory_clear(mem, true);
++      return out;
++    }
++  }
++
++  // ビームサーチ。シーケンス 1..beams と beams+1..2*beams を交互に使い、親の KV を写してから
++  // 次のトークンを評価する。logits は各ビームの直前のトークンの位置のもの。
++  struct Beam {
++    std::vector<llama_token> tokens;
++    float logp = 0;
++    int seq = 0;
++    int logit_index = 0;  // 直前の decode での位置(最初は前置きの最後)
++  };
++  std::vector<Beam> live = {{{}, 0.f, 0, static_cast<int>(prefix.size()) - 1}};
++  std::vector<std::pair<float, std::vector<llama_token>>> done;
++  int base = 1;
++  for (int step = 0; step < max_len && !live.empty(); ++step) {
++    struct Next {
++      float logp;
++      size_t parent;
++      llama_token token;
++    };
++    std::vector<Next> next;
++    for (size_t p = 0; p < live.size(); ++p) {
++      const std::vector<float> table =
++          LogSoftmax(llama_get_logits_ith(ctx_, live[p].logit_index), n_vocab);
++      std::vector<int> idx(n_vocab);
++      for (int i = 0; i < n_vocab; ++i) idx[i] = i;
++      std::partial_sort(idx.begin(), idx.begin() + beams, idx.end(),
++                        [&](int a, int b) { return table[a] > table[b]; });
++      for (int j = 0; j < beams; ++j) {
++        next.push_back({live[p].logp + table[idx[j]], p, idx[j]});
++      }
++    }
++    std::sort(next.begin(), next.end(),
++              [](const Next& a, const Next& b) { return a.logp > b.logp; });
++    std::vector<Beam> grown;
++    for (const Next& n : next) {
++      if (static_cast<int>(grown.size()) + static_cast<int>(done.size()) >=
++          beams) {
++        break;
++      }
++      std::vector<llama_token> t = live[n.parent].tokens;
++      if (n.token == eos) {
++        if (!t.empty()) done.push_back({n.logp / (t.size() + 1), t});
++        continue;
++      }
++      t.push_back(n.token);
++      grown.push_back({std::move(t), n.logp, 0, 0});
++    }
++    if (grown.empty()) break;
++    // 親の KV を新しいシーケンスに写し、新しいトークンを 1 つのバッチで評価する。
++    llama_batch b = llama_batch_init(grown.size(), 0, 1);
++    for (size_t i = 0; i < grown.size(); ++i) {
++      const int seq = base + static_cast<int>(i);
++      llama_memory_seq_rm(mem, seq, -1, -1);
++      // grown[i] の親は、トークン列の最後を除いたもの。
++      int parent_seq = 0;
++      for (const Beam& lb : live) {
++        if (lb.tokens.size() + 1 == grown[i].tokens.size() &&
++            std::equal(lb.tokens.begin(), lb.tokens.end(),
++                       grown[i].tokens.begin())) {
++          parent_seq = lb.seq;
++          break;
++        }
++      }
++      llama_memory_seq_cp(mem, parent_seq, seq, -1, -1);
++      grown[i].seq = seq;
++      grown[i].logit_index = static_cast<int>(i);
++      b.token[i] = grown[i].tokens.back();
++      b.pos[i] = prefix.size() + grown[i].tokens.size() - 1;
++      b.n_seq_id[i] = 1;
++      b.seq_id[i][0] = seq;
++      b.logits[i] = 1;
++    }
++    b.n_tokens = grown.size();
++    const int rc = llama_decode(ctx_, b);
++    llama_batch_free(b);
++    if (rc != 0) break;
++    // 使い終わった親のシーケンスを消す(前置きのシーケンス 0 は残す)。
++    for (const Beam& lb : live) {
++      if (lb.seq != 0) llama_memory_seq_rm(mem, lb.seq, -1, -1);
++    }
++    live = std::move(grown);
++    base = base == 1 ? beams + 1 : 1;
++  }
++  llama_memory_clear(mem, true);
++
++  std::sort(done.begin(), done.end(),
++            [](const auto& a, const auto& b) { return a.first > b.first; });
++  for (const auto& [score, tokens] : done) {
++    std::string text;
++    for (llama_token t : tokens) {
++      char buf[64];
++      const int n = llama_token_to_piece(vocab, t, buf, sizeof(buf), 0, false);
++      if (n > 0) text.append(buf, n);
++    }
++    // zenz は空白を全角空白で学習している。候補の表記は元の空白に戻す。
++    for (size_t pos; (pos = text.find("\xE3\x80\x80")) != std::string::npos;) {
++      text.replace(pos, 3, " ");
++    }
++    if (!text.empty() &&
++        std::find(out.begin(), out.end(), text) == out.end()) {
++      out.push_back(text);
++    }
++  }
++  return out;
++}
++
 +}  // namespace mozc
 diff --git a/src/rewriter/zenz_scorer.h b/src/rewriter/zenz_scorer.h
-new file mode 100755
-index 000000000..15e25b65e
+new file mode 100644
+index 000000000..e29494212
 --- /dev/null
 +++ b/src/rewriter/zenz_scorer.h
-@@ -0,0 +1,62 @@
+@@ -0,0 +1,72 @@
 +// Copyright 2026, Kotori IME contributors
 +// All rights reserved.
 +//
@@ -1125,7 +1950,7 @@ index 000000000..15e25b65e
 +//
 +// THIS SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND.
 +//
-+// Kotori: zenz-v2.5 (llama.cpp) による候補の採点(docs/adr/0013)。
++// Kotori: zenz-v2.5 または汎用の LLM(llama.cpp)による候補の採点(docs/adr/0013、0016)。
 +// Rust 版 crates/kotori-lm/src/zenz.rs と score.rs の移植。前置きの KV を候補ごとに
 +// 複製し、候補のトークンを1つのバッチで評価する。
 +
@@ -1147,13 +1972,21 @@ index 000000000..15e25b65e
 +class ZenzScorer {
 + public:
 +  // GGUF を読み込む。失敗したら nullptr。
-+  static std::unique_ptr<ZenzScorer> Open(const std::string& path, int threads);
++  // runtime_dir は llama.cpp の DLL のあるフォルダ(Windows のみ使う)。
++  static std::unique_ptr<ZenzScorer> Open(const std::string& path, int threads,
++                                          const std::string& runtime_dir);
 +  ~ZenzScorer();
 +
 +  // 候補ごとの log P(候補 </s> | 読みと左文脈)。失敗したら nullopt。
 +  std::optional<std::vector<float>> Score(
 +      absl::string_view left_context, absl::string_view reading,
 +      const std::vector<std::string>& candidates);
++
++  // zenz で読みから文を生成する(ビームサーチ)。よい順に最大 beams 件。zenz でなければ空。
++  std::vector<std::string> Generate(absl::string_view left_context,
++                                    absl::string_view reading, int beams);
++
++  bool is_zenz() const { return zenz_; }
 +
 +  // zenz のプロンプト。U+EE00 読み(カタカナ) U+EE02 左文脈 U+EE01。
 +  static std::string Prompt(absl::string_view left_context,
@@ -1164,6 +1997,8 @@ index 000000000..15e25b65e
 +  llama_model* model_ = nullptr;
 +  llama_context* ctx_ = nullptr;
 +  int max_seq_ = 0;
++  // zenz(読みを入れたプロンプト)か、汎用の LLM(左の文脈だけ)か。
++  bool zenz_ = true;
 +};
 +
 +}  // namespace mozc
