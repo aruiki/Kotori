@@ -21,7 +21,7 @@ use std::sync::Once;
 use sha2::{Digest, Sha256};
 
 /// LM まわりのエラー。
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
 pub enum LmError {
     #[error("パスに NUL が含まれる")]
     InvalidPath,

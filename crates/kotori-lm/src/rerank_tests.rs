@@ -107,3 +107,52 @@ fn generation_tokens() {
     g.advance();
     assert!(t.is_cancelled());
 }
+
+#[test]
+fn model_loads_in_background_and_queued_requests_wait() {
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let c = Arc::clone(&calls);
+    // 読み込みはテストが合図するまで終わらない。
+    let r = Reranker::spawn(move || {
+        rx.recv().unwrap();
+        Ok(Fake {
+            steps: 1,
+            step: Duration::from_millis(1),
+            calls: c,
+        })
+    });
+    assert_eq!(r.status(), Status::Loading);
+    // 読み込み中の要求は締め切りに間に合わない(キー応答はラティス単体で返す)。
+    let stale = r.submit(request(1)).wait(DEFAULT_DEADLINE).unwrap_err();
+    let pending = r.submit(request(2));
+    tx.send(()).unwrap();
+    assert_eq!(
+        pending.wait(Duration::from_secs(5)).unwrap(),
+        Outcome::Ready(vec![0.0, 1.0])
+    );
+    assert_eq!(r.status(), Status::Ready);
+    // 読み込み中に古くなった要求は採点しない。
+    assert_eq!(
+        stale.wait(Duration::from_secs(5)).unwrap(),
+        Outcome::Cancelled
+    );
+    assert_eq!(*calls.lock().unwrap(), [2]);
+}
+
+#[test]
+fn failed_load_cancels_requests_and_reports_status() {
+    let r = Reranker::spawn(|| -> Result<Fake, crate::LmError> {
+        Err(crate::LmError::Load("model.gguf".into()))
+    });
+    let started = Instant::now();
+    assert_eq!(
+        r.submit(request(2)).wait(Duration::from_secs(5)).unwrap(),
+        Outcome::Cancelled
+    );
+    assert!(started.elapsed() < Duration::from_secs(1));
+    assert_eq!(
+        r.status(),
+        Status::Failed(crate::LmError::Load("model.gguf".into()))
+    );
+}
