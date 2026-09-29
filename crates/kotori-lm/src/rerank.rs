@@ -3,12 +3,18 @@
 //! キーイベントのたびに世代番号を進め、古い世代の推論は途中で打ち切る。推論は専用の
 //! ワーカースレッドで行い、呼び出し側は締め切り(既定 25ms)まで待つ。間に合わなければ
 //! 「遅延」として受け取り、後で結果を取り出して差分更新に使う。
+//!
+//! モデルはワーカースレッドで読み込む([`Reranker::spawn`]、REQ-6-5)。読み込みが終わるまでの
+//! 要求は締め切りまでに結果が出ないので、呼び出し側はラティス単体の結果を使う。読み込みに
+//! 失敗したら、以後の要求はすぐに打ち切りになる(REQ-6-4)。
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
+
+use crate::LmError;
 
 /// キー応答に推論結果を使える締め切り(REQ-6-2)。
 pub const DEFAULT_DEADLINE: Duration = Duration::from_millis(25);
@@ -78,6 +84,17 @@ pub enum Outcome {
     Cancelled,
 }
 
+/// モデルの状態(REQ-6-4 の設定画面への表示に使う)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Status {
+    /// 読み込み中。要求は読み込みが終わってから処理する。
+    Loading,
+    /// 読み込み済み。
+    Ready,
+    /// 読み込みに失敗した。要求はすべて打ち切りになり、ラティス単体で動く。
+    Failed(LmError),
+}
+
 struct Job {
     generation: u64,
     request: RerankRequest,
@@ -109,16 +126,46 @@ impl Pending {
 /// 推論ワーカー。要求を順に処理し、古い世代の要求は採点せずに捨てる。
 pub struct Reranker {
     generation: Generation,
+    status: Arc<Mutex<Status>>,
     jobs: Option<Sender<Job>>,
     worker: Option<JoinHandle<()>>,
 }
 
 impl Reranker {
-    pub fn new<S: Scorer + Send>(mut scorer: S) -> Self {
+    /// 作成済みの採点器で始める。
+    pub fn new<S: Scorer + Send>(scorer: S) -> Self {
+        Self::spawn(move || Ok(scorer))
+    }
+
+    /// ワーカースレッドで `load` を呼んで採点器を作ってから、要求の処理を始める(REQ-6-5)。
+    /// 採点器はそのスレッドだけで使うので、スレッドをまたげなくてよい。
+    pub fn spawn<S, F>(load: F) -> Self
+    where
+        S: Scorer,
+        F: FnOnce() -> Result<S, LmError> + Send + 'static,
+    {
         let generation = Generation::new();
+        let status = Arc::new(Mutex::new(Status::Loading));
         let (jobs, rx) = mpsc::channel::<Job>();
         let gen = generation.clone();
+        let shared = Arc::clone(&status);
         let worker = std::thread::spawn(move || {
+            let set = |s: Status| {
+                if let Ok(mut status) = shared.lock() {
+                    *status = s;
+                }
+            };
+            let mut scorer = match load() {
+                Ok(scorer) => {
+                    set(Status::Ready);
+                    scorer
+                }
+                Err(e) => {
+                    // 受け口を閉じる。待っている要求はすべて打ち切りになる。
+                    set(Status::Failed(e));
+                    return;
+                }
+            };
             for job in rx {
                 let cancel = gen.token(job.generation);
                 let outcome = if cancel.is_cancelled() {
@@ -135,9 +182,18 @@ impl Reranker {
         });
         Self {
             generation,
+            status,
             jobs: Some(jobs),
             worker: Some(worker),
         }
+    }
+
+    /// モデルの状態。
+    pub fn status(&self) -> Status {
+        self.status
+            .lock()
+            .map(|s| s.clone())
+            .unwrap_or_else(|e| e.into_inner().clone())
     }
 
     /// 世代番号(キーイベントの処理でも進める)。

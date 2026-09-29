@@ -117,3 +117,38 @@ fn scorer_stops_when_cancelled() {
     generation.advance();
     assert_eq!(scorer.score(&request, &cancel), None);
 }
+
+#[test]
+fn zenz_scorer_runs_on_reranker_worker() {
+    use super::rerank::{Outcome, Reranker, Status};
+    use std::time::Duration;
+    let dir = tempdir::Dir::new("zenz-worker");
+    let path = dir.0.join("tiny.gguf");
+    tiny_model::write(&path);
+    // ZenzScorer はスレッドをまたげないので、ワーカーの中で読み込む。
+    let r = Reranker::spawn(move || ZenzScorer::with_model(Model::load(&path)?, 1));
+    let request = RerankRequest {
+        left_context: String::new(),
+        reading: "きょう".into(),
+        candidates: vec!["今日".into(), "京".into()],
+    };
+    match r.submit(request).wait(Duration::from_secs(30)).unwrap() {
+        Outcome::Ready(scores) => assert_eq!(scores.len(), 2),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(r.status(), Status::Ready);
+    // 語彙が zenz のものでなければ読み込みを拒否し、状態に出す(6.4、REQ-6-4)。
+    let bad = dir.0.join("bad.gguf");
+    tiny_model::write(&bad);
+    let r = Reranker::spawn(move || ZenzScorer::open(&bad, 1));
+    let request = RerankRequest {
+        left_context: String::new(),
+        reading: "きょう".into(),
+        candidates: vec!["今日".into()],
+    };
+    assert_eq!(
+        r.submit(request).wait(Duration::from_secs(30)).unwrap(),
+        Outcome::Cancelled
+    );
+    assert_eq!(r.status(), Status::Failed(LmError::VocabMismatch));
+}
