@@ -62,7 +62,14 @@ jobs:
         shell: cmd
         working-directory: .\mozc-src\src
         run: python build_tools/update_deps.py
+      # Qt のビルドは約 25 分かかる。Mozc のコミットと手順が同じなら、前に作ったものを使う。
+      - id: qt
+        uses: actions/cache@v4
+        with:
+          path: mozc-src/src/third_party/qt
+          key: mozc-qt-${{ runner.os }}-${{ env.MOZC_COMMIT }}-${{ hashFiles('mozc-src/src/build_tools/build_qt.py', 'mozc-src/src/build_tools/update_deps.py') }}
       - name: Qt を作る
+        if: steps.qt.outputs.cache-hit != 'true'
         shell: cmd
         working-directory: .\mozc-src\src
         run: python build_tools/build_qt.py --release --confirm_license
@@ -70,13 +77,21 @@ jobs:
       - name: Qt のソースを消す
         shell: cmd
         working-directory: .\mozc-src\src
-        run: rmdir third_party\qt_src /s /q
+        run: if exist third_party\qt_src rmdir third_party\qt_src /s /q
+      # Bazel の結果を使い回し、パッチを変えたときは変わったところだけ作り直す。
+      # 毎回新しい鍵で保存し、読むときは同じ Mozc のコミットの最新のものを使う。
+      - uses: actions/cache@v4
+        with:
+          path: D:\bazel-disk-cache
+          key: mozc-bazel-${{ runner.os }}-${{ env.MOZC_COMMIT }}-${{ github.run_id }}
+          restore-keys: |
+            mozc-bazel-${{ runner.os }}-${{ env.MOZC_COMMIT }}-
       - name: ビルドする
         shell: cmd
         working-directory: .\mozc-src\src
         env:
           ANDROID_NDK_HOME: ""
-        run: bazelisk build package --config release_build
+        run: bazelisk build package --config release_build --disk_cache=D:\bazel-disk-cache
       # パッチで名前を Kotori にしたので、ファイル名も合わせる(docs/adr/0012 の段階 2)。
       - name: インストーラの名前を変える
         shell: pwsh
