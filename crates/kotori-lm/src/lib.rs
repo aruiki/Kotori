@@ -7,6 +7,7 @@
 mod ffi;
 pub mod rerank;
 mod score;
+pub mod zenz;
 
 pub use score::Context;
 
@@ -14,6 +15,8 @@ use std::ffi::CString;
 use std::path::Path;
 use std::ptr::NonNull;
 use std::sync::Once;
+
+use sha2::{Digest, Sha256};
 
 /// LM まわりのエラー。
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -34,6 +37,8 @@ pub enum LmError {
     TooLong,
     #[error("推論に失敗した")]
     Decode,
+    #[error("モデルの語彙がエンジンの想定と一致しない")]
+    VocabMismatch,
 }
 
 static INIT: Once = Once::new();
@@ -94,6 +99,41 @@ impl Model {
         Ok(out)
     }
 
+    /// トークンの文字列(GGUF の `tokenizer.ggml.tokens` の値)のバイト列。
+    pub fn token_text(&self, token: i32) -> Option<Vec<u8>> {
+        ffi::token_text(self.raw, token)
+    }
+
+    /// 語彙の SHA-256(16進)。ID 順のトークン文字列を改行でつないだものを対象にする
+    /// (docs/adr/0007)。
+    pub fn vocab_hash(&self) -> Option<String> {
+        let mut hasher = Sha256::new();
+        for id in 0..i32::try_from(self.n_vocab()).ok()? {
+            if id > 0 {
+                hasher.update(b"\n");
+            }
+            hasher.update(self.token_text(id)?);
+        }
+        Some(
+            hasher
+                .finalize()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect(),
+        )
+    }
+
+    /// 語彙が `expected` のものか確かめる(6.4)。メタデータ `kotori.vocab_hash` と、実際の
+    /// 語彙から計算した値の両方が一致しなければ拒否する。
+    pub fn check_vocab(&self, expected: &str) -> Result<(), LmError> {
+        let declared = self.meta("kotori.vocab_hash");
+        if declared.as_deref() == Some(expected) && self.vocab_hash().as_deref() == Some(expected) {
+            Ok(())
+        } else {
+            Err(LmError::VocabMismatch)
+        }
+    }
+
     /// GGUF のメタデータの文字列値(6.4 の `kotori.*` など)。
     pub fn meta(&self, key: &str) -> Option<String> {
         let key = CString::new(key).ok()?;
@@ -123,3 +163,5 @@ mod score_tests;
 mod tests;
 #[cfg(test)]
 mod tiny_model;
+#[cfg(test)]
+mod zenz_tests;

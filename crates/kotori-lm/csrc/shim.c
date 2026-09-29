@@ -39,6 +39,15 @@ int32_t kotori_lm_tokenize(const struct llama_model * model, const char * text, 
                           add_special != 0, false);
 }
 
+/* トークンの文字列(GGUF の tokenizer.ggml.tokens の値)。範囲外なら NULL。 */
+const char * kotori_lm_token_text(const struct llama_model * model, int32_t token) {
+    const struct llama_vocab * vocab = llama_model_get_vocab(model);
+    if (token < 0 || token >= llama_vocab_n_tokens(vocab)) {
+        return NULL;
+    }
+    return llama_vocab_get_text(vocab, token);
+}
+
 int32_t kotori_lm_meta(const struct llama_model * model, const char * key, char * buf, size_t buf_size) {
     return llama_model_meta_val_str(model, key, buf, buf_size);
 }

@@ -62,8 +62,9 @@ pub struct RerankRequest {
     pub candidates: Vec<String>,
 }
 
-/// 候補を採点するもの。LM による実装と、テスト用の偽物がある。
-pub trait Scorer: Send + 'static {
+/// 候補を採点するもの。LM による実装と、テスト用の偽物がある。スレッドをまたげない
+/// 実装([`crate::zenz::ZenzScorer`] など)もある。
+pub trait Scorer: 'static {
     /// 候補ごとのスコア(大きいほど良い)。打ち切られたら `None`。
     fn score(&mut self, request: &RerankRequest, cancel: &CancelToken) -> Option<Vec<f32>>;
 }
@@ -113,7 +114,7 @@ pub struct Reranker {
 }
 
 impl Reranker {
-    pub fn new<S: Scorer>(mut scorer: S) -> Self {
+    pub fn new<S: Scorer + Send>(mut scorer: S) -> Self {
         let generation = Generation::new();
         let (jobs, rx) = mpsc::channel::<Job>();
         let gen = generation.clone();

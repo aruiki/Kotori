@@ -312,6 +312,7 @@ version = "0.0.0"
 dependencies = [
  "cc",
  "cmake",
+ "sha2",
  "thiserror 2.0.21",
 ]
 

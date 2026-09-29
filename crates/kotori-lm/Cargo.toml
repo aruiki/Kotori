@@ -16,4 +16,5 @@ cc = "1.5.1"
 cmake = "0.1.58"
 
 [dependencies]
+sha2 = "0.10.9"
 thiserror = "2"

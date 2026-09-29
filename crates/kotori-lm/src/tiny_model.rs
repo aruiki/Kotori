@@ -79,11 +79,16 @@ impl Rng {
 
 /// `path` にテスト用のモデルを書く。
 pub fn write(path: &Path) {
+    write_with(path, &[]);
+}
+
+/// 文字列のメタデータ `extra` を足して書く。
+pub fn write_with(path: &Path, extra: &[(&str, &str)]) {
     let mut tokens = vec!["<unk>".to_owned(), "<s>".to_owned(), "</s>".to_owned()];
     tokens.extend((0..=255u8).map(|b| format!("<0x{b:02X}>")));
     let mut types = vec![2, 3, 3];
     types.extend(std::iter::repeat(6).take(256));
-    let kvs: Vec<(&str, Value)> = vec![
+    let mut kvs: Vec<(&str, Value)> = vec![
         ("general.architecture", Value::Str("llama".into())),
         ("general.alignment", Value::U32(32)),
         ("llama.context_length", Value::U32(N_CTX)),
@@ -108,6 +113,7 @@ pub fn write(path: &Path) {
         ("tokenizer.ggml.bos_token_id", Value::U32(1)),
         ("tokenizer.ggml.eos_token_id", Value::U32(2)),
     ];
+    kvs.extend(extra.iter().map(|&(k, v)| (k, Value::Str(v.into()))));
     // (名前, 形(ne0 から), 1 で埋めるか)
     let tensors: Vec<(&str, Vec<u64>, bool)> = vec![
         ("token_embd.weight", vec![N_EMBD, N_VOCAB], false),
