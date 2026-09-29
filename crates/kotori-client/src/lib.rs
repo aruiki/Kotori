@@ -218,6 +218,7 @@ pub fn connect_unix(
     Client::new(std::os::unix::net::UnixStream::connect(path)?)
 }
 
+pub mod acl;
 pub mod ffi;
 #[cfg(test)]
 mod ffi_tests;

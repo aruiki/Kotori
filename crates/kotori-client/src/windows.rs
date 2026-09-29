@@ -1,7 +1,8 @@
 //! Windows の名前付きパイプ(docs/SPEC.md 4.2)。
 //!
 //! Win32 API の FFI はこのモジュールに集める(docs/adr/0003)。
-//! パイプ名は `\\.\pipe\kotori-<ユーザーSID>` とし、DACL で当該ユーザーだけに接続を許す。
+//! パイプ名は `\\.\pipe\kotori-<ユーザーSID>` とする。DACL でユーザー本人と AppContainer に
+//! 接続を許し、接続を受けたら接続元のユーザーが同じかをトークンで確かめる(REQ-10-4)。
 
 #![allow(unsafe_code)]
 
@@ -29,15 +30,18 @@ use windows_sys::Win32::Storage::FileSystem::{
     FlushFileBuffers, ReadFile, WriteFile, FILE_FLAG_FIRST_PIPE_INSTANCE, FILE_FLAG_OVERLAPPED,
     PIPE_ACCESS_DUPLEX, SECURITY_IDENTIFICATION,
 };
+use windows_sys::Win32::System::Pipes::GetNamedPipeClientProcessId;
 use windows_sys::Win32::System::Pipes::{
     ConnectNamedPipe, CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS,
     PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
 };
 use windows_sys::Win32::System::Threading::{
-    CreateEventW, CreateMutexW, GetCurrentProcess, OpenProcessToken,
+    CreateEventW, CreateMutexW, GetCurrentProcess, OpenProcess, OpenProcessToken,
+    PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
 
+use crate::acl::{pipe_sddl, PIPE_CLIENT_ACCESS};
 use crate::{Client, Transport};
 
 const PIPE_BUFFER_SIZE: u32 = 64 * 1024;
@@ -63,9 +67,32 @@ impl Drop for LocalBox {
 
 /// 現在のプロセスのユーザー SID を文字列(`S-1-5-21-...`)で返す。
 pub fn current_user_sid() -> io::Result<String> {
+    // SAFETY: GetCurrentProcess は閉じなくてよい擬似ハンドルを返す。
+    process_user_sid(unsafe { GetCurrentProcess() })
+}
+
+/// 名前付きパイプの接続元のプロセスのユーザー SID。
+fn pipe_client_user_sid(pipe: RawHandle) -> io::Result<String> {
+    let mut pid = 0u32;
+    // SAFETY: pipe は接続済みのパイプのサーバー側のハンドルで、pid は有効な出力先。
+    if unsafe { GetNamedPipeClientProcessId(pipe, &mut pid) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: 引数は値だけ。失敗すれば NULL が返る。
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if process.is_null() {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: OpenProcess が成功したので process は所有権を持つ有効なハンドル。
+    let process = unsafe { OwnedHandle::from_raw_handle(process) };
+    process_user_sid(process.as_raw_handle())
+}
+
+/// プロセスのトークンのユーザー SID を文字列で返す。
+fn process_user_sid(process: RawHandle) -> io::Result<String> {
     let mut token = ptr::null_mut();
-    // SAFETY: GetCurrentProcess は擬似ハンドルを返し、token は有効な出力先。
-    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) } == 0 {
+    // SAFETY: process は有効なプロセスのハンドルで、token は有効な出力先。
+    if unsafe { OpenProcessToken(process, TOKEN_QUERY, &mut token) } == 0 {
         return Err(io::Error::last_os_error());
     }
     // SAFETY: OpenProcessToken が成功したので token は所有権を持つ有効なハンドル。
@@ -125,7 +152,12 @@ pub fn default_pipe_name() -> io::Result<String> {
 
 /// 保護付き DACL で現在のユーザーにだけ全権を与えるセキュリティ記述子を作る。
 fn user_only_descriptor() -> io::Result<LocalBox> {
-    let sddl = wide(&format!("D:P(A;;GA;;;{})", current_user_sid()?));
+    descriptor(&format!("D:P(A;;GA;;;{})", current_user_sid()?))
+}
+
+/// SDDL からセキュリティ記述子を作る。
+fn descriptor(sddl: &str) -> io::Result<LocalBox> {
+    let sddl = wide(sddl);
     let mut sd: PSECURITY_DESCRIPTOR = ptr::null_mut();
     // SAFETY: sddl は NUL 終端、sd は有効な出力先。
     let ok = unsafe {
@@ -190,19 +222,23 @@ impl InstanceMutex {
 pub struct PipeListener {
     name: Vec<u16>,
     descriptor: LocalBox,
+    /// このプロセスのユーザー SID。接続元がこれと同じときだけ受け付ける。
+    user_sid: String,
     first: bool,
     /// 接続を待っているインスタンス。常に1つ用意して、クライアントが名前を見失わないようにする。
     pending: Option<OwnedHandle>,
 }
 
 impl PipeListener {
-    /// 待ち受けを準備する。DACL は保護付きで、現在のユーザーにだけ全権を与える。
+    /// 待ち受けを準備する。DACL は [`pipe_sddl`] のとおり(REQ-10-4)。
     ///
     /// 同名のパイプが既にあれば、最初のインスタンスの作成が失敗する(乗っ取りの防止)。
     pub fn bind(name: &str) -> io::Result<Self> {
+        let user_sid = current_user_sid()?;
         let mut listener = Self {
             name: wide(name),
-            descriptor: user_only_descriptor()?,
+            descriptor: descriptor(&pipe_sddl(&user_sid))?,
+            user_sid,
             first: true,
             pending: None,
         };
@@ -240,19 +276,27 @@ impl PipeListener {
     }
 
     /// クライアントの接続を待ち、接続済みのストリームを返す。
+    ///
+    /// 接続元のユーザーが自分と違う(または確かめられない)接続は、切って次を待つ(REQ-10-4)。
     pub fn accept(&mut self) -> io::Result<PipeStream> {
-        let handle = match self.pending.take() {
-            Some(h) => h,
-            None => self.create_instance()?,
-        };
-        // SAFETY: handle は同期モードで作ったパイプのインスタンスで、OVERLAPPED は使わない。
-        let ok = unsafe { ConnectNamedPipe(handle.as_raw_handle(), ptr::null_mut()) };
-        // SAFETY: 直前の Win32 呼び出しのエラー値を読むだけ。
-        if ok == 0 && unsafe { GetLastError() } != ERROR_PIPE_CONNECTED {
-            return Err(io::Error::last_os_error());
+        loop {
+            let handle = match self.pending.take() {
+                Some(h) => h,
+                None => self.create_instance()?,
+            };
+            // SAFETY: handle は同期モードで作ったパイプのインスタンスで、OVERLAPPED は使わない。
+            let ok = unsafe { ConnectNamedPipe(handle.as_raw_handle(), ptr::null_mut()) };
+            // SAFETY: 直前の Win32 呼び出しのエラー値を読むだけ。
+            if ok == 0 && unsafe { GetLastError() } != ERROR_PIPE_CONNECTED {
+                return Err(io::Error::last_os_error());
+            }
+            self.pending = Some(self.create_instance()?);
+            match pipe_client_user_sid(handle.as_raw_handle()) {
+                Ok(sid) if sid == self.user_sid => return Ok(PipeStream(File::from(handle))),
+                // handle を閉じて接続を切る。
+                _ => continue,
+            }
         }
-        self.pending = Some(self.create_instance()?);
-        Ok(PipeStream(File::from(handle)))
     }
 }
 
@@ -289,9 +333,10 @@ impl Drop for PipeStream {
 /// すべてのインスタンスが使用中なら少し待って再試行する。
 pub fn connect_pipe(name: &str) -> io::Result<Client<PipeClient>> {
     for _ in 0..50 {
+        // GENERIC_WRITE はパイプのインスタンスを作る権限を含み、AppContainer には与えていない
+        // ので、読み取りとデータの書き込みだけを求める。
         let result = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
+            .access_mode(PIPE_CLIENT_ACCESS)
             .security_qos_flags(SECURITY_IDENTIFICATION)
             .custom_flags(FILE_FLAG_OVERLAPPED)
             .open(name);
