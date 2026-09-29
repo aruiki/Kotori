@@ -54,6 +54,10 @@ bool IsConverting(const std::vector<Segment>& preedit);
 // 候補ウィンドウを添わせる区間(UTF-16 の [begin, end))。注目文節があればそれ、なければ全体。
 std::pair<int32_t, int32_t> FocusedRange(const Composition& comp);
 
+// IME のオン/オフを切り替えるキーか(11.2)。日本語キーボードの半角/全角キーは押すたびに
+// VK_OEM_AUTO(0xF3)と VK_OEM_ENLW(0xF4)が交互に来る。Alt+` などの VK_KANJI(0x19)も同じに扱う。
+bool IsOpenCloseKey(uint32_t vk);
+
 // 区間をつなぎ、エンジンのカーソル位置(Unicode の文字数)を UTF-16 の位置に直す。
 Composition MakeComposition(const std::vector<Segment>& segments, uint32_t cursor_chars);
 

@@ -111,6 +111,14 @@ void TestInputScope() {
   CHECK(!IsPrivateInputScope({}));
 }
 
+void TestOpenCloseKey() {
+  using kotori::IsOpenCloseKey;
+  CHECK(IsOpenCloseKey(VK_KANJI));
+  CHECK(IsOpenCloseKey(VK_OEM_AUTO) && IsOpenCloseKey(VK_OEM_ENLW));
+  CHECK(!IsOpenCloseKey(VK_SPACE) && !IsOpenCloseKey(VK_CONVERT) && !IsOpenCloseKey(VK_NONCONVERT));
+  CHECK(!IsOpenCloseKey('A'));
+}
+
 }  // namespace
 
 int main() {
@@ -121,6 +129,7 @@ int main() {
   TestIsConverting();
   TestFocusedRange();
   TestLastChars();
+  TestOpenCloseKey();
   if (g_failures == 0) {
     std::puts("すべて通った");
   }
