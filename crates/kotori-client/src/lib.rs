@@ -223,10 +223,14 @@ pub mod ffi;
 #[cfg(test)]
 mod ffi_tests;
 pub mod managed;
+pub mod renderer;
+pub mod renderer_ffi;
+#[cfg(test)]
+mod renderer_tests;
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
 pub use windows::{
-    connect_pipe, current_user_sid, default_pipe_name, InstanceMutex, PipeClient, PipeListener,
-    PipeStream,
+    connect_pipe, current_user_sid, default_pipe_name, default_renderer_pipe_name,
+    open_pipe_with_write_timeout, InstanceMutex, PipeClient, PipeListener, PipeStream,
 };

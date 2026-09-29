@@ -336,6 +336,11 @@ dependencies = [
 [[package]]
 name = "kotori-renderer"
 version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "kotori-client",
+ "kotori-proto",
+]
 
 [[package]]
 name = "kotori-server"

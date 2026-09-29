@@ -1,0 +1,44 @@
+// TIP から候補ウィンドウの renderer への通知(docs/SPEC.md 4.1、REQ-10-7、docs/adr/0010)。
+// フレームはサーバーとの IPC と同じ「u32 リトルエンディアンの長さ + 本体」。応答は返さない。
+syntax = "proto3";
+
+package kotori.renderer.v1;
+
+// 画面上の矩形。物理ピクセルの座標。
+message Rect {
+  int32 left = 1;
+  int32 top = 2;
+  int32 right = 3;
+  int32 bottom = 4;
+}
+
+message Candidate {
+  string text = 1;
+  // 注釈(5.6)。なければ空。
+  string annotation = 2;
+}
+
+// 候補ウィンドウを出す、または中身を差し替える。ページ(1ページ9件、11.3)は
+// renderer が選択位置から決める。
+message Show {
+  repeated Candidate candidates = 1;
+  uint32 focused_index = 2;
+  // 注目文節のキャレットの矩形。候補ウィンドウはこれを隠さない位置に出す(REQ-11-3)。
+  Rect caret = 3;
+  // アプリのトップレベルウィンドウ(HWND)。ダークモードの判定とモニタの選択に使う。
+  uint64 owner_window = 4;
+  // クリックした候補の番号を PostMessage で返す、TIP のメッセージ専用ウィンドウ(HWND)。
+  uint64 notify_window = 5;
+}
+
+// 候補ウィンドウを隠す。
+message Hide {}
+
+message RendererMessage {
+  // 送る側のプロトコルのメジャーバージョン(kotori.proto と同じ番号)。違えば renderer は捨てる。
+  uint32 protocol_major = 1;
+  oneof body {
+    Show show = 10;
+    Hide hide = 11;
+  }
+}

@@ -14,10 +14,11 @@ use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
 use std::ptr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use windows_sys::Win32::Foundation::{
     GetLastError, LocalFree, ERROR_ALREADY_EXISTS, ERROR_BROKEN_PIPE, ERROR_INSUFFICIENT_BUFFER,
-    ERROR_IO_PENDING, ERROR_PIPE_BUSY, ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE,
+    ERROR_IO_PENDING, ERROR_PIPE_BUSY, ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE, WAIT_TIMEOUT,
 };
 use windows_sys::Win32::Security::Authorization::{
     ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
@@ -37,7 +38,7 @@ use windows_sys::Win32::System::Pipes::{
 };
 use windows_sys::Win32::System::Threading::{
     CreateEventW, CreateMutexW, GetCurrentProcess, OpenProcess, OpenProcessToken,
-    PROCESS_QUERY_LIMITED_INFORMATION,
+    WaitForSingleObject, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
 
@@ -148,6 +149,11 @@ fn process_user_sid(process: RawHandle) -> io::Result<String> {
 /// 現在のユーザー用のパイプ名 `\\.\pipe\kotori-<SID>` を返す。
 pub fn default_pipe_name() -> io::Result<String> {
     Ok(format!(r"\\.\pipe\kotori-{}", current_user_sid()?))
+}
+
+/// 現在のユーザー用の renderer のパイプ名 `\\.\pipe\kotori-renderer-<SID>`(docs/adr/0010)。
+pub fn default_renderer_pipe_name() -> io::Result<String> {
+    Ok(format!(r"\\.\pipe\kotori-renderer-{}", current_user_sid()?))
 }
 
 /// 保護付き DACL で現在のユーザーにだけ全権を与えるセキュリティ記述子を作る。
@@ -332,6 +338,17 @@ impl Drop for PipeStream {
 /// サーバーが偽装されていてもクライアントの権限を使わせないよう、偽装レベルは識別のみにする。
 /// すべてのインスタンスが使用中なら少し待って再試行する。
 pub fn connect_pipe(name: &str) -> io::Result<Client<PipeClient>> {
+    Client::new(open_pipe(name)?)
+}
+
+/// 書き込みが `timeout` を超えたら取り消してエラーにするパイプを開く(renderer への送信用)。
+pub fn open_pipe_with_write_timeout(name: &str, timeout: Duration) -> io::Result<PipeClient> {
+    let mut pipe = open_pipe(name)?;
+    pipe.write_timeout = Some(timeout);
+    Ok(pipe)
+}
+
+fn open_pipe(name: &str) -> io::Result<PipeClient> {
     for _ in 0..50 {
         // GENERIC_WRITE はパイプのインスタンスを作る権限を含み、AppContainer には与えていない
         // ので、読み取りとデータの書き込みだけを求める。
@@ -346,7 +363,7 @@ pub fn connect_pipe(name: &str) -> io::Result<Client<PipeClient>> {
             }
             other => {
                 let handle = Arc::new(OwnedHandle::from(other?));
-                return Client::new(PipeClient::new(handle)?);
+                return PipeClient::new(handle);
             }
         }
     }
@@ -362,6 +379,8 @@ pub fn connect_pipe(name: &str) -> io::Result<Client<PipeClient>> {
 pub struct PipeClient {
     handle: Arc<OwnedHandle>,
     event: OwnedHandle,
+    /// 書き込みを待つ上限。`None` なら終わるまで待つ。
+    write_timeout: Option<Duration>,
 }
 
 impl PipeClient {
@@ -373,7 +392,11 @@ impl PipeClient {
         }
         // SAFETY: CreateEventW が成功したので event は所有権を持つ有効なハンドル。
         let event = unsafe { OwnedHandle::from_raw_handle(event as RawHandle) };
-        Ok(Self { handle, event })
+        Ok(Self {
+            handle,
+            event,
+            write_timeout: None,
+        })
     }
 
     /// overlapped I/O を1回行い、完了を待つ。相手が閉じていれば 0 バイトを返す。
@@ -397,6 +420,18 @@ impl PipeClient {
             return closed_as_eof(io::Error::last_os_error());
         }
         let mut done = 0u32;
+        if let Some(timeout) = self.write_timeout.filter(|_| write) {
+            let ms = u32::try_from(timeout.as_millis()).unwrap_or(u32::MAX);
+            // SAFETY: ov.hEvent は I/O の完了で立つ、この値が持つイベント。
+            if unsafe { WaitForSingleObject(ov.hEvent, ms) } == WAIT_TIMEOUT {
+                // SAFETY: handle と ov は上で開始した I/O のもの。取り消しの完了まで待ってから返る。
+                unsafe {
+                    CancelIoEx(handle, &ov);
+                    GetOverlappedResult(handle, &ov, &mut done, 1);
+                }
+                return Err(io::Error::from(io::ErrorKind::TimedOut));
+            }
+        }
         // SAFETY: ov は上で開始した I/O のもので、完了まで待つ。
         if unsafe { GetOverlappedResult(handle, &ov, &mut done, 1) } == 0 {
             return closed_as_eof(io::Error::last_os_error());
@@ -432,7 +467,9 @@ impl Write for PipeClient {
 
 impl Transport for PipeClient {
     fn try_clone(&self) -> io::Result<Self> {
-        PipeClient::new(Arc::clone(&self.handle))
+        let mut clone = PipeClient::new(Arc::clone(&self.handle))?;
+        clone.write_timeout = self.write_timeout;
+        Ok(clone)
     }
 
     fn shutdown(&self) {
