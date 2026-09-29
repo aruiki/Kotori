@@ -363,6 +363,8 @@ impl Session {
             Command::CursorRight => self.composer.move_right(),
             Command::ShrinkSegment => self.resize_focused(-1, converter),
             Command::ExpandSegment => self.resize_focused(1, converter),
+            Command::InsertSpace => committed.push('\u{3000}'),
+            Command::InsertHalfSpace => committed.push(' '),
             // 予測、学習の削除、確定アンドゥは
             // 後続の変更で入れる。キーは飲み込む。
             _ => {}

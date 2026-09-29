@@ -54,3 +54,4 @@
 | 14 | renderer の候補ウィンドウを描く(位置の計算は済) | renderer | 13。描画は Issue #54 の判断待ち |
 | 15 | TIP から候補ウィンドウを出す(済、表示は 14 の描画のあと) | windows | 13 |
 | 16 | パイプの ACL を AppContainer と低整合性に広げ、接続元を検証する(済、実機の確認待ち) | client/server | なし |
+| 17 | 待機中の Space で空白を入れる(済) | session | なし |

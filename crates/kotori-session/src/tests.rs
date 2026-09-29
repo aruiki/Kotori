@@ -77,7 +77,9 @@ fn ms_ime_preset_follows_spec_table() {
         (Selecting, "Tab", Some(NextPage)),
         (Selecting, "Ctrl+Delete", Some(ForgetCandidate)),
         (Idle, "Ctrl+Backspace", Some(UndoCommit)),
-        (Idle, "Space", None),
+        (Idle, "Space", Some(InsertSpace)),
+        (Idle, "Shift+Space", Some(InsertHalfSpace)),
+        (Idle, "Ctrl+Space", None),
     ];
     for &(state, k, want) in cases {
         assert_eq!(km.command(state, key(k)), want, "{state:?} {k}");
