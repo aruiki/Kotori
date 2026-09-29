@@ -344,7 +344,10 @@ dependencies = [
  "anyhow",
  "fs4",
  "kotori-client",
+ "kotori-composer",
+ "kotori-dict",
  "kotori-proto",
+ "kotori-session",
 ]
 
 [[package]]

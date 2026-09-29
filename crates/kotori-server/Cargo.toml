@@ -13,7 +13,10 @@ workspace = true
 
 [dependencies]
 anyhow = "1"
+kotori-composer = { path = "../kotori-composer" }
+kotori-dict = { path = "../kotori-dict" }
 kotori-proto = { path = "../kotori-proto" }
+kotori-session = { path = "../kotori-session" }
 
 [dev-dependencies]
 kotori-client = { path = "../kotori-client" }

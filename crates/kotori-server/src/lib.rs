@@ -1,28 +1,89 @@
 //! エンジン本体(docs/SPEC.md 4章)。
 //!
-//! M0 では IPC の受け口だけを持ち、変換はしない。キーはすべて未処理
-//! (`consumed = false`)として返し、フロントエンドにアプリへ渡させる。
+//! セッションごとに状態機械([`kotori_session::Session`])を持ち、キーを変換して表示の内容を
+//! 返す。変換の部品([`Engine`])がないとき(辞書を読めなかったときなど)は、キーをすべて
+//! 未処理(`consumed = false`)として返し、フロントエンドにアプリへ渡させる。
 
 mod instance;
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::sync::Mutex;
+use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::{Arc, Mutex};
 
 pub use instance::InstanceGuard;
+use kotori_composer::RomajiTable;
+use kotori_dict::Dictionary;
 use kotori_proto::ipc::{self, request, response, ErrorCode, Request, Response};
 use kotori_proto::{protocol_version, read_message, write_message, FrameError, PROTOCOL_MAJOR};
+use kotori_session::{Attribute, Command, Converter, Key, Keymap, LatticeConverter, Session};
+
+/// 変換に使う部品。セッションをまたいで共有する。
+#[derive(Clone)]
+pub struct Engine {
+    converter: Arc<dyn Converter + Send + Sync>,
+    keymap: Arc<Keymap>,
+    romaji: Arc<RomajiTable>,
+}
+
+impl Engine {
+    /// システム辞書と MS-IME 互換のキーマップ・ローマ字表で作る。
+    pub fn new(dict: Dictionary) -> Self {
+        Self::with_converter(Arc::new(LatticeConverter::new(Arc::new(dict))))
+    }
+
+    /// 変換器を差し替えて作る(テスト用)。
+    pub fn with_converter(converter: Arc<dyn Converter + Send + Sync>) -> Self {
+        Self {
+            converter,
+            keymap: Arc::new(Keymap::ms_ime()),
+            romaji: Arc::new(RomajiTable::ms_ime()),
+        }
+    }
+
+    fn session(&self) -> Session {
+        Session::new(Arc::clone(&self.keymap), Arc::clone(&self.romaji))
+    }
+}
+
+impl std::fmt::Debug for Engine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Engine").finish_non_exhaustive()
+    }
+}
+
+#[derive(Debug)]
+struct SessionEntry {
+    scope: ipc::InputScope,
+    session: Option<Session>,
+}
 
 /// サーバーの状態。接続をまたいで共有する。
 #[derive(Debug, Default)]
 pub struct Server {
-    sessions: HashMap<u64, ipc::InputScope>,
+    engine: Option<Engine>,
+    sessions: HashMap<u64, SessionEntry>,
     next_session_id: u64,
 }
 
 impl Server {
+    /// 変換の部品なしで作る。キーはすべてアプリへ渡す。
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// 変換の部品を持たせて作る。
+    pub fn with_engine(engine: Engine) -> Self {
+        Self {
+            engine: Some(engine),
+            ..Self::default()
+        }
+    }
+
+    /// 変換の部品を後から持たせる(辞書をバックグラウンドで読み込んだあと)。
+    /// 既存のセッションは次のキーから変換を始める。
+    pub fn set_engine(&mut self, engine: Engine) {
+        self.engine = Some(engine);
     }
 
     /// 1つの要求を処理して応答本体を返す。バージョン確認は [`serve`] が済ませている前提。
@@ -31,7 +92,11 @@ impl Server {
             Some(request::Body::CreateSession(req)) => {
                 self.next_session_id += 1;
                 let id = self.next_session_id;
-                self.sessions.insert(id, req.input_scope());
+                let entry = SessionEntry {
+                    scope: req.input_scope(),
+                    session: None,
+                };
+                self.sessions.insert(id, entry);
                 response::Body::SessionCreated(ipc::SessionCreated { session_id: id })
             }
             Some(request::Body::DeleteSession(req)) => {
@@ -40,8 +105,8 @@ impl Server {
                     None => unknown_session(req.session_id),
                 }
             }
-            Some(request::Body::SendKey(req)) => self.output(req.session_id),
-            Some(request::Body::SendCommand(req)) => self.output(req.session_id),
+            Some(request::Body::SendKey(req)) => self.send_key(&req),
+            Some(request::Body::SendCommand(req)) => self.send_command(&req),
             Some(request::Body::SetContext(req)) => self.ack(req.session_id),
             Some(request::Body::GetConfig(_))
             | Some(request::Body::SetConfig(_))
@@ -50,15 +115,67 @@ impl Server {
         }
     }
 
-    fn output(&self, session_id: u64) -> response::Body {
-        if !self.sessions.contains_key(&session_id) {
-            return unknown_session(session_id);
+    fn send_key(&mut self, req: &ipc::SendKey) -> response::Body {
+        let m = req.modifiers.unwrap_or_default();
+        let key = Key {
+            vk: req.virtual_key,
+            shift: m.shift,
+            ctrl: m.ctrl,
+            alt: m.alt,
+        };
+        if req.key_up {
+            return self.pass_through(req.session_id);
         }
-        response::Body::Output(ipc::Output {
-            consumed: false,
-            input_mode: ipc::InputMode::Direct.into(),
-            ..Default::default()
+        self.with_session(req.session_id, |session, converter| {
+            session.key(key, &req.text, converter)
         })
+    }
+
+    fn send_command(&mut self, req: &ipc::SendCommand) -> response::Body {
+        let command = match req.kind() {
+            ipc::CommandKind::Commit => Command::Commit,
+            ipc::CommandKind::Cancel => Command::CancelInput,
+            // 候補の選択、文節の伸縮、再変換、モード切替は後続で入れる。
+            _ => return error(ErrorCode::Unimplemented, "このコマンドは未実装"),
+        };
+        self.with_session(req.session_id, |session, converter| {
+            session.command(command, converter)
+        })
+    }
+
+    /// セッションの状態機械で処理する。パスワード欄(REQ-10-3)と、変換の部品がないときは
+    /// キーをアプリへ渡す。処理中のパニックはそのセッションだけを作り直して閉じ込める(REQ-4-5)。
+    fn with_session(
+        &mut self,
+        session_id: u64,
+        f: impl FnOnce(&mut Session, &dyn Converter) -> kotori_session::Output,
+    ) -> response::Body {
+        let Some(entry) = self.sessions.get_mut(&session_id) else {
+            return unknown_session(session_id);
+        };
+        let Some(engine) = &self.engine else {
+            return pass_through();
+        };
+        if entry.scope == ipc::InputScope::Password {
+            return pass_through();
+        }
+        let session = entry.session.get_or_insert_with(|| engine.session());
+        let converter = &*engine.converter;
+        match catch_unwind(AssertUnwindSafe(|| f(session, converter))) {
+            Ok(out) => response::Body::Output(to_proto(out)),
+            Err(_) => {
+                *session = engine.session();
+                pass_through()
+            }
+        }
+    }
+
+    fn pass_through(&self, session_id: u64) -> response::Body {
+        if self.sessions.contains_key(&session_id) {
+            pass_through()
+        } else {
+            unknown_session(session_id)
+        }
     }
 
     fn ack(&self, session_id: u64) -> response::Body {
@@ -66,6 +183,67 @@ impl Server {
             return unknown_session(session_id);
         }
         response::Body::Ack(ipc::Ack {})
+    }
+}
+
+/// 同梱のシステム辞書の既定の置き場所(12.1)。
+pub fn default_dict_path() -> Option<std::path::PathBuf> {
+    const FILE: &str = "system.dict";
+    if cfg!(windows) {
+        std::env::var_os("ProgramFiles").map(|p| {
+            std::path::PathBuf::from(p)
+                .join("Kotori")
+                .join("data")
+                .join(FILE)
+        })
+    } else if cfg!(target_os = "macos") {
+        // アプリバンドルに入れるまでの仮の置き場所。
+        Some(std::path::PathBuf::from("/Library/Application Support/Kotori").join(FILE))
+    } else {
+        Some(std::path::PathBuf::from("/usr/share/kotori").join(FILE))
+    }
+}
+
+/// キーを処理せず、アプリへ渡させる応答。
+fn pass_through() -> response::Body {
+    response::Body::Output(ipc::Output {
+        consumed: false,
+        input_mode: ipc::InputMode::Direct.into(),
+        ..Default::default()
+    })
+}
+
+fn to_proto(out: kotori_session::Output) -> ipc::Output {
+    ipc::Output {
+        consumed: out.consumed,
+        preedit: out
+            .preedit
+            .into_iter()
+            .map(|(text, attr)| ipc::PreeditSegment {
+                text,
+                attribute: match attr {
+                    Attribute::Input => ipc::SegmentAttribute::Input,
+                    Attribute::Converted => ipc::SegmentAttribute::Converted,
+                    Attribute::Focused => ipc::SegmentAttribute::Focused,
+                }
+                .into(),
+            })
+            .collect(),
+        cursor: u32::try_from(out.cursor).unwrap_or(u32::MAX),
+        committed_text: out.committed,
+        candidate_window: out.candidate_window.map(|w| ipc::CandidateWindow {
+            candidates: w
+                .candidates
+                .into_iter()
+                .map(|text| ipc::Candidate {
+                    text,
+                    annotation: String::new(),
+                })
+                .collect(),
+            focused_index: u32::try_from(w.focused).unwrap_or(0),
+            visible: true,
+        }),
+        input_mode: ipc::InputMode::Hiragana.into(),
     }
 }
 
