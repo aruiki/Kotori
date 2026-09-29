@@ -44,7 +44,7 @@
 | 04 | パスワード欄では TIP がキーを渡す(済、実機の確認待ち) | windows | なし |
 | 05 | 左文脈をサーバーのセッションに持たせる(済) | server/session | なし |
 | 06 | TIP から左文脈を送る(済) | windows | 05 |
-| 07 | 文節の伸縮(Shift+←/→) | session | なし |
+| 07 | 文節の伸縮(Shift+←/→)(済) | session | なし |
 | 08 | 文字種変換(F6〜F10) | session | なし |
 | 09 | 入力中のカーソル移動(←/→) | composer/session | なし |
 | 10 | SendCommand の候補選択 | server/session | なし |
