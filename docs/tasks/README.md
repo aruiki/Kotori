@@ -56,3 +56,4 @@
 | 16 | パイプの ACL を AppContainer と低整合性に広げ、接続元を検証する(済、実機の確認待ち) | client/server | なし |
 | 17 | 待機中の Space で空白を入れる(済) | session | なし |
 | 18 | 半角/全角キーで IME をオン/オフする(済、実機の確認待ち) | windows | なし |
+| 19 | 取り消せる確定がないとき Ctrl+Backspace をアプリへ渡す(済) | session | なし |
