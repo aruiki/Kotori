@@ -76,3 +76,9 @@ jobs:
       - run: ./build/Release/kotori_tip_tests.exe
       - run: ./frontends/windows/tests/register.ps1 -Dll build/Release/kotori_tip.dll -Arch ${{ matrix.arch }}
         shell: pwsh
+      # インストールとアンインストールのスクリプト(16.2)。x64 だけで確かめる。
+      - if: matrix.arch == 'x64'
+        run: cargo build -p kotori-server --release --locked --target ${{ matrix.target }}
+      - if: matrix.arch == 'x64'
+        run: ./frontends/windows/tests/install.ps1 -Server target/${{ matrix.target }}/release/kotori-server.exe -Dll build/Release/kotori_tip.dll
+        shell: pwsh
