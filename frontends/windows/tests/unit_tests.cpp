@@ -86,6 +86,13 @@ void TestLastChars() {
   CHECK(LastChars(std::wstring(L"\xDFB7") + L"あ", 5) == L"あ");
 }
 
+void TestFocusedRange() {
+  using kotori::FocusedRange;
+  using kotori::MakeComposition;
+  CHECK(FocusedRange(MakeComposition({{L"今日", 1}, {L"は", 2}}, 3)) == std::make_pair(2, 3));
+  CHECK(FocusedRange(MakeComposition({{L"きょう", 0}}, 3)) == std::make_pair(0, 3));
+}
+
 void TestIsConverting() {
   using kotori::IsConverting;
   CHECK(!IsConverting({}));
@@ -112,6 +119,7 @@ int main() {
   TestAttributeGuid();
   TestInputScope();
   TestIsConverting();
+  TestFocusedRange();
   TestLastChars();
   if (g_failures == 0) {
     std::puts("すべて通った");

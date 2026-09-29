@@ -82,6 +82,10 @@ class TextService final : public ITfTextInputProcessorEx,
   void StartPolling(ITfContext* context);
   void StopPolling();
   void OnPollTimer();
+  void UpdateCandidateWindow(TfEditCookie cookie, ITfContext* context, ITfRange* range,
+                             const Composition& comp, const EngineOutput& out);
+  void HideCandidateWindow();
+  void OnCandidateClicked(uint32_t index);
 
   LONG refs_ = 1;
   ITfThreadMgr* thread_mgr_ = nullptr;
@@ -98,6 +102,9 @@ class TextService final : public ITfTextInputProcessorEx,
   std::unique_ptr<NotifyWindow> notify_;
   ITfContext* poll_context_ = nullptr;
   int poll_ticks_ = 0;
+  // 候補ウィンドウを出しているか。出しているときはクリックを書き込むコンテキストを持つ。
+  bool candidates_shown_ = false;
+  ITfContext* candidate_context_ = nullptr;
   // OnTestKeyDown で送ったキーの結果。直後の OnKeyDown で使う。
   std::optional<WPARAM> tested_key_;
   std::optional<EngineOutput> tested_output_;

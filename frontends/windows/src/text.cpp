@@ -46,6 +46,15 @@ std::wstring LastChars(std::wstring_view s, size_t max_chars) {
   return std::wstring(s.substr(begin));
 }
 
+std::pair<int32_t, int32_t> FocusedRange(const Composition& comp) {
+  for (const Composition::Range& r : comp.ranges) {
+    if (r.attribute == 2) {
+      return {r.begin, r.end};
+    }
+  }
+  return {0, static_cast<int32_t>(comp.text.size())};
+}
+
 bool IsConverting(const std::vector<Segment>& preedit) {
   for (const Segment& s : preedit) {
     if (s.attribute != 0) {

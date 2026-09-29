@@ -30,6 +30,7 @@ extern "C" {
 /* IPC の InputScope・CommandKind・SegmentAttribute・InputMode の値(kotori.proto)。 */
 #define KOTORI_INPUT_SCOPE_DEFAULT 0u
 #define KOTORI_INPUT_SCOPE_PASSWORD 1u
+#define KOTORI_COMMAND_SELECT_CANDIDATE 1u
 #define KOTORI_COMMAND_COMMIT 2u
 #define KOTORI_COMMAND_CANCEL 3u
 #define KOTORI_SEGMENT_INPUT 0u
@@ -77,6 +78,8 @@ const char *kotori_output_committed(const KotoriOutput *out);
 int32_t kotori_output_candidate_visible(const KotoriOutput *out);
 size_t kotori_output_candidate_count(const KotoriOutput *out);
 const char *kotori_output_candidate(const KotoriOutput *out, size_t i);
+/* 候補の注釈。注釈がなければ空文字列、範囲外なら NULL。 */
+const char *kotori_output_candidate_annotation(const KotoriOutput *out, size_t i);
 uint32_t kotori_output_candidate_focused(const KotoriOutput *out);
 uint32_t kotori_output_input_mode(const KotoriOutput *out);
 

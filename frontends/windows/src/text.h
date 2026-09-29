@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace kotori {
@@ -49,6 +50,9 @@ std::wstring LastChars(std::wstring_view s, size_t max_chars);
 // プリエディットに変換済み・注目文節の区間があるか(変換中か)。LM のリランクの結果を
 // 待つのは変換中だけ(REQ-6-2)。
 bool IsConverting(const std::vector<Segment>& preedit);
+
+// 候補ウィンドウを添わせる区間(UTF-16 の [begin, end))。注目文節があればそれ、なければ全体。
+std::pair<int32_t, int32_t> FocusedRange(const Composition& comp);
 
 // 区間をつなぎ、エンジンのカーソル位置(Unicode の文字数)を UTF-16 の位置に直す。
 Composition MakeComposition(const std::vector<Segment>& segments, uint32_t cursor_chars);
