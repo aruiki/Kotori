@@ -2,6 +2,9 @@
 # 列: 状態 \t キー \t コマンド。# で始まる行と空行は無視する。
 # 状態: idle(待機)、composing(入力中)、converting(変換中)、selecting(候補選択中)
 idle	Ctrl+Backspace	undo-commit
+# 待機中の Space は空白を入れる(既定は全角、Shift で半角。MS-IME の「入力モードに従う」と同じ)。
+idle	Space	insert-space
+idle	Shift+Space	insert-half-space
 composing	Space	convert
 composing	Convert	convert
 composing	Shift+Space	convert-prev

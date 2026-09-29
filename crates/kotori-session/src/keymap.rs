@@ -59,6 +59,10 @@ pub enum Command {
     ForgetCandidate,
     /// 確定を取り消す(9.4)。
     UndoCommit,
+    /// 全角の空白を入れる(待機中の Space、11.4)。
+    InsertSpace,
+    /// 半角の空白を入れる(待機中の Shift+Space)。
+    InsertHalfSpace,
     /// 注目文節の n 番目(0 始まり)の候補を選ぶ。候補ウィンドウのクリック(4.2 の
     /// SELECT_CANDIDATE)から来る。キーマップには書けない。
     SelectIndex(usize),
@@ -202,6 +206,8 @@ fn parse_command(name: &str) -> Option<Command> {
         "next-page" => NextPage,
         "forget-candidate" => ForgetCandidate,
         "undo-commit" => UndoCommit,
+        "insert-space" => InsertSpace,
+        "insert-half-space" => InsertHalfSpace,
         s => match s.strip_prefix("select-").and_then(|n| n.parse::<u8>().ok()) {
             Some(n @ 1..=9) => Select(n),
             _ => return None,

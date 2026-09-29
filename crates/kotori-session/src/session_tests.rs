@@ -114,6 +114,27 @@ fn typing_convert_select_and_commit() {
 }
 
 #[test]
+fn space_in_idle_inserts_a_space() {
+    let mut s = session();
+    // 待機中の Space は全角の空白、Shift+Space は半角の空白をそのまま確定する。
+    let out = press(&mut s, "Space");
+    assert!(out.consumed);
+    assert_eq!(out.committed, "\u{3000}");
+    assert!(out.preedit.is_empty());
+    assert_eq!(s.state(), State::Idle);
+    let out = press(&mut s, "Shift+Space");
+    assert_eq!(out.committed, " ");
+    assert_eq!(s.state(), State::Idle);
+    // Ctrl+Space はアプリへ渡す。
+    assert!(!press(&mut s, "Ctrl+Space").consumed);
+    // 入力中の Space は今までどおり変換する。
+    type_text(&mut s, "kyouha");
+    let out = press(&mut s, "Space");
+    assert!(out.committed.is_empty());
+    assert_eq!(s.state(), State::Converting);
+}
+
+#[test]
 fn escape_and_backspace_step_back() {
     let mut s = session();
     type_text(&mut s, "kyouha");
@@ -215,7 +236,7 @@ fn typing_while_converting_commits_first() {
 #[test]
 fn unassigned_keys_pass_through_only_when_idle() {
     let mut s = session();
-    assert!(!press(&mut s, "Space").consumed);
+    assert!(!press(&mut s, "Tab").consumed);
     assert!(!press(&mut s, "Enter").consumed);
     let ctrl_c = Key {
         ctrl: true,
