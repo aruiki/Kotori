@@ -50,6 +50,7 @@ extern "C" {
     fn kotori_lm_logits(ctx: *mut LlamaContext, i: i32) -> *const f32;
     fn kotori_lm_bos(model: *const LlamaModel) -> i32;
     fn kotori_lm_eos(model: *const LlamaModel) -> i32;
+    fn kotori_lm_token_text(model: *const LlamaModel, token: i32) -> *const c_char;
     fn kotori_lm_meta(
         model: *const LlamaModel,
         key: *const c_char,
@@ -98,6 +99,18 @@ pub fn tokenize(
             c_int::from(add_special),
         )
     }
+}
+
+/// トークンの文字列のバイト列。範囲外なら `None`。
+pub fn token_text(model: NonNull<LlamaModel>, token: i32) -> Option<Vec<u8>> {
+    // SAFETY: model は読み込み済みの有効なモデル。範囲外のトークンには NULL が返る。
+    let p = unsafe { kotori_lm_token_text(model.as_ptr(), token) };
+    if p.is_null() {
+        return None;
+    }
+    // SAFETY: p はモデルの語彙が持つ NUL 終端の文字列で、モデルが生きている間は有効。
+    // ここで複製するので、返り値はモデルより長く生きてよい。
+    Some(unsafe { CStr::from_ptr(p) }.to_bytes().to_vec())
 }
 
 /// 値の長さ(NUL を除く)を返す。キーがなければ負の値。`buf` には NUL 終端で書かれる。

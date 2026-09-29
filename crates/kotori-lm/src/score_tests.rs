@@ -11,7 +11,7 @@ fn tiny() -> (tempdir::Dir, Model) {
     (dir, model)
 }
 
-mod tempdir {
+pub(crate) mod tempdir {
     pub struct Dir(pub std::path::PathBuf);
 
     impl Dir {

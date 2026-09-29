@@ -109,4 +109,17 @@ fn converted_zenz_matches_hf_tokenizer() {
     for (got, want) in scores.iter().zip([-0.344, -33.72]) {
         assert!((got - want).abs() < 0.1, "{scores:?}");
     }
+    drop(ctx);
+    assert_eq!(model.check_vocab(zenz::VOCAB_HASH), Ok(()));
+
+    // 採点器は文末まで採点するので、読みを使い切らない候補は低くなる。
+    let mut scorer = zenz::ZenzScorer::open(&path, 2).unwrap();
+    let cands: Vec<String> = ["今日はいい天気", "今日はいい", "教派異意転機"]
+        .map(String::from)
+        .to_vec();
+    let scores = scorer
+        .score_all("", "きょうはいいてんき", &cands, None)
+        .unwrap()
+        .unwrap();
+    assert!(scores[0] > scores[1] && scores[0] > scores[2], "{scores:?}");
 }

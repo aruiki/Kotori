@@ -4,15 +4,16 @@
 //! すべての候補のトークンを1つのバッチで評価する。候補 c のスコアは
 //! log P(c | 前置き) = Σ log softmax(直前の位置のロジット)[c のトークン]。
 
+use std::borrow::Borrow;
 use std::ptr::NonNull;
 
 use crate::ffi::{self, LlamaContext};
 use crate::{LmError, Model};
 
-/// 推論のコンテキスト。`model` より長くは生きない。
+/// 推論のコンテキスト。モデルを借りる(`&Model`)か、共有して持つ(`Rc<Model>` など)。
 #[derive(Debug)]
-pub struct Context<'m> {
-    model: &'m Model,
+pub struct Context<M: Borrow<Model>> {
+    model: M,
     raw: NonNull<LlamaContext>,
     n_ctx: usize,
     n_seq: usize,
@@ -25,16 +26,12 @@ fn log_softmax_at(logits: &[f32], token: i32) -> Option<f32> {
     Some(logits.get(t)? - max - sum.ln())
 }
 
-impl<'m> Context<'m> {
+impl<M: Borrow<Model>> Context<M> {
     /// `n_ctx` トークンまで、同時に `max_candidates` 件の候補を採点できるコンテキストを作る。
-    pub fn new(
-        model: &'m Model,
-        n_ctx: u32,
-        max_candidates: u32,
-        threads: i32,
-    ) -> Result<Self, LmError> {
+    pub fn new(model: M, n_ctx: u32, max_candidates: u32, threads: i32) -> Result<Self, LmError> {
         let n_seq = max_candidates + 1;
-        let raw = ffi::ctx_new(model.raw, n_ctx, n_seq, threads).ok_or(LmError::Context)?;
+        let raw =
+            ffi::ctx_new(model.borrow().raw, n_ctx, n_seq, threads).ok_or(LmError::Context)?;
         Ok(Self {
             model,
             raw,
@@ -59,7 +56,7 @@ impl<'m> Context<'m> {
         if total > self.n_ctx {
             return Err(LmError::TooLong);
         }
-        let n_vocab = self.model.n_vocab();
+        let n_vocab = self.model.borrow().n_vocab();
         ffi::clear(self.raw);
 
         // 前置きをシーケンス 0 で評価し、最後の位置のロジットだけを受け取る。
@@ -109,7 +106,7 @@ impl<'m> Context<'m> {
     }
 }
 
-impl Drop for Context<'_> {
+impl<M: Borrow<Model>> Drop for Context<M> {
     fn drop(&mut self) {
         ffi::ctx_free(self.raw);
     }
