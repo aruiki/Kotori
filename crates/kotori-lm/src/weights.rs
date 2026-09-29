@@ -19,6 +19,18 @@ pub struct ScoreWeights {
     pub lambda_user: f32,
 }
 
+impl Default for ScoreWeights {
+    /// `just zenz` が GGUF に書く既定値(docs/adr/0008)。モデルに重みがないときに使う。
+    fn default() -> Self {
+        Self {
+            lambda_lm: 1.0,
+            lambda_lattice: 1.0,
+            temperature: 1000.0,
+            lambda_user: 0.0,
+        }
+    }
+}
+
 impl ScoreWeights {
     /// JSON から読む。温度が正でなければ拒否する。
     pub fn from_json(json: &str) -> Result<Self, LmError> {

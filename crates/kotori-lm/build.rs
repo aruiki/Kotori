@@ -25,7 +25,24 @@ fn main() {
         root.join("include/llama.h").display()
     );
 
-    let dst = cmake::Config::new(&root)
+    let mut config = cmake::Config::new(&root);
+    // llama.cpp は CMP0091 が NEW なので、VC ランタイムは CMAKE_MSVC_RUNTIME_LIBRARY で決まる。
+    // Rust 側(crt-static なら /MT)とそろえないと、リンクで衝突する(LNK2038)。
+    if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+        let static_crt = std::env::var("CARGO_CFG_TARGET_FEATURE")
+            .unwrap_or_default()
+            .split(',')
+            .any(|f| f == "crt-static");
+        config.define(
+            "CMAKE_MSVC_RUNTIME_LIBRARY",
+            if static_crt {
+                "MultiThreaded"
+            } else {
+                "MultiThreadedDLL"
+            },
+        );
+    }
+    let dst = config
         .profile("Release")
         .define("BUILD_SHARED_LIBS", "OFF")
         .define("LLAMA_BUILD_COMMON", "OFF")

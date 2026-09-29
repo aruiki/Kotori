@@ -351,6 +351,7 @@ dependencies = [
  "kotori-client",
  "kotori-composer",
  "kotori-dict",
+ "kotori-lm",
  "kotori-proto",
  "kotori-session",
 ]

@@ -3,6 +3,10 @@
 //! セッションごとに状態機械([`kotori_session::Session`])を持ち、キーを変換して表示の内容を
 //! 返す。変換の部品([`Engine`])がないとき(辞書を読めなかったときなど)は、キーをすべて
 //! 未処理(`consumed = false`)として返し、フロントエンドにアプリへ渡させる。
+//!
+//! LM があれば、変換のたびに文全体の上位 K 件をリランクに出し、締め切り(25ms)までに
+//! 終われば並べ替えて返す。間に合わなければラティスの順で返し、終わったら `PollUpdate` で
+//! 返す(2段階応答、REQ-4-4、REQ-6-2、docs/adr/0008)。
 
 mod instance;
 
@@ -10,13 +14,27 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 pub use instance::InstanceGuard;
 use kotori_composer::RomajiTable;
 use kotori_dict::Dictionary;
+use kotori_lm::rerank::{Outcome, Pending, RerankRequest, Reranker, DEFAULT_DEADLINE};
+use kotori_lm::ScoreWeights;
 use kotori_proto::ipc::{self, request, response, ErrorCode, Request, Response};
 use kotori_proto::{protocol_version, read_message, write_message, FrameError, PROTOCOL_MAJOR};
-use kotori_session::{Attribute, Command, Converter, Key, Keymap, LatticeConverter, Session};
+use kotori_session::{
+    Attribute, Command, Converter, Key, Keymap, LatticeConverter, Sentence, Session,
+};
+
+/// リランクに出す文全体の候補の数(5.1 の K)。
+pub const RERANK_K: usize = 16;
+
+/// LM によるリランク(6.2 モード A)。
+struct Rerank {
+    reranker: Reranker,
+    weights: ScoreWeights,
+}
 
 /// 変換に使う部品。セッションをまたいで共有する。
 #[derive(Clone)]
@@ -24,6 +42,7 @@ pub struct Engine {
     converter: Arc<dyn Converter + Send + Sync>,
     keymap: Arc<Keymap>,
     romaji: Arc<RomajiTable>,
+    rerank: Option<Arc<Rerank>>,
 }
 
 impl Engine {
@@ -38,7 +57,15 @@ impl Engine {
             converter,
             keymap: Arc::new(Keymap::ms_ime()),
             romaji: Arc::new(RomajiTable::ms_ime()),
+            rerank: None,
         }
+    }
+
+    /// LM のリランクを足す。モデルの読み込みは `reranker` のワーカーで行い、終わるまでと
+    /// 読めなかったときはラティス単体で動く(REQ-6-4、REQ-6-5)。
+    pub fn with_reranker(mut self, reranker: Reranker, weights: ScoreWeights) -> Self {
+        self.rerank = Some(Arc::new(Rerank { reranker, weights }));
+        self
     }
 
     fn session(&self) -> Session {
@@ -58,6 +85,15 @@ struct SessionEntry {
     session: Option<Session>,
     /// 状態機械を作る前に届いた左文脈。作るときに渡す。
     pending_context: Option<String>,
+    /// 締め切りに間に合わなかったリランク。`PollUpdate` で結果を当てる。
+    pending_rerank: Option<PendingRerank>,
+}
+
+#[derive(Debug)]
+struct PendingRerank {
+    pending: Pending,
+    reading: String,
+    sentences: Vec<Sentence>,
 }
 
 /// サーバーの状態。接続をまたいで共有する。
@@ -98,6 +134,7 @@ impl Server {
                     scope: req.input_scope(),
                     session: None,
                     pending_context: None,
+                    pending_rerank: None,
                 };
                 self.sessions.insert(id, entry);
                 response::Body::SessionCreated(ipc::SessionCreated { session_id: id })
@@ -133,13 +170,42 @@ impl Server {
         response::Body::Ack(ipc::Ack {})
     }
 
-    /// 遅れて終わった処理で表示が変わったかを返す(docs/adr/0008)。リランクを組み込むまでは
-    /// 変化を持たないので、常に「変化なし」(consumed = false の空の Output)。
+    /// 遅れて終わったリランクで表示が変わったかを返す(docs/adr/0008)。変わっていなければ
+    /// consumed = false の空の Output。
     fn poll_update(&mut self, req: &ipc::PollUpdate) -> response::Body {
-        if !self.sessions.contains_key(&req.session_id) {
+        let Some(entry) = self.sessions.get_mut(&req.session_id) else {
             return unknown_session(req.session_id);
+        };
+        let no_change = response::Body::Output(ipc::Output::default());
+        let (Some(engine), Some(session)) = (&self.engine, entry.session.as_mut()) else {
+            return no_change;
+        };
+        let (Some(rerank), Some(p)) = (&engine.rerank, entry.pending_rerank.take()) else {
+            return no_change;
+        };
+        let scores = match p.pending.wait(Duration::ZERO) {
+            Ok(Outcome::Ready(scores)) => scores,
+            Ok(Outcome::Cancelled) => return no_change,
+            Err(pending) => {
+                entry.pending_rerank = Some(PendingRerank { pending, ..p });
+                return no_change;
+            }
+        };
+        let converter = &*engine.converter;
+        let applied = catch_unwind(AssertUnwindSafe(|| {
+            apply_rerank(
+                rerank,
+                session,
+                converter,
+                &p.reading,
+                &p.sentences,
+                &scores,
+            )
+        }));
+        match applied {
+            Ok(true) => response::Body::Output(to_proto(session.view())),
+            _ => no_change,
         }
-        response::Body::Output(ipc::Output::default())
     }
 
     /// セッションの左文脈(テストと診断用)。セッションがなければ `None`。
@@ -205,7 +271,22 @@ impl Server {
             session
         });
         let converter = &*engine.converter;
-        match catch_unwind(AssertUnwindSafe(|| f(session, converter))) {
+        // 新しいキーでは、待っているリランクを捨てて進行中の推論を打ち切る(REQ-4-4)。
+        if entry.pending_rerank.take().is_some() {
+            if let Some(rerank) = &engine.rerank {
+                rerank.reranker.generation().advance();
+            }
+        }
+        let pending_rerank = &mut entry.pending_rerank;
+        match catch_unwind(AssertUnwindSafe(|| {
+            let out = f(session, converter);
+            match &engine.rerank {
+                Some(rerank) if session.just_converted() => {
+                    rerank_now(rerank, session, converter, out, pending_rerank)
+                }
+                _ => out,
+            }
+        })) {
             Ok(out) => response::Body::Output(to_proto(out)),
             Err(_) => {
                 *session = engine.session();
@@ -220,6 +301,70 @@ impl Server {
         } else {
             unknown_session(session_id)
         }
+    }
+}
+
+/// 変換したばかりの文をリランクに出し、締め切りまで待つ。間に合えば並べ替えた表示を返し、
+/// 間に合わなければ `pending` に置いてラティスの順の表示を返す。
+fn rerank_now(
+    rerank: &Rerank,
+    session: &mut Session,
+    converter: &dyn Converter,
+    out: kotori_session::Output,
+    pending: &mut Option<PendingRerank>,
+) -> kotori_session::Output {
+    let Some(reading) = session.untouched_reading().map(str::to_owned) else {
+        return out;
+    };
+    let sentences = converter.sentences(&reading, RERANK_K);
+    if sentences.len() < 2 {
+        return out;
+    }
+    let request = RerankRequest {
+        left_context: session.left_context().to_owned(),
+        reading: reading.clone(),
+        candidates: sentences.iter().map(Sentence::surface).collect(),
+    };
+    match rerank.reranker.submit(request).wait(DEFAULT_DEADLINE) {
+        Ok(Outcome::Ready(scores)) => {
+            if apply_rerank(rerank, session, converter, &reading, &sentences, &scores) {
+                // 変換のキーでは確定文字列はないので、表示だけを差し替える。
+                return kotori_session::Output {
+                    committed: out.committed,
+                    ..session.view()
+                };
+            }
+            out
+        }
+        Ok(Outcome::Cancelled) => out,
+        Err(p) => {
+            *pending = Some(PendingRerank {
+                pending: p,
+                reading,
+                sentences,
+            });
+            out
+        }
+    }
+}
+
+/// LM のスコアで文を選び、ラティスの第1候補と違えば状態機械に当てる。当てたら true。
+fn apply_rerank(
+    rerank: &Rerank,
+    session: &mut Session,
+    converter: &dyn Converter,
+    reading: &str,
+    sentences: &[Sentence],
+    scores: &[f32],
+) -> bool {
+    let costs: Vec<i64> = sentences.iter().map(|s| s.cost).collect();
+    match rerank
+        .weights
+        .order(scores, &costs)
+        .and_then(|o| o.first().copied())
+    {
+        Some(best) if best != 0 => session.apply_sentence(reading, &sentences[best], converter),
+        _ => false,
     }
 }
 
@@ -251,6 +396,42 @@ pub fn dict_candidates(exe: Option<&std::path::Path>) -> Vec<std::path::PathBuf>
         .into_iter()
         .chain(default_dict_path())
         .collect()
+}
+
+/// LM のモデル(`just zenz` で作る GGUF)のファイル名。
+pub const MODEL_FILE: &str = "zenz-v2.5-small-f16.gguf";
+
+/// `--model` がないときに探す LM のモデルの場所を、探す順に返す(辞書と同じ `data` フォルダ)。
+pub fn model_candidates(exe: Option<&std::path::Path>) -> Vec<std::path::PathBuf> {
+    dict_candidates(exe)
+        .into_iter()
+        .filter_map(|p| p.parent().map(|dir| dir.join(MODEL_FILE)))
+        .collect()
+}
+
+/// コマンドラインの引数。
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Args {
+    pub dict: Option<std::path::PathBuf>,
+    pub model: Option<std::path::PathBuf>,
+}
+
+impl Args {
+    /// `--dict <パス>` と `--model <パス>` を読む(順は問わない)。
+    pub fn parse(args: &[String]) -> Result<Self, String> {
+        let mut out = Self::default();
+        let mut it = args.iter();
+        while let Some(flag) = it.next() {
+            let slot = match flag.as_str() {
+                "--dict" => &mut out.dict,
+                "--model" => &mut out.model,
+                other => return Err(format!("知らない引数: {other}")),
+            };
+            let value = it.next().ok_or_else(|| format!("{flag} の値がない"))?;
+            *slot = Some(std::path::PathBuf::from(value));
+        }
+        Ok(out)
+    }
 }
 
 /// キーを処理せず、アプリへ渡させる応答。

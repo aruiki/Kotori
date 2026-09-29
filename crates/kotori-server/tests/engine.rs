@@ -248,7 +248,7 @@ fn select_candidate_command_moves_the_selection() {
 }
 
 #[test]
-fn poll_update_reports_no_change_until_rerank_is_wired() {
+fn poll_update_without_lm_reports_no_change() {
     let mut server = Server::with_engine(engine());
     let id = create(&mut server, ipc::InputScope::Default);
     let poll = |server: &mut Server, id: u64| {
@@ -266,4 +266,30 @@ fn poll_update_reports_no_change_until_rerank_is_wired() {
         poll(&mut server, 999),
         response::Body::Error(e) if e.code() == ErrorCode::UnknownSession
     ));
+}
+
+#[test]
+fn args_and_model_location() {
+    use kotori_server::Args;
+    use std::path::{Path, PathBuf};
+    let args = |a: &[&str]| Args::parse(&a.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+    assert_eq!(args(&[]), Ok(Args::default()));
+    assert_eq!(
+        args(&["--model", "m.gguf", "--dict", "d.dict"]),
+        Ok(Args {
+            dict: Some(PathBuf::from("d.dict")),
+            model: Some(PathBuf::from("m.gguf")),
+        })
+    );
+    assert!(args(&["--dict"]).is_err());
+    assert!(args(&["--verbose"]).is_err());
+
+    // LM のモデルは辞書と同じ data フォルダを探す。
+    let exe = Path::new("/opt").join("kotori").join("kotori-server");
+    let c = kotori_server::model_candidates(Some(&exe));
+    let expected = Path::new("/opt")
+        .join("kotori")
+        .join("data")
+        .join(kotori_server::MODEL_FILE);
+    assert_eq!(c[0], expected);
 }
