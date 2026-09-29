@@ -2,9 +2,12 @@
 
 #include <kotori_client.h>
 
+#include <InputScope.h>
+
 #include <functional>
 #include <new>
 #include <utility>
+#include <vector>
 
 #include "globals.h"
 
@@ -52,6 +55,37 @@ class EditSession final : public ITfEditSession {
   std::function<HRESULT(TfEditCookie)> fn_;
 };
 
+// GUID_PROP_INPUTSCOPE(InputScope.h)。uuid.lib に定義がないので、ここで持つ。
+constexpr GUID kGuidPropInputScope = {
+    0x1713dd5a, 0x68e7, 0x4a5b, {0x9a, 0xf6, 0x59, 0x2a, 0x59, 0x5c, 0x77, 0x8d}};
+
+// 範囲に付いた InputScope を読む。
+std::vector<int32_t> ReadInputScopes(TfEditCookie cookie, ITfContext* context, ITfRange* range) {
+  std::vector<int32_t> scopes;
+  ITfProperty* prop = nullptr;
+  if (FAILED(context->GetProperty(kGuidPropInputScope, &prop))) {
+    return scopes;
+  }
+  VARIANT v;
+  VariantInit(&v);
+  if (SUCCEEDED(prop->GetValue(cookie, range, &v)) && v.vt == VT_UNKNOWN && v.punkVal != nullptr) {
+    ITfInputScope* input_scope = nullptr;
+    if (SUCCEEDED(v.punkVal->QueryInterface(IID_ITfInputScope,
+                                            reinterpret_cast<void**>(&input_scope)))) {
+      InputScope* items = nullptr;
+      UINT count = 0;
+      if (SUCCEEDED(input_scope->GetInputScopes(&items, &count)) && items != nullptr) {
+        scopes.assign(items, items + count);
+        CoTaskMemFree(items);
+      }
+      input_scope->Release();
+    }
+  }
+  VariantClear(&v);
+  prop->Release();
+  return scopes;
+}
+
 bool KeyDown(int vk) { return (GetKeyState(vk) & 0x8000) != 0; }
 
 // キーが生む文字。キーボードの状態(デッドキーなど)は変えない。
@@ -98,6 +132,8 @@ STDMETHODIMP TextService::QueryInterface(REFIID riid, void** ppv) {
     *ppv = static_cast<ITfCompositionSink*>(this);
   } else if (IsEqualIID(riid, IID_ITfDisplayAttributeProvider)) {
     *ppv = static_cast<ITfDisplayAttributeProvider*>(this);
+  } else if (IsEqualIID(riid, IID_ITfThreadMgrEventSink)) {
+    *ppv = static_cast<ITfThreadMgrEventSink*>(this);
   }
   if (*ppv == nullptr) {
     return E_NOINTERFACE;
@@ -130,6 +166,17 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_mgr, TfClientId client
   client_id_ = client_id;
   RegisterAttributeAtoms();
 
+  // フォーカスの移動を受けて、入力欄の InputScope を調べ直す(REQ-10-3)。
+  ITfSource* source = nullptr;
+  if (SUCCEEDED(thread_mgr_->QueryInterface(IID_ITfSource, reinterpret_cast<void**>(&source)))) {
+    if (FAILED(source->AdviseSink(IID_ITfThreadMgrEventSink,
+                                  static_cast<ITfThreadMgrEventSink*>(this),
+                                  &thread_mgr_sink_cookie_))) {
+      thread_mgr_sink_cookie_ = TF_INVALID_COOKIE;
+    }
+    source->Release();
+  }
+
   ITfKeystrokeMgr* keystroke = nullptr;
   if (SUCCEEDED(thread_mgr_->QueryInterface(IID_ITfKeystrokeMgr,
                                             reinterpret_cast<void**>(&keystroke)))) {
@@ -156,6 +203,15 @@ STDMETHODIMP TextService::Deactivate() {
     }
   }
   key_sink_advised_ = false;
+  if (thread_mgr_ != nullptr && thread_mgr_sink_cookie_ != TF_INVALID_COOKIE) {
+    ITfSource* source = nullptr;
+    if (SUCCEEDED(thread_mgr_->QueryInterface(IID_ITfSource, reinterpret_cast<void**>(&source)))) {
+      source->UnadviseSink(thread_mgr_sink_cookie_);
+      source->Release();
+    }
+  }
+  thread_mgr_sink_cookie_ = TF_INVALID_COOKIE;
+  private_field_.reset();
   engine_.reset();
   tested_key_.reset();
   tested_output_.reset();
@@ -245,8 +301,48 @@ void TextService::SetKeyboardOpen(bool open) {
   mgr->Release();
 }
 
-std::optional<EngineOutput> TextService::Send(WPARAM wparam, LPARAM lparam) {
-  if (engine_ == nullptr || !IsKeyboardOpen()) {
+bool TextService::IsPrivateField(ITfContext* context) {
+  if (private_field_.has_value()) {
+    return *private_field_;
+  }
+  if (context == nullptr) {
+    return false;
+  }
+  // 選択(カーソル)の位置の InputScope を読む。キーの処理中なので同期の読み取りで足りる。
+  bool is_private = false;
+  auto* session = new (std::nothrow) EditSession(
+      static_cast<ITfTextInputProcessorEx*>(this),
+      [context, &is_private](TfEditCookie cookie) {
+        TF_SELECTION sel = {};
+        ULONG fetched = 0;
+        ITfRange* range = nullptr;
+        if (SUCCEEDED(context->GetSelection(cookie, TF_DEFAULT_SELECTION, 1, &sel, &fetched)) &&
+            fetched == 1) {
+          range = sel.range;
+        } else if (FAILED(context->GetStart(cookie, &range))) {
+          return E_FAIL;
+        }
+        is_private = IsPrivateInputScope(ReadInputScopes(cookie, context, range));
+        range->Release();
+        return S_OK;
+      });
+  if (session == nullptr) {
+    return false;
+  }
+  HRESULT session_hr = E_FAIL;
+  const HRESULT hr =
+      context->RequestEditSession(client_id_, session, TF_ES_SYNC | TF_ES_READ, &session_hr);
+  session->Release();
+  // 読めなかったときは覚えず、次のキーでもう一度調べる。
+  if (SUCCEEDED(hr) && SUCCEEDED(session_hr)) {
+    private_field_ = is_private;
+  }
+  return is_private;
+}
+
+std::optional<EngineOutput> TextService::Send(ITfContext* context, WPARAM wparam, LPARAM lparam) {
+  // パスワード・暗証番号の欄では、キーをエンジンに送らずアプリへ渡す(REQ-10-3)。
+  if (engine_ == nullptr || !IsKeyboardOpen() || IsPrivateField(context)) {
     return std::nullopt;
   }
   return engine_->SendKey(static_cast<UINT>(wparam), KeyText(wparam, lparam), KeyDown(VK_SHIFT),
@@ -255,12 +351,33 @@ std::optional<EngineOutput> TextService::Send(WPARAM wparam, LPARAM lparam) {
 
 STDMETHODIMP TextService::OnSetFocus(BOOL) { return S_OK; }
 
-STDMETHODIMP TextService::OnTestKeyDown(ITfContext*, WPARAM wparam, LPARAM lparam, BOOL* eaten) {
+STDMETHODIMP TextService::OnInitDocumentMgr(ITfDocumentMgr*) { return S_OK; }
+
+STDMETHODIMP TextService::OnUninitDocumentMgr(ITfDocumentMgr*) { return S_OK; }
+
+STDMETHODIMP TextService::OnSetFocus(ITfDocumentMgr*, ITfDocumentMgr*) {
+  // 入力欄が変わった。InputScope は次のキーのときに調べ直す。
+  private_field_.reset();
+  return S_OK;
+}
+
+STDMETHODIMP TextService::OnPushContext(ITfContext*) {
+  private_field_.reset();
+  return S_OK;
+}
+
+STDMETHODIMP TextService::OnPopContext(ITfContext*) {
+  private_field_.reset();
+  return S_OK;
+}
+
+STDMETHODIMP TextService::OnTestKeyDown(ITfContext* context, WPARAM wparam, LPARAM lparam,
+                                        BOOL* eaten) {
   if (eaten == nullptr) {
     return E_INVALIDARG;
   }
   // 消費するかは送ってみないと決まらないので、ここで送って結果を OnKeyDown まで持つ。
-  tested_output_ = Send(wparam, lparam);
+  tested_output_ = Send(context, wparam, lparam);
   tested_key_ = wparam;
   *eaten = tested_output_.has_value() && tested_output_->consumed;
   return S_OK;
@@ -276,7 +393,7 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM l
     out = std::move(tested_output_);
   } else {
     // OnTestKeyDown を経ずに呼ばれた。
-    out = Send(wparam, lparam);
+    out = Send(context, wparam, lparam);
   }
   tested_key_.reset();
   tested_output_.reset();

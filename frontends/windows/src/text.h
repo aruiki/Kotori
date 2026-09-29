@@ -36,6 +36,10 @@ struct Composition {
 // 知らない値は入力中として扱う。
 const GUID& AttributeGuid(uint32_t attribute);
 
+// 入力欄の InputScope の並び(InputScope.h の値)から、パスワード・暗証番号・非公開の欄か
+// どうかを決める。そうならキーをエンジンに送らずアプリへ渡す(REQ-10-3)。
+bool IsPrivateInputScope(const std::vector<int32_t>& scopes);
+
 // 区間をつなぎ、エンジンのカーソル位置(Unicode の文字数)を UTF-16 の位置に直す。
 Composition MakeComposition(const std::vector<Segment>& segments, uint32_t cursor_chars);
 

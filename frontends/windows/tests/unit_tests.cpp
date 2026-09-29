@@ -2,6 +2,8 @@
 #include <windows.h>
 //
 #include <objbase.h>
+//
+#include <InputScope.h>
 
 #include <cstdio>
 #include <string>
@@ -71,12 +73,24 @@ void TestAttributeGuid() {
   CHECK(IsEqualGUID(AttributeGuid(3), AttributeGuid(0)));
 }
 
+void TestInputScope() {
+  using kotori::IsPrivateInputScope;
+  CHECK(IsPrivateInputScope({IS_PASSWORD}));
+  CHECK(IsPrivateInputScope({IS_DEFAULT, IS_NUMERIC_PIN}));
+  CHECK(IsPrivateInputScope({IS_PRIVATE}));
+  CHECK(IsPrivateInputScope({IS_NUMERIC_PASSWORD}) && IsPrivateInputScope({IS_ALPHANUMERIC_PIN}));
+  CHECK(!IsPrivateInputScope({IS_DEFAULT}));
+  CHECK(!IsPrivateInputScope({IS_NUMBER, IS_EMAIL_USERNAME}));
+  CHECK(!IsPrivateInputScope({}));
+}
+
 }  // namespace
 
 int main() {
   TestUtf();
   TestComposition();
   TestAttributeGuid();
+  TestInputScope();
   if (g_failures == 0) {
     std::puts("すべて通った");
   }
