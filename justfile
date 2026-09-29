@@ -6,6 +6,18 @@ default:
 # PR 前に通す全ゲート(17.4-4)。ゴールデン・縮小評価・ベンチは M1 以降で追加する
 ci: fmt-check clippy test
 
+# ci に加えて MSRV(1.80)と Windows 向け clippy(Linux のとき)を確かめる。Rust を変えたら PR の前に通す
+check: ci
+    cargo +1.80 check --workspace --all-targets --locked
+    if [ "{{os()}}" != "windows" ]; then KOTORI_LM_NO_NATIVE=1 cargo clippy --workspace --all-targets --locked --target x86_64-pc-windows-gnu -- -D warnings; fi
+
+# (Windows)TSF TIP を x64 でビルドし、単体テストを走らせる。成果物は target/tip/Release/kotori_tip.dll
+tip:
+    RUSTFLAGS="-C target-feature=+crt-static" cargo build -p kotori-client --release --locked --target x86_64-pc-windows-msvc
+    cmake -S frontends/windows -B target/tip -A x64 "-DKOTORI_CLIENT_LIB={{justfile_directory()}}/target/x86_64-pc-windows-msvc/release/kotori_client.lib"
+    cmake --build target/tip --config Release
+    ./target/tip/Release/kotori_tip_tests.exe
+
 fmt:
     cargo fmt --all
 
