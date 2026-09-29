@@ -34,7 +34,12 @@ from conversion import base  # noqa: E402
 
 # zenz-v2.5-small のリビジョン 1e408d69 の vocab.json(training/zenz/zenz-v2.5-small.sha256)。
 ZENZ_VOCAB_SHA256 = "67fd752abb091e649a9bb08bcb2b52b27cd6e3893ff5ee6e391e5555c0a90e0f"
-MODEL_VERSION = "zenz-v2.5-small@1e408d69a7e284efa4e4d63e456f50e363a82953"
+# fetch.sh が固定したリビジョン。出力の kotori.model_version に書く。
+REVISIONS = {
+    "zenz-v2.5-xsmall": "9bfb00e795f89284fe9164f0fbde171d046fc546",
+    "zenz-v2.5-small": "1e408d69a7e284efa4e4d63e456f50e363a82953",
+    "zenz-v2.5-medium": "623bc8edf5417129b8269b628223d08245e9c68e",
+}
 LICENSE = (
     "CC-BY-SA-4.0; zenz-v2.5 (c) Keita Miwa, "
     "based on ku-nlp/gpt2-small-japanese-char (CC-BY-SA-4.0)"
@@ -93,7 +98,8 @@ def main() -> None:
     def prepare_metadata(self, vocab_only: bool) -> None:
         original_prepare(self, vocab_only)
         w = self.gguf_writer
-        w.add_string("kotori.model_version", MODEL_VERSION)
+        name = model_dir.name
+        w.add_string("kotori.model_version", f"{name}@{REVISIONS.get(name, 'unknown')}")
         w.add_string("kotori.vocab_hash", vocab_hash(model_dir))
         w.add_string("kotori.score_weights", json.dumps(SCORE_WEIGHTS, sort_keys=True))
         w.add_string("kotori.license", LICENSE)
