@@ -1,6 +1,7 @@
 //! IPC クライアントと C ABI(docs/SPEC.md 4.2)。
 //!
-//! M0 では Rust から使うクライアントだけを持つ。C ABI は Windows フロントエンド(M3)で追加する。
+//! Rust から使うクライアントと、フロントエンドから呼ぶ C ABI(`ffi` モジュール、
+//! `include/kotori_client.h`)を持つ。
 //! Windows の名前付きパイプ(Win32 FFI)は `windows` モジュールにある(docs/adr/0003)。
 
 use std::io::{self, Read, Write};
@@ -217,6 +218,9 @@ pub fn connect_unix(
     Client::new(std::os::unix::net::UnixStream::connect(path)?)
 }
 
+pub mod ffi;
+#[cfg(test)]
+mod ffi_tests;
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
