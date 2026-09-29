@@ -296,3 +296,78 @@ fn open_without_server_passes_keys_through() {
         assert!(kotori_client_open(bad.as_ptr().cast(), ptr::null()).is_null());
     }
 }
+
+#[test]
+fn poll_update_returns_only_changes_and_never_connects() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let polls = AtomicUsize::new(0);
+    let (client, server) = fake_server(move |body| {
+        Some(match body {
+            request::Body::CreateSession(_) => {
+                response::Body::SessionCreated(ipc::SessionCreated { session_id: 3 })
+            }
+            request::Body::SendKey(_) => response::Body::Output(ipc::Output {
+                consumed: true,
+                ..Default::default()
+            }),
+            request::Body::PollUpdate(p) => {
+                assert_eq!(p.session_id, 3, "サーバー側の ID");
+                // 1回目だけ変化がある。
+                let changed = polls.fetch_add(1, Ordering::SeqCst) == 0;
+                response::Body::Output(ipc::Output {
+                    consumed: changed,
+                    preedit: if changed {
+                        vec![ipc::PreeditSegment {
+                            text: "今日".into(),
+                            attribute: ipc::SegmentAttribute::Focused.into(),
+                        }]
+                    } else {
+                        Vec::new()
+                    },
+                    ..Default::default()
+                })
+            }
+            _ => response::Body::Ack(ipc::Ack {}),
+        })
+    });
+    let app = CString::new("x").unwrap();
+    let empty = CString::new("").unwrap();
+    // SAFETY: client は fake_server が作った有効な接続で、ほかの引数も有効な位置を指す。
+    unsafe {
+        let mut id = 0;
+        assert_eq!(
+            kotori_create_session(client, app.as_ptr(), 0, &mut id),
+            KOTORI_OK
+        );
+        let mut out: *mut KotoriOutput = ptr::null_mut();
+        // サーバー側のセッションがまだないので、尋ねずに(つながずに)返る。
+        assert_eq!(
+            kotori_poll_update(client, id, &mut out),
+            KOTORI_PASS_THROUGH
+        );
+        assert_eq!(kotori_client_connected(client), 0);
+        assert!(out.is_null());
+
+        assert_eq!(
+            kotori_send_key(client, id, 0x20, empty.as_ptr(), 0, 0, &mut out),
+            KOTORI_OK
+        );
+        kotori_output_free(out);
+        let mut out: *mut KotoriOutput = ptr::null_mut();
+        assert_eq!(kotori_poll_update(client, id, &mut out), KOTORI_OK);
+        assert_eq!(text(kotori_output_preedit_text(out, 0)), "今日");
+        kotori_output_free(out);
+        let mut out: *mut KotoriOutput = ptr::null_mut();
+        assert_eq!(
+            kotori_poll_update(client, id, &mut out),
+            KOTORI_PASS_THROUGH
+        );
+        assert!(out.is_null());
+        assert_eq!(
+            kotori_poll_update(client, id, ptr::null_mut()),
+            KOTORI_ERR_ARGUMENT
+        );
+        kotori_client_free(client);
+    }
+    server.join().unwrap();
+}

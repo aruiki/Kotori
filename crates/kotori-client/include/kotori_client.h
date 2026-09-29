@@ -59,6 +59,12 @@ int32_t kotori_send_key(KotoriClient *client, uint64_t session_id, uint32_t virt
                         const char *text, uint32_t modifiers, int32_t key_up, KotoriOutput **out);
 int32_t kotori_send_command(KotoriClient *client, uint64_t session_id, uint32_t kind,
                             uint32_t argument, KotoriOutput **out);
+/*
+ * 遅れて終わった処理(LM のリランク)で表示が変わったかを尋ねる。変わっていれば KOTORI_OK で
+ * *out に新しい表示を書く。変わっていない・つながっていなければ KOTORI_PASS_THROUGH
+ * (接続もサーバーの起動もしない)。変換中に定期的に呼ぶ。
+ */
+int32_t kotori_poll_update(KotoriClient *client, uint64_t session_id, KotoriOutput **out);
 
 void kotori_output_free(KotoriOutput *out);
 int32_t kotori_output_consumed(const KotoriOutput *out);

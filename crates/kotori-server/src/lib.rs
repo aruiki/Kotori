@@ -111,6 +111,7 @@ impl Server {
             Some(request::Body::SendKey(req)) => self.send_key(&req),
             Some(request::Body::SendCommand(req)) => self.send_command(&req),
             Some(request::Body::SetContext(req)) => self.set_context(&req),
+            Some(request::Body::PollUpdate(req)) => self.poll_update(&req),
             Some(request::Body::GetConfig(_))
             | Some(request::Body::SetConfig(_))
             | Some(request::Body::Reload(_)) => error(ErrorCode::Unimplemented, "M0 では未実装"),
@@ -130,6 +131,15 @@ impl Server {
             }
         }
         response::Body::Ack(ipc::Ack {})
+    }
+
+    /// 遅れて終わった処理で表示が変わったかを返す(docs/adr/0008)。リランクを組み込むまでは
+    /// 変化を持たないので、常に「変化なし」(consumed = false の空の Output)。
+    fn poll_update(&mut self, req: &ipc::PollUpdate) -> response::Body {
+        if !self.sessions.contains_key(&req.session_id) {
+            return unknown_session(req.session_id);
+        }
+        response::Body::Output(ipc::Output::default())
     }
 
     /// セッションの左文脈(テストと診断用)。セッションがなければ `None`。

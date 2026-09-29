@@ -194,6 +194,26 @@ impl<C: Connector> Managed<C> {
         }
     }
 
+    /// 遅れて終わった処理(LM のリランク)で表示が変わったかを尋ねる(docs/adr/0008)。
+    /// 変わっていれば新しい表示を返す。変わっていないとき、つながっていないとき、サーバー側の
+    /// セッションがまだないときは [`Reply::PassThrough`]。定期的に呼ばれるので、接続も
+    /// サーバーの起動もしない。
+    pub fn poll_update(&mut self, local: u64) -> Reply {
+        let has_remote = self
+            .sessions
+            .get(&local)
+            .is_some_and(|s| s.remote.is_some());
+        if !has_remote || self.conn.is_none() {
+            return Reply::PassThrough;
+        }
+        match self.with_session(local, |id| {
+            request::Body::PollUpdate(ipc::PollUpdate { session_id: id })
+        }) {
+            Some(response::Body::Output(o)) if o.consumed => Reply::Output(o),
+            _ => Reply::PassThrough,
+        }
+    }
+
     /// サーバー側のセッションで要求を送る。セッションが無効なら作り直して1回だけ送り直す。
     fn with_session(
         &mut self,

@@ -20,7 +20,7 @@ pub mod renderer {
 /// このビルドのプロトコルのメジャーバージョン。不一致なら接続を拒否する。
 pub const PROTOCOL_MAJOR: u32 = 1;
 /// このビルドのプロトコルのマイナーバージョン。互換のある追加で上げる。
-pub const PROTOCOL_MINOR: u32 = 0;
+pub const PROTOCOL_MINOR: u32 = 1;
 
 /// 1フレームの本体の上限。壊れた長さで巨大な確保をしないための防御。
 pub const MAX_FRAME_LEN: u32 = 1 << 20;
