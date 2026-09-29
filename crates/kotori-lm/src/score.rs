@@ -1,7 +1,10 @@
 //! 共有プレフィックスのバッチ採点(docs/SPEC.md 6.2 モード A)。
 //!
 //! 前置き(左文脈と読み)を1回だけ評価し、その KV を候補ごとのシーケンスへ複製してから、
-//! すべての候補のトークンを1つのバッチで評価する。候補 c のスコアは
+//! すべての候補のトークンを1つのバッチで評価する。候補どうしで先頭が同じトークン列は
+//! トライにまとめ、そのトークンを通る候補すべてのシーケンスに属させて1回だけ評価する
+//! (llama.cpp は各トークンの注意の範囲を最初のシーケンスで決めるが、トライの節を通る
+//! 候補は祖先の節を共有するので、どれを最初にしても同じになる)。候補 c のスコアは
 //! log P(c | 前置き) = Σ log softmax(直前の位置のロジット)[c のトークン]。
 
 use std::borrow::Borrow;
@@ -17,13 +20,6 @@ pub struct Context<M: Borrow<Model>> {
     raw: NonNull<LlamaContext>,
     n_ctx: usize,
     n_seq: usize,
-}
-
-fn log_softmax_at(logits: &[f32], token: i32) -> Option<f32> {
-    let t = usize::try_from(token).ok()?;
-    let max = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-    let sum: f32 = logits.iter().map(|&x| (x - max).exp()).sum();
-    Some(logits.get(t)? - max - sum.ln())
 }
 
 impl<M: Borrow<Model>> Context<M> {
@@ -52,8 +48,9 @@ impl<M: Borrow<Model>> Context<M> {
         if candidates.len() + 1 > self.n_seq {
             return Err(LmError::TooManyCandidates);
         }
-        let total = prefix.len() + candidates.iter().map(Vec::len).sum::<usize>();
-        if total > self.n_ctx {
+        // 共有する接頭辞は1回だけ KV に置くので、要るのは前置きとトライの節の数。
+        let trie = Trie::new(candidates);
+        if prefix.len() + trie.nodes.len() > self.n_ctx {
             return Err(LmError::TooLong);
         }
         let n_vocab = self.model.borrow().n_vocab();
@@ -64,46 +61,113 @@ impl<M: Borrow<Model>> Context<M> {
         let pos: Vec<i32> = (0..n as i32).collect();
         let mut want = vec![0i8; n];
         want[n - 1] = 1;
-        if ffi::decode(self.raw, prefix, &pos, &vec![0; n], &want) != 0 {
+        if ffi::decode(self.raw, prefix, &pos, &vec![&[0][..]; n], &want) != 0 {
             return Err(LmError::Decode);
         }
-        let first = ffi::logits(self.raw, n as i32 - 1, n_vocab).ok_or(LmError::Decode)?;
+        let first =
+            log_softmax(&ffi::logits(self.raw, n as i32 - 1, n_vocab).ok_or(LmError::Decode)?);
 
-        // 候補 i はシーケンス i + 1。前置きの KV を複製してから、全候補を1バッチで評価する。
-        let (mut tokens, mut pos, mut seq, mut want) = (vec![], vec![], vec![], vec![]);
-        for (i, cand) in candidates.iter().enumerate() {
-            let s = i as i32 + 1;
-            ffi::seq_cp(self.raw, 0, s);
-            for (j, &t) in cand.iter().enumerate() {
-                tokens.push(t);
-                pos.push((n + j) as i32);
-                seq.push(s);
-                // 最後のトークンの次は採点しないので、ロジットは要らない。
-                want.push(i8::from(j + 1 < cand.len()));
-            }
+        // 候補 i はシーケンス i + 1。前置きの KV を複製してから、トライの節を1バッチで評価する。
+        for s in 1..=candidates.len() {
+            ffi::seq_cp(self.raw, 0, s as i32);
         }
-        if !tokens.is_empty() && ffi::decode(self.raw, &tokens, &pos, &seq, &want) != 0 {
+        let tokens: Vec<i32> = trie.nodes.iter().map(|x| x.token).collect();
+        let pos: Vec<i32> = trie.nodes.iter().map(|x| (n + x.depth) as i32).collect();
+        let seqs: Vec<&[i32]> = trie.nodes.iter().map(|x| x.seqs.as_slice()).collect();
+        let want: Vec<i8> = trie.nodes.iter().map(|x| i8::from(x.has_child)).collect();
+        if !tokens.is_empty() && ffi::decode(self.raw, &tokens, &pos, &seqs, &want) != 0 {
             return Err(LmError::Decode);
         }
 
+        // 節ごとに、次のトークンの対数確率の表を1回だけ作る。
+        let mut next: Vec<Option<Vec<f32>>> = vec![None; trie.nodes.len()];
         let mut scores = Vec::with_capacity(candidates.len());
-        let mut at = 0usize;
-        for cand in candidates {
+        for (cand, path) in candidates.iter().zip(&trie.paths) {
             let mut logp = 0.0f32;
             for (j, &t) in cand.iter().enumerate() {
-                let logits = if j == 0 {
-                    first.clone()
+                let table = if j == 0 {
+                    &first
                 } else {
-                    ffi::logits(self.raw, (at + j - 1) as i32, n_vocab).ok_or(LmError::Decode)?
+                    let parent = path[j - 1];
+                    if next[parent].is_none() {
+                        let logits =
+                            ffi::logits(self.raw, parent as i32, n_vocab).ok_or(LmError::Decode)?;
+                        next[parent] = Some(log_softmax(&logits));
+                    }
+                    next[parent].as_ref().ok_or(LmError::Decode)?
                 };
-                logp += log_softmax_at(&logits, t).ok_or(LmError::Decode)?;
+                logp += table
+                    .get(usize::try_from(t).map_err(|_| LmError::Decode)?)
+                    .ok_or(LmError::Decode)?;
             }
-            at += cand.len();
             scores.push(logp);
         }
         ffi::clear(self.raw);
         Ok(scores)
     }
+}
+
+/// 候補のトークン列のトライの節。
+#[derive(Debug)]
+struct Node {
+    token: i32,
+    /// 前置きの直後を 0 とする深さ。
+    depth: usize,
+    /// この節を通る候補のシーケンス(候補 i は i + 1)。
+    seqs: Vec<i32>,
+    /// この節の次のトークンを採点する候補があるか(ロジットが要るか)。
+    has_child: bool,
+}
+
+/// 候補のトークン列をまとめたトライ。節は作った順に並べる。各候補の節は深さの順に
+/// 現れるので、そのままバッチの順にできる(llama.cpp はシーケンスごとに位置が
+/// 減らないことを求める)。
+#[derive(Debug)]
+struct Trie {
+    nodes: Vec<Node>,
+    /// 候補ごとの、各トークンの節の添字。
+    paths: Vec<Vec<usize>>,
+}
+
+impl Trie {
+    fn new(candidates: &[Vec<i32>]) -> Self {
+        use std::collections::HashMap;
+        let mut nodes: Vec<Node> = Vec::new();
+        // (親の節、なければ根, トークン) → 節
+        let mut children: HashMap<(Option<usize>, i32), usize> = HashMap::new();
+        let mut paths = Vec::with_capacity(candidates.len());
+        for (i, cand) in candidates.iter().enumerate() {
+            let seq = i as i32 + 1;
+            let mut parent = None;
+            let mut path = Vec::with_capacity(cand.len());
+            for (depth, &token) in cand.iter().enumerate() {
+                if let Some(p) = parent {
+                    let p: &mut Node = &mut nodes[p];
+                    p.has_child = true;
+                }
+                let at = *children.entry((parent, token)).or_insert_with(|| {
+                    nodes.push(Node {
+                        token,
+                        depth,
+                        seqs: Vec::new(),
+                        has_child: false,
+                    });
+                    nodes.len() - 1
+                });
+                nodes[at].seqs.push(seq);
+                path.push(at);
+                parent = Some(at);
+            }
+            paths.push(path);
+        }
+        Self { nodes, paths }
+    }
+}
+
+fn log_softmax(logits: &[f32]) -> Vec<f32> {
+    let max = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let lse = max + logits.iter().map(|&x| (x - max).exp()).sum::<f32>().ln();
+    logits.iter().map(|&x| x - lse).collect()
 }
 
 impl<M: Borrow<Model>> Drop for Context<M> {
