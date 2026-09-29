@@ -1,0 +1,17 @@
+# cargo-about の設定(docs/SPEC.md 16.1、REQ-16-1)。`just notices` で THIRD_PARTY_NOTICES を作る。
+# 認めるライセンス。GPL 系は入れない(REQ-16-2)。増やすときは docs/licenses.md にも書く。
+accepted = [
+    "Apache-2.0",
+    "MIT",
+    "Unlicense",
+    "Zlib",
+    "Unicode-3.0",
+]
+# 配布するのは Windows の x64 と x86。
+targets = [
+    "x86_64-pc-windows-msvc",
+    "i686-pc-windows-msvc",
+]
+# ビルド時だけに使う依存(proto の生成、llama.cpp のビルドなど)は配布物に入らないので除く。
+ignore-build-dependencies = true
+ignore-dev-dependencies = true

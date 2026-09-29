@@ -1,0 +1,21 @@
+Kotori が使う Rust のクレートのライセンス
+==========================================
+
+この一覧は cargo-about で生成した(docs/SPEC.md 16.1、REQ-16-1)。
+llama.cpp と辞書のライセンスは、このファイルの後ろに続く。
+
+{{#each overview}}
+- {{name}}: {{count}} 個のクレート
+{{/each}}
+
+{{#each licenses}}
+------------------------------------------------------------------------
+{{name}} ({{id}})
+使っているクレート:
+{{#each used_by}}
+  - {{crate.name}} {{crate.version}}{{#if crate.repository}} ({{crate.repository}}){{/if}}
+{{/each}}
+
+{{{text}}}
+
+{{/each}}
