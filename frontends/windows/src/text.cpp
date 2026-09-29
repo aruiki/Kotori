@@ -46,6 +46,15 @@ std::wstring LastChars(std::wstring_view s, size_t max_chars) {
   return std::wstring(s.substr(begin));
 }
 
+bool IsConverting(const std::vector<Segment>& preedit) {
+  for (const Segment& s : preedit) {
+    if (s.attribute != 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 std::wstring Utf8ToWide(std::string_view s) {
   std::wstring out;
   out.reserve(s.size());

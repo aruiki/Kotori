@@ -14,6 +14,11 @@
 namespace kotori {
 namespace {
 
+// LM のリランクの結果を尋ねるタイマー。変換してから最大 5 秒、50ms ごとに尋ねる。
+constexpr UINT_PTR kPollTimer = 1;
+constexpr UINT kPollIntervalMs = 50;
+constexpr int kMaxPollTicks = 100;
+
 // 関数を実行するだけの編集セッション。非同期で実行されてもテキストサービスが生きているよう、
 // 参照を持つ。
 class EditSession final : public ITfEditSession {
@@ -187,12 +192,19 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_mgr, TfClientId client
   }
   // エンジンへの接続は最初のキーのときに行う(サーバーの起動を待たせない、REQ-4-1)。
   engine_ = std::make_unique<Engine>();
+  notify_ = NotifyWindow::Create([this](UINT message, WPARAM wparam, LPARAM) {
+    if (message == WM_TIMER && wparam == kPollTimer) {
+      OnPollTimer();
+    }
+  });
   // 切り替えたときは日本語入力をオンにする。半角/全角キーでオフにできる。
   SetKeyboardOpen(true);
   return S_OK;
 }
 
 STDMETHODIMP TextService::Deactivate() {
+  StopPolling();
+  notify_.reset();
   ReleaseComposition();
   if (thread_mgr_ != nullptr && key_sink_advised_) {
     ITfKeystrokeMgr* keystroke = nullptr;
@@ -443,6 +455,12 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM l
   *eaten = out.has_value() && out->consumed;
   if (*eaten && context != nullptr) {
     Apply(context, *out);
+    // 変換中なら、LM のリランクで表示が変わるのを待つ(2段階応答、REQ-6-2)。
+    if (IsConverting(out->preedit)) {
+      StartPolling(context);
+    } else {
+      StopPolling();
+    }
   }
   return S_OK;
 }
@@ -591,6 +609,7 @@ STDMETHODIMP TextService::OnCompositionTerminated(TfEditCookie cookie,
   if (composition == composition_) {
     ClearAttributes(cookie, composition_);
     ReleaseComposition();
+    StopPolling();
     if (engine_ != nullptr) {
       engine_->SendCommand(KOTORI_COMMAND_CANCEL);
     }
@@ -641,6 +660,45 @@ void TextService::ClearAttributes(TfEditCookie cookie, ITfComposition* compositi
     context->Release();
   }
   range->Release();
+}
+
+void TextService::StartPolling(ITfContext* context) {
+  if (notify_ == nullptr) {
+    return;
+  }
+  if (poll_context_ != context) {
+    StopPolling();
+    context->AddRef();
+    poll_context_ = context;
+  }
+  poll_ticks_ = 0;
+  notify_->StartTimer(kPollTimer, kPollIntervalMs);
+}
+
+void TextService::StopPolling() {
+  if (notify_ != nullptr) {
+    notify_->StopTimer(kPollTimer);
+  }
+  if (poll_context_ != nullptr) {
+    poll_context_->Release();
+    poll_context_ = nullptr;
+  }
+}
+
+void TextService::OnPollTimer() {
+  if (engine_ == nullptr || poll_context_ == nullptr || ++poll_ticks_ > kMaxPollTicks) {
+    StopPolling();
+    return;
+  }
+  const std::optional<EngineOutput> out = engine_->PollUpdate();
+  if (out.has_value()) {
+    // 結果は1回だけ届く。キーの処理の外なので、編集セッションは非同期になりうる。
+    ITfContext* context = poll_context_;
+    context->AddRef();
+    StopPolling();
+    Apply(context, *out);
+    context->Release();
+  }
 }
 
 void TextService::ReleaseComposition() {

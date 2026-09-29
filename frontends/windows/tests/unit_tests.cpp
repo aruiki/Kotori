@@ -86,6 +86,13 @@ void TestLastChars() {
   CHECK(LastChars(std::wstring(L"\xDFB7") + L"あ", 5) == L"あ");
 }
 
+void TestIsConverting() {
+  using kotori::IsConverting;
+  CHECK(!IsConverting({}));
+  CHECK(!IsConverting({{L"きょう", 0}}));
+  CHECK(IsConverting({{L"今日", 2}, {L"は", 1}}));
+}
+
 void TestInputScope() {
   using kotori::IsPrivateInputScope;
   CHECK(IsPrivateInputScope({IS_PASSWORD}));
@@ -104,6 +111,7 @@ int main() {
   TestComposition();
   TestAttributeGuid();
   TestInputScope();
+  TestIsConverting();
   TestLastChars();
   if (g_failures == 0) {
     std::puts("すべて通った");

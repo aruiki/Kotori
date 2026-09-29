@@ -22,7 +22,7 @@
    (REQ-6-4)。変換(`Convert`)のとき、文全体の N-best の上位 K 件を `submit` し、`DEFAULT_DEADLINE`
    だけ待つ。間に合えば並べ替えて返し、間に合わなければラティスの順で返して、`PollUpdate` で後から返す。
    候補ウィンドウを開いているときは順位を変えない(REQ-6-2)。
-3. **TIP**: `WM_TIMER` か `SetTimer` で、変換中だけ 50ms ごとに `kotori_poll_update` を呼び、
+3. (済)**TIP**: `WM_TIMER` か `SetTimer` で、変換中だけ 50ms ごとに `kotori_poll_update` を呼び、
    差分があれば編集セッションで書き直す。
 
 ## テスト

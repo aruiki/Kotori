@@ -46,6 +46,10 @@ inline constexpr size_t kMaxLeftContext = 256;
 // 末尾の最大 max_chars 文字(Unicode の文字数)を返す。サロゲートペアは分断しない。
 std::wstring LastChars(std::wstring_view s, size_t max_chars);
 
+// プリエディットに変換済み・注目文節の区間があるか(変換中か)。LM のリランクの結果を
+// 待つのは変換中だけ(REQ-6-2)。
+bool IsConverting(const std::vector<Segment>& preedit);
+
 // 区間をつなぎ、エンジンのカーソル位置(Unicode の文字数)を UTF-16 の位置に直す。
 Composition MakeComposition(const std::vector<Segment>& segments, uint32_t cursor_chars);
 

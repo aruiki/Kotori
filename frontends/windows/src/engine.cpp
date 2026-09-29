@@ -110,6 +110,14 @@ void Engine::SetContext(const std::wstring& left_context) {
   kotori_set_context(client_, session_, utf8.c_str());
 }
 
+std::optional<EngineOutput> Engine::PollUpdate() {
+  if (client_ == nullptr) {
+    return std::nullopt;
+  }
+  KotoriOutput* out = nullptr;
+  return TakeOutput(kotori_poll_update(client_, session_, &out), out);
+}
+
 std::optional<EngineOutput> Engine::SendCommand(uint32_t kind) {
   if (client_ == nullptr) {
     return std::nullopt;

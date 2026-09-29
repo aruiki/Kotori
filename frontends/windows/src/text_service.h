@@ -12,6 +12,7 @@
 
 #include "display_attribute.h"
 #include "engine.h"
+#include "notify_window.h"
 
 namespace kotori {
 
@@ -78,6 +79,9 @@ class TextService final : public ITfTextInputProcessorEx,
   void SetAttributes(TfEditCookie cookie, ITfContext* context, ITfRange* range,
                      const Composition& comp);
   static void ClearAttributes(TfEditCookie cookie, ITfComposition* composition);
+  void StartPolling(ITfContext* context);
+  void StopPolling();
+  void OnPollTimer();
 
   LONG refs_ = 1;
   ITfThreadMgr* thread_mgr_ = nullptr;
@@ -90,6 +94,10 @@ class TextService final : public ITfTextInputProcessorEx,
   std::unique_ptr<Engine> engine_;
   // 表示属性の GUID を TSF に登録した番号。属性番号(0〜2)の順。
   std::array<TfGuidAtom, kAttributeCount> attribute_atoms_{};
+  // タイマーの受け口。LM のリランクの結果を待つ間、変化を尋ねる(docs/adr/0008)。
+  std::unique_ptr<NotifyWindow> notify_;
+  ITfContext* poll_context_ = nullptr;
+  int poll_ticks_ = 0;
   // OnTestKeyDown で送ったキーの結果。直後の OnKeyDown で使う。
   std::optional<WPARAM> tested_key_;
   std::optional<EngineOutput> tested_output_;
