@@ -14,6 +14,15 @@ Kotori は Mozc(google/mozc、BSD-3-Clause)をベースにし、LM のリラン�
     MSI の UpgradeCode、パイプ・イベント・ミューテックス・ウィンドウクラス・レジストリの名前、
     キャッシュサービスの名前、インストール先(`Program Files\Kotori`)を変える。本家の Mozc と
     並べて入れられ、設定や学習も混ざらない。実行ファイルの名前(`mozc_server.exe` など)は変えない。
+  - `0002-kotori-lm-rerank.patch`: 変換候補の LM リランク(docs/adr/0013)。llama.cpp(`third_party/llama.cpp` と
+    同じコミット)を Bazel の外部依存にし、`rewriter/lm_rewriter.*`(文節ごとに上位 K 件を並べ替える)と
+    `rewriter/zenz_scorer.*`(zenz の採点)を足す。モデルは `KOTORI_ZENZ_MODEL` か、`mozc_server` と同じ
+    フォルダの `zenz-v2.5-small-q8_0.gguf`。なければ何もしない。調整用に `KOTORI_LM_K`、`KOTORI_LM_WEIGHTS`
+    (`λ_lm,λ_lattice,T`)、`KOTORI_LM_THREADS` がある。
+
+Linux での評価: `bazel build //converter:converter_main -c opt` のあと、
+`python3 mozc/eval_baseline.py bazel-bin/converter/converter_main`(`eval/fetch.sh` で評価セットを取得しておく)。
+モデルは `training/zenz/convert.py ... --outtype q8_0` で作る。
 
 ビルドの時間: 初回は約 70 分(Qt 約 25 分、Mozc 約 40 分)。Qt と Bazel の結果は Actions の
 キャッシュに残し、次からは変わったところだけ作り直す。Windows のビルドは MSI を公開するときと、
