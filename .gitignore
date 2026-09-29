@@ -3,4 +3,5 @@
 /eval/data/
 /eval/results/
 /eval/results-lm/
+/eval/results-mozc/
 /training/zenz/models/
