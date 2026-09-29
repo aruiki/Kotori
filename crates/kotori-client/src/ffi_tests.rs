@@ -11,7 +11,21 @@ use kotori_proto::ipc::{self, request, response, Request, Response};
 use kotori_proto::{protocol_version, read_message, write_message};
 
 use super::ffi::*;
+use super::managed::{Connection, Connector};
 use super::Client;
+
+/// ループバック TCP の決まったアドレスへつなぐ接続のしかた。
+struct Tcp(std::net::SocketAddr);
+
+impl Connector for Tcp {
+    fn connect(&mut self) -> std::io::Result<Box<dyn Connection>> {
+        Ok(Box::new(Client::new(TcpStream::connect(self.0)?)?))
+    }
+
+    fn launch(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
 
 /// 要求ごとに `reply` で応答を作る偽のサーバーを立て、C ABI の接続を返す。
 fn fake_server(
@@ -35,11 +49,8 @@ fn fake_server(
             }
         }
     });
-    let client = Client::new(TcpStream::connect(addr).unwrap()).unwrap();
-    (
-        Box::into_raw(Box::new(KotoriClient::from_client(client))),
-        handle,
-    )
+    let client = KotoriClient::with_connector(Box::new(Tcp(addr)));
+    (Box::into_raw(Box::new(client)), handle)
 }
 
 fn text(p: *const std::ffi::c_char) -> String {
@@ -91,7 +102,11 @@ fn engine(body: request::Body) -> Option<response::Body> {
             })
         }
         request::Body::SendKey(k) if k.virtual_key == 0x41 => {
-            assert_eq!((k.session_id, k.text.as_str(), k.key_up), (7, "a", true));
+            assert_eq!(
+                (k.session_id, k.text.as_str(), k.key_up),
+                (7, "a", true),
+                "サーバー側の ID"
+            );
             response::Body::Output(ipc::Output {
                 consumed: false,
                 ..Default::default()
@@ -123,7 +138,9 @@ fn session_key_and_output_accessors() {
             kotori_create_session(client, app.as_ptr(), 1, &mut id),
             KOTORI_OK
         );
-        assert_eq!(id, 7);
+        // 手元のセッション ID(サーバー側の 7 とは別)。サーバーには最初の要求のときにつなぐ。
+        assert_eq!(id, 1);
+        assert_eq!(kotori_client_connected(client), 0);
         let ctx = CString::new("こんにちは").unwrap();
         assert_eq!(kotori_set_context(client, id, ctx.as_ptr()), KOTORI_OK);
 
@@ -134,6 +151,7 @@ fn session_key_and_output_accessors() {
             kotori_send_key(client, id, 0x20, empty.as_ptr(), mods, 0, &mut out),
             KOTORI_OK
         );
+        assert_eq!(kotori_client_connected(client), 1);
         assert_eq!(kotori_output_consumed(out), 1);
         assert_eq!(kotori_output_preedit_count(out), 2);
         assert_eq!(text(kotori_output_preedit_text(out, 0)), "今日");
@@ -173,45 +191,58 @@ fn session_key_and_output_accessors() {
 }
 
 #[test]
-fn timeouts_errors_and_null_arguments() {
+fn pass_through_errors_and_null_arguments() {
     let (client, server) = fake_server(engine);
     // SAFETY: client は有効な接続。NULL を渡す呼び出しは、関数が NULL を弾くことを確かめる。
     unsafe {
+        let app = CString::new("notepad.exe").unwrap();
+        let mut id = 0;
+        assert_eq!(
+            kotori_create_session(client, app.as_ptr(), 1, &mut id),
+            KOTORI_OK
+        );
         let empty = CString::new("").unwrap();
         let mut out: *mut KotoriOutput = ptr::null_mut();
-        // 応答が 200ms 以内に返らないキーは KOTORI_TIMEOUT で、出力は書かない。
+        // 応答が 200ms 以内に返らないキーは KOTORI_PASS_THROUGH で、出力は書かない。
         assert_eq!(
-            kotori_send_key(client, 1, 0x0D, empty.as_ptr(), 0, 0, &mut out),
-            KOTORI_TIMEOUT
+            kotori_send_key(client, id, 0x0D, empty.as_ptr(), 0, 0, &mut out),
+            KOTORI_PASS_THROUGH
         );
         assert!(out.is_null());
-        // Output 以外の応答(未実装のエラー)は KOTORI_ERR_SERVER。
         assert_eq!(
-            kotori_send_command(client, 1, 99, 0, &mut out),
-            KOTORI_ERR_SERVER
+            kotori_client_connected(client),
+            1,
+            "タイムアウトでは切らない"
+        );
+        // Output 以外の応答(未実装のエラー)もキーを渡させる。
+        assert_eq!(
+            kotori_send_command(client, id, 99, 0, &mut out),
+            KOTORI_PASS_THROUGH
         );
         assert_eq!(
-            kotori_send_key(client, 1, 0x20, ptr::null(), 0, 0, &mut out),
+            kotori_send_key(client, id, 0x20, ptr::null(), 0, 0, &mut out),
             KOTORI_ERR_ARGUMENT
         );
         assert_eq!(
-            kotori_send_key(client, 1, 0x20, empty.as_ptr(), 0, 0, ptr::null_mut()),
+            kotori_send_key(client, id, 0x20, empty.as_ptr(), 0, 0, ptr::null_mut()),
             KOTORI_ERR_ARGUMENT
         );
         assert_eq!(
             kotori_create_session(ptr::null_mut(), empty.as_ptr(), 0, &mut 0),
             KOTORI_ERR_ARGUMENT
         );
+        assert_eq!(kotori_client_connected(ptr::null()), 0);
         // 出力のアクセサは NULL でも落ちない。
         assert_eq!(kotori_output_consumed(ptr::null()), 0);
         assert!(kotori_output_committed(ptr::null()).is_null());
         kotori_output_free(ptr::null_mut());
+        assert_eq!(kotori_delete_session(client, id), KOTORI_OK);
         kotori_client_free(client);
         kotori_client_free(ptr::null_mut());
     }
     server.join().unwrap();
 
-    // 応答せずに接続を切るサーバーには KOTORI_ERR_DISCONNECTED。
+    // 応答せずに接続を切るサーバーでは、キーを渡させて未接続になる。
     let (client, server) = fake_server(|_| panic!("応答しないまま切る"));
     // SAFETY: client は有効な接続。
     unsafe {
@@ -219,17 +250,49 @@ fn timeouts_errors_and_null_arguments() {
         let app = CString::new("x").unwrap();
         assert_eq!(
             kotori_create_session(client, app.as_ptr(), 0, &mut id),
-            KOTORI_ERR_DISCONNECTED
+            KOTORI_OK
         );
+        let a = CString::new("a").unwrap();
+        let mut out: *mut KotoriOutput = ptr::null_mut();
+        assert_eq!(
+            kotori_send_key(client, id, 0x41, a.as_ptr(), 0, 0, &mut out),
+            KOTORI_PASS_THROUGH
+        );
+        assert_eq!(kotori_client_connected(client), 0);
         kotori_client_free(client);
     }
     assert!(server.join().is_err(), "偽のサーバーはパニックで切れている");
 }
 
-#[cfg(unix)]
 #[test]
-fn connect_fails_without_server() {
-    let path = CString::new("/nonexistent/kotori/server.sock").unwrap();
-    // SAFETY: path は NUL 終端の文字列。
-    assert!(unsafe { kotori_client_connect(path.as_ptr()) }.is_null());
+fn open_without_server_passes_keys_through() {
+    let address = CString::new(if cfg!(windows) {
+        r"\\.\pipe\kotori-test-nonexistent"
+    } else {
+        "/nonexistent/kotori/server.sock"
+    })
+    .unwrap();
+    // SAFETY: address は NUL 終端の文字列、server は NULL(起動しない)。
+    unsafe {
+        let client = kotori_client_open(address.as_ptr(), ptr::null());
+        assert!(!client.is_null());
+        let mut id = 0;
+        let app = CString::new("x").unwrap();
+        assert_eq!(
+            kotori_create_session(client, app.as_ptr(), 0, &mut id),
+            KOTORI_OK
+        );
+        let a = CString::new("a").unwrap();
+        let mut out: *mut KotoriOutput = ptr::null_mut();
+        assert_eq!(
+            kotori_send_key(client, id, 0x41, a.as_ptr(), 0, 0, &mut out),
+            KOTORI_PASS_THROUGH
+        );
+        assert!(out.is_null());
+        assert_eq!(kotori_client_connected(client), 0);
+        kotori_client_free(client);
+        // 文字列が UTF-8 でなければ NULL。
+        let bad = [0xFFu8, 0];
+        assert!(kotori_client_open(bad.as_ptr().cast(), ptr::null()).is_null());
+    }
 }

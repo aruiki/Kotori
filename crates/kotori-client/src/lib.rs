@@ -221,6 +221,7 @@ pub fn connect_unix(
 pub mod ffi;
 #[cfg(test)]
 mod ffi_tests;
+pub mod managed;
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
