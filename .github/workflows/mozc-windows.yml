@@ -70,9 +70,27 @@ jobs:
           bash training/zenz/fetch.sh
           mkdir -p target/kotori
           python training/zenz/convert.py training/zenz/models/zenz-v2.5-small target/kotori/zenz-v2.5-small-q8_0.gguf --outtype q8_0
+      # 同梱する LLM(docs/adr/0016)。f16 にしてから llama.cpp の公式ビルドの llama-quantize で Q5_K_M にする。
+      - id: llm
+        uses: actions/cache@v4
+        with:
+          path: kotori/target/kotori/tinyswallow-1.5b-q5_k_m.gguf
+          key: llm-tinyswallow-1.5b-q5_k_m-${{ hashFiles('kotori/training/llm/*') }}
+      - name: LLM を作る
+        if: steps.llm.outputs.cache-hit != 'true'
+        shell: bash
+        working-directory: kotori
+        run: |
+          git submodule update --init --depth 1 third_party/llama.cpp
+          python -m pip install -q -r third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt huggingface_hub
+          curl -fsSL -o llama-bin.zip https://github.com/ggml-org/llama.cpp/releases/download/b11259/llama-b11259-bin-win-cpu-x64.zip
+          mkdir -p llama-bin && unzip -q llama-bin.zip -d llama-bin
+          PYTHON=python bash training/llm/make.sh "$PWD/llama-bin/llama-quantize.exe"
       - name: モデルを置く
         shell: pwsh
-        run: Copy-Item kotori/target/kotori/zenz-v2.5-small-q8_0.gguf mozc-src/src/data/kotori/
+        run: |
+          Copy-Item kotori/target/kotori/zenz-v2.5-small-q8_0.gguf mozc-src/src/data/kotori/
+          Copy-Item kotori/target/kotori/tinyswallow-1.5b-q5_k_m.gguf mozc-src/src/data/kotori/
       - uses: actions/cache@v4
         with:
           path: mozc-src/src/third_party_cache

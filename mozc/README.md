@@ -23,9 +23,14 @@ Kotori は Mozc(google/mozc、BSD-3-Clause)をベースにし、LM のリラン�
     モデルのファイル)もここに入れる。モデルは設定のパス → `KOTORI_ZENZ_MODEL` → 品質の段階のモデル →
     `mozc_server` と同じフォルダの `zenz-v2.5-small-q8_0.gguf` の順。なければ何もしない。
     調整用に `KOTORI_LM_K`、`KOTORI_LM_SENTENCE`、`KOTORI_LM_WEIGHTS`(`λ_lm,λ_lattice,T`)、`KOTORI_LM_THREADS` がある。
-  - `0003-kotori-bundle-model.patch`: モデル(`data/kotori/zenz-v2.5-small-q8_0.gguf`)と `NOTICE-zenz.txt`
-    (CC BY-SA 4.0 の表示)を MSI に入れる。モデルはコミットしないので、ビルドの前に `data/kotori/` に置く
-    (ワークフローが `training/zenz/convert.py --outtype q8_0` で作って置く)。
+  - 0002 には、zenz による生成(ビームサーチ)と辞書による読みの確認、LLM(GPU)の採点、llama.cpp の
+    実行時読み込み(`rewriter/llama_runtime.*`。Windows は同梱の公式 DLL、Linux は静的リンク)も入る(docs/adr/0016)。
+  - `0003-kotori-bundle-model.patch`: MSI に同梱する物と画面(docs/adr/0016、0017)。モデル
+    (`data/kotori/zenz-v2.5-small-q8_0.gguf`、`tinyswallow-1.5b-q5_k_m.gguf`)と表示(`NOTICE-*.txt`、
+    `LICENSE-llama.cpp.txt`)、llama.cpp の公式 Windows ビルド(Vulkan 版の DLL)、WiX UI の画面(使用許諾
+    `license.rtf`、画像 `banner.bmp`・`dialog.bmp`。`mozc/tools/gen_assets.py` で作る)。モデルはコミット
+    しないので、ビルドの前に `data/kotori/` に置く(ワークフローが `training/zenz/convert.py` と
+    `training/llm/make.sh` で作って置く)。
 
 Linux での評価: `bazel build //converter:converter_main -c opt` のあと、
 `python3 mozc/eval_baseline.py bazel-bin/converter/converter_main`(`eval/fetch.sh` で評価セットを取得しておく)。
