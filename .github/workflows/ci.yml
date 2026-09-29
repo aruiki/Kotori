@@ -47,17 +47,32 @@ jobs:
       - run: cargo check --workspace --all-targets --locked
 
   windows-tip:
-    # TSF TIP(C++20)。x64 と x86 の両方を作り、登録と解除を確かめる(REQ-10-1、docs/adr/0009)。
+    # TSF TIP(C++20)。x64 と x86 の両方を作り、単体テストと登録・解除を確かめる(REQ-10-1、docs/adr/0009)。
     name: TSF TIP (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, Win32]
+        include:
+          - arch: x64
+            target: x86_64-pc-windows-msvc
+          - arch: Win32
+            target: i686-pc-windows-msvc
     runs-on: windows-latest
     timeout-minutes: 20
+    env:
+      # DLL の静的な VC ランタイム(/MT)に合わせる。
+      RUSTFLAGS: -C target-feature=+crt-static
     steps:
       - uses: actions/checkout@v4
-      - run: cmake -S frontends/windows -B build -A ${{ matrix.arch }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: tip-${{ matrix.target }}
+      - run: cargo build -p kotori-client --release --locked --target ${{ matrix.target }}
+      - run: cmake -S frontends/windows -B build -A ${{ matrix.arch }} "-DKOTORI_CLIENT_LIB=${{ github.workspace }}/target/${{ matrix.target }}/release/kotori_client.lib"
       - run: cmake --build build --config Release
+      - run: ./build/Release/kotori_tip_tests.exe
       - run: ./frontends/windows/tests/register.ps1 -Dll build/Release/kotori_tip.dll -Arch ${{ matrix.arch }}
         shell: pwsh

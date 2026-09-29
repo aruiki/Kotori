@@ -6,10 +6,18 @@
 //
 #include <msctf.h>
 
+#include <memory>
+#include <optional>
+
+#include "engine.h"
+
 namespace kotori {
 
-// ITfTextInputProcessorEx を実装する。今は起動と終了だけを扱い、キー処理などは後続で足す。
-class TextService final : public ITfTextInputProcessorEx {
+// キーをエンジンに送り、返ってきたプリエディットと確定文字列を TSF のコンポジションに書く。
+// フロントエンドは状態を持たない(REQ-11-1)。表示属性・候補ウィンドウ・左文脈は後続で足す。
+class TextService final : public ITfTextInputProcessorEx,
+                          public ITfKeyEventSink,
+                          public ITfCompositionSink {
  public:
   TextService();
   TextService(const TextService&) = delete;
@@ -20,19 +28,45 @@ class TextService final : public ITfTextInputProcessorEx {
   STDMETHODIMP_(ULONG) AddRef() override;
   STDMETHODIMP_(ULONG) Release() override;
 
-  // ITfTextInputProcessor
+  // ITfTextInputProcessor / ITfTextInputProcessorEx
   STDMETHODIMP Activate(ITfThreadMgr* thread_mgr, TfClientId client_id) override;
   STDMETHODIMP Deactivate() override;
-
-  // ITfTextInputProcessorEx
   STDMETHODIMP ActivateEx(ITfThreadMgr* thread_mgr, TfClientId client_id, DWORD flags) override;
+
+  // ITfKeyEventSink
+  STDMETHODIMP OnSetFocus(BOOL foreground) override;
+  STDMETHODIMP OnTestKeyDown(ITfContext* context, WPARAM wparam, LPARAM lparam,
+                             BOOL* eaten) override;
+  STDMETHODIMP OnTestKeyUp(ITfContext* context, WPARAM wparam, LPARAM lparam,
+                           BOOL* eaten) override;
+  STDMETHODIMP OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM lparam, BOOL* eaten) override;
+  STDMETHODIMP OnKeyUp(ITfContext* context, WPARAM wparam, LPARAM lparam, BOOL* eaten) override;
+  STDMETHODIMP OnPreservedKey(ITfContext* context, REFGUID guid, BOOL* eaten) override;
+
+  // ITfCompositionSink
+  STDMETHODIMP OnCompositionTerminated(TfEditCookie cookie, ITfComposition* composition) override;
+
+  // 編集セッションの中で、エンジンの出力をコンポジションに書く。
+  HRESULT UpdateComposition(TfEditCookie cookie, ITfContext* context, const EngineOutput& out);
 
  private:
   ~TextService();
 
+  bool IsKeyboardOpen() const;
+  void SetKeyboardOpen(bool open);
+  std::optional<EngineOutput> Send(WPARAM wparam, LPARAM lparam);
+  void Apply(ITfContext* context, const EngineOutput& out);
+  void ReleaseComposition();
+
   LONG refs_ = 1;
   ITfThreadMgr* thread_mgr_ = nullptr;
   TfClientId client_id_ = TF_CLIENTID_NULL;
+  bool key_sink_advised_ = false;
+  ITfComposition* composition_ = nullptr;
+  std::unique_ptr<Engine> engine_;
+  // OnTestKeyDown で送ったキーの結果。直後の OnKeyDown で使う。
+  std::optional<WPARAM> tested_key_;
+  std::optional<EngineOutput> tested_output_;
 };
 
 }  // namespace kotori
