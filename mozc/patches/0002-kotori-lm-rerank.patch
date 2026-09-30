@@ -19055,10 +19055,17 @@ zL@613W7Zf1G&4<#nt(BZ;xoE2_j8mrXY(!KeiIne+sK-zQeq6KNh!`3eBt9B?)?Em
 Ce@$lq
 
 diff --git a/src/gui/base/util.cc b/src/gui/base/util.cc
-index b1af98c8a..40bbc83be 100644
+index b1af98c8a..ba118cd62 100644
 --- a/src/gui/base/util.cc
 +++ b/src/gui/base/util.cc
-@@ -46,6 +46,9 @@
+@@ -42,10 +42,16 @@
+ 
+ #include <QAbstractButton>
+ #include <QApplication>
++#ifdef _WIN32
++#include <windows.h>
++#endif  // _WIN32
+ #include <QFont>
  #include <QGuiApplication>
  #include <QObject>
  #include <QStyleFactory>
@@ -19068,38 +19075,59 @@ index b1af98c8a..40bbc83be 100644
  #include <QtGui>
  #include <memory>
  #include <string>
-@@ -100,6 +103,30 @@ std::unique_ptr<QApplication> GuiUtil::InitQt(int &argc, char *argv[]) {
+@@ -90,6 +96,18 @@ void InstallDefaultTranslator() {
+ }
+ }  // namespace
+ 
++#ifdef _WIN32
++// Kotori: Windows のハイコントラストが有効か。有効なら Kotori の配色とスタイルを当てず、Windows の
++// 配色に従う(docs/adr/0028、改善案 14)。
++static bool KotoriHighContrast() {
++  HIGHCONTRASTW hc = {sizeof(hc)};
++  return ::SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(hc), &hc, 0) &&
++         (hc.dwFlags & HCF_HIGHCONTRASTON);
++}
++#else
++static bool KotoriHighContrast() { return false; }
++#endif  // _WIN32
++
+ // static
+ std::unique_ptr<QApplication> GuiUtil::InitQt(int &argc, char *argv[]) {
+   QApplication::setStyle(QStyleFactory::create(QLatin1String("fusion")));
+@@ -100,6 +118,32 @@ std::unique_ptr<QApplication> GuiUtil::InitQt(int &argc, char *argv[]) {
    app->setFont(QFont("Hiragino Sans"));
  #endif  // __APPLE__
  
 +  // Kotori: 画面は明るい配色で作っているので、Windows がダークモードでも明るい配色にする
 +  // (ダークモードでは Qt がボタンなどの文字を白にし、白い背景の上で文字が消えた。docs/adr/0024)。
-+  app->styleHints()->setColorScheme(Qt::ColorScheme::Light);
-+  QPalette light;
-+  light.setColor(QPalette::Window, QColor(0xF3, 0xF3, 0xF3));
-+  light.setColor(QPalette::WindowText, QColor(0x1A, 0x1A, 0x1A));
-+  light.setColor(QPalette::Base, QColor(0xFF, 0xFF, 0xFF));
-+  light.setColor(QPalette::AlternateBase, QColor(0xF7, 0xF7, 0xF7));
-+  light.setColor(QPalette::Text, QColor(0x1A, 0x1A, 0x1A));
-+  light.setColor(QPalette::Button, QColor(0xFF, 0xFF, 0xFF));
-+  light.setColor(QPalette::ButtonText, QColor(0x1A, 0x1A, 0x1A));
-+  light.setColor(QPalette::ToolTipBase, QColor(0xFF, 0xFF, 0xFF));
-+  light.setColor(QPalette::ToolTipText, QColor(0x1A, 0x1A, 0x1A));
-+  light.setColor(QPalette::PlaceholderText, QColor(0x8A, 0x8A, 0x8A));
-+  light.setColor(QPalette::Highlight, QColor(0x0F, 0x6C, 0xBD));
-+  light.setColor(QPalette::HighlightedText, QColor(0xFF, 0xFF, 0xFF));
-+  light.setColor(QPalette::Link, QColor(0x0F, 0x6C, 0xBD));
-+  light.setColor(QPalette::BrightText, QColor(0xFF, 0xFF, 0xFF));
-+  for (QPalette::ColorRole role :
-+       {QPalette::WindowText, QPalette::Text, QPalette::ButtonText}) {
-+    light.setColor(QPalette::Disabled, role, QColor(0xA0, 0xA0, 0xA0));
++  if (!KotoriHighContrast()) {
++    app->styleHints()->setColorScheme(Qt::ColorScheme::Light);
++    QPalette light;
++    light.setColor(QPalette::Window, QColor(0xF3, 0xF3, 0xF3));
++    light.setColor(QPalette::WindowText, QColor(0x1A, 0x1A, 0x1A));
++    light.setColor(QPalette::Base, QColor(0xFF, 0xFF, 0xFF));
++    light.setColor(QPalette::AlternateBase, QColor(0xF7, 0xF7, 0xF7));
++    light.setColor(QPalette::Text, QColor(0x1A, 0x1A, 0x1A));
++    light.setColor(QPalette::Button, QColor(0xFF, 0xFF, 0xFF));
++    light.setColor(QPalette::ButtonText, QColor(0x1A, 0x1A, 0x1A));
++    light.setColor(QPalette::ToolTipBase, QColor(0xFF, 0xFF, 0xFF));
++    light.setColor(QPalette::ToolTipText, QColor(0x1A, 0x1A, 0x1A));
++    light.setColor(QPalette::PlaceholderText, QColor(0x8A, 0x8A, 0x8A));
++    light.setColor(QPalette::Highlight, QColor(0x0F, 0x6C, 0xBD));
++    light.setColor(QPalette::HighlightedText, QColor(0xFF, 0xFF, 0xFF));
++    light.setColor(QPalette::Link, QColor(0x0F, 0x6C, 0xBD));
++    light.setColor(QPalette::BrightText, QColor(0xFF, 0xFF, 0xFF));
++    for (QPalette::ColorRole role :
++         {QPalette::WindowText, QPalette::Text, QPalette::ButtonText}) {
++      light.setColor(QPalette::Disabled, role, QColor(0xA0, 0xA0, 0xA0));
++    }
++    app->setPalette(light);
 +  }
-+  app->setPalette(light);
 +
    InstallEventFilter();
    InstallDefaultTranslator();
  
-@@ -131,7 +158,7 @@ QString GuiUtil::ProductName() {
+@@ -131,7 +175,7 @@ QString GuiUtil::ProductName() {
  #ifdef GOOGLE_JAPANESE_INPUT_BUILD
    const QString name = QObject::tr("Google Japanese Input");
  #else   // GOOGLE_JAPANESE_INPUT_BUILD
@@ -19109,7 +19137,7 @@ index b1af98c8a..40bbc83be 100644
    return name;
  }
 diff --git a/src/gui/config_dialog/config_dialog.cc b/src/gui/config_dialog/config_dialog.cc
-index abbf55d68..59f090b35 100644
+index abbf55d68..c42f413d9 100644
 --- a/src/gui/config_dialog/config_dialog.cc
 +++ b/src/gui/config_dialog/config_dialog.cc
 @@ -30,9 +30,24 @@
@@ -19146,7 +19174,7 @@ index abbf55d68..59f090b35 100644
  #include "client/client.h"
  #include "config/config_handler.h"
  #include "config/stats_config_util.h"
-@@ -83,6 +100,120 @@ void Connect(const QList<T *> &objects, const char *signal,
+@@ -83,6 +100,136 @@ void Connect(const QList<T *> &objects, const char *signal,
  
  namespace mozc {
  namespace gui {
@@ -19167,6 +19195,10 @@ index abbf55d68..59f090b35 100644
 +QPushButton:default { background: #0F6CBD; color: #FFFFFF; border: 1px solid #115EA3; }
 +QPushButton:default:hover { background: #115EA3; }
 +QPushButton:disabled { background: #F0F0F0; color: #A0A0A0; border-color: #E0E0E0; }
++QPushButton:focus { border: 2px solid #0F6CBD; }
++QPushButton:default:focus { border: 2px solid #1A1A1A; }
++QCheckBox:focus, QRadioButton:focus { background: #EBF3FC; border-radius: 4px; }
++QTabBar::tab:focus { border: 1px solid #0F6CBD; border-radius: 4px; }
 +QComboBox, QLineEdit, QSpinBox { background: #FFFFFF; color: #1A1A1A; border: 1px solid #D1D1D1; border-bottom: 1px solid #8A8A8A; border-radius: 4px; padding: 4px 8px; min-height: 20px; }
 +QComboBox:focus, QLineEdit:focus, QSpinBox:focus { border-bottom: 2px solid #0F6CBD; }
 +QComboBox::drop-down { border: none; width: 24px; }
@@ -19178,6 +19210,18 @@ index abbf55d68..59f090b35 100644
 +QLabel#kotoriNote { color: #5C5C5C; font-size: 9pt; }
 +QFrame#kotoriCard { background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 8px; }
 +)";
++
++#ifdef _WIN32
++// Kotori: Windows のハイコントラストが有効か。有効なら Kotori の配色とスタイルを当てず、Windows の
++// 配色に従う(docs/adr/0028、改善案 14)。
++bool KotoriHighContrast() {
++  HIGHCONTRASTW hc = {sizeof(hc)};
++  return ::SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(hc), &hc, 0) &&
++         (hc.dwFlags & HCF_HIGHCONTRASTON);
++}
++#else
++bool KotoriHighContrast() { return false; }
++#endif  // _WIN32
 +
 +// Kotori: この PC の GPU の名前と VRAM を 1 行で(設定画面に出す)。DXGI で調べ、
 +// ソフトウェアの描画(Microsoft Basic Render Driver)は除く。
@@ -19267,7 +19311,7 @@ index abbf55d68..59f090b35 100644
  
  using ::mozc::config::StatsConfigUtil;
  
-@@ -152,6 +283,164 @@ ConfigDialog::ConfigDialog()
+@@ -152,6 +299,164 @@ ConfigDialog::ConfigDialog()
    symbolsSettingComboBox->addItem(QString::fromUtf8("「」／"));
    symbolsSettingComboBox->addItem(QString::fromUtf8("[]・"));
  
@@ -19416,7 +19460,7 @@ index abbf55d68..59f090b35 100644
 +    configDialogTabWidget->insertTab(0, page, QString::fromUtf8("AI 変換"));
 +    configDialogTabWidget->setCurrentIndex(0);
 +    // Kotori: Fluent 2 風の見た目(Windows 11 の設定アプリに合わせる。docs/adr/0017)。
-+    setStyleSheet(QString::fromUtf8(kKotoriFluentStyle));
++    if (!KotoriHighContrast()) setStyleSheet(QString::fromUtf8(kKotoriFluentStyle));
 +    QObject::connect(kotoriLmEnabledCheckBox_, SIGNAL(stateChanged(int)), this,
 +                     SLOT(EnableApplyButton()));
 +    QObject::connect(kotoriLmPredictCheckBox_, SIGNAL(stateChanged(int)), this,
@@ -19432,7 +19476,7 @@ index abbf55d68..59f090b35 100644
    keymapSettingComboBox->addItem(tr("Custom keymap"));
    keymapSettingComboBox->addItem(tr("ATOK"));
    keymapSettingComboBox->addItem(tr("MS-IME"));
-@@ -524,6 +813,20 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
+@@ -524,6 +829,20 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
    custom_keymap_table_ = config.custom_keymap_table();
    custom_roman_table_ = config.custom_roman_table();
  
@@ -19453,7 +19497,7 @@ index abbf55d68..59f090b35 100644
    // tab2
    SET_COMBOBOX(historyLearningLevelComboBox, HistoryLearningLevel,
                 history_learning_level);
-@@ -612,6 +915,16 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
+@@ -612,6 +931,16 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
      config->set_custom_roman_table(custom_roman_table_);
    }
  
