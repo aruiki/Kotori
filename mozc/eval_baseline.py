@@ -48,6 +48,17 @@ def first_candidates(lines) -> str:
     return "".join(parts)
 
 
+def wilson(hit: int, n: int, z: float = 1.96) -> tuple:
+    """Acc@1 の 95% 信頼区間(Wilson)。問題数が少ないと幅が広いので、差がこの幅より小さければ偶然と区別できない。"""
+    if n == 0:
+        return 0.0, 0.0
+    p = hit / n
+    d = 1 + z * z / n
+    c = p + z * z / (2 * n)
+    m = z * ((p * (1 - p) + z * z / (4 * n)) / n) ** 0.5
+    return 100 * (c - m) / d, 100 * (c + m) / d
+
+
 def sha256(path: Path) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -146,7 +157,9 @@ def main() -> int:
         hit += ok
         rows.append({"index": it["index"], "input": it["input"], "top1": top,
                      "expected": it["expected_output"], "ok": ok})
-    print(f"Acc@1 {hit}/{len(items)} = {100 * hit / len(items):.1f}%  ({elapsed:.0f} 秒)")
+    lo, hi = wilson(hit, len(items))
+    print(f"Acc@1 {hit}/{len(items)} = {100 * hit / len(items):.1f}%(95% 区間 {lo:.1f}〜{hi:.1f}%)  "
+          f"({elapsed:.0f} 秒)")
     if times:
         print(f"AI の変換 中央値 {times[len(times) // 2]:.0f} ms、p95 {times[int(len(times) * 0.95)]:.0f} ms、"
               f"最大 {times[-1]:.0f} ms")
