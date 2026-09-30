@@ -67,8 +67,9 @@ Kotori日本語入力を開発する AI エージェント(Claude Code、Codex �
 - **積み重ねた PR のマージ**: 下の PR を `--delete-branch` でマージすると、上の PR が付け替えられずに閉じることが
   ある。先に上の PR の base を main に変えてからマージするか、一番上のブランチからまとめて出し直す。
   squash は積み重ねた PR で衝突を起こすので、マージコミットを使う。
-- **MSI の版**: リリースごとに `version.bzl` の BUILD を上げている(カード 22)。同じ版の MSI を上書きしても
-  ファイルは入れ替わらない。
+- **MSI の版**: リリースごとに `version.bzl` の BUILD を上げている(カード 22、35)。同じ版の MSI を上書きしても
+  ファイルは入れ替わらない。Mozc の `mozc_version.py` は `BUILD = <数>` の数しか読まない(足し算は無視される)。
+  CI のログで書き換えが成功していても、**出来上がった MSI の ProductVersion で確かめる**(beta.5 で見落とした)。
 - **内蔵 GPU は AI に使わない**: 専用 GPU(VRAM 3 GiB 以上)だけを使う(docs/adr/0024)。
 - 旧 Rust 版の CI でだけ落ちるテスト、CRLF、UNIX ソケットのパス長などは `docs/HANDOFF.md` の「はまりどころ」。
 
