@@ -55,16 +55,25 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "$($p.Name) を当てられない" }
           }
       # Windows Installer は版の先頭3つで上書きの入れ替えを決めるので、Mozc の BUILD に実行番号を足して
-      # リリースごとに版を上げる(docs/tasks/22)。版が同じだと上書きで古いファイルが残る。
+      # リリースごとに版を上げる(docs/tasks/22、35)。版が同じだと上書きで古いファイルが残る。
+      # Mozc の build_tools/mozc_version.py は「名前 = 値」の最初の語しか読まないので、足し算ではなく
+      # 数値で書く(「BUILD_OSS + 21」は 6239 のままになっていた)。書いた後、実際の版を読んで確かめる。
       - name: 版を上げる
         shell: pwsh
         run: |
           $f = 'mozc-src/src/version.bzl'
           $s = Get-Content $f -Raw
-          if ($s -notmatch '(?m)^BUILD = BUILD_OSS$') { throw "$f に BUILD = BUILD_OSS がない" }
-          $s = $s -replace '(?m)^BUILD = BUILD_OSS$', 'BUILD = BUILD_OSS + ${{ github.run_number }}'
+          if ($s -notmatch '(?m)^BUILD_OSS = (\d+)\s*$') { throw "$f に BUILD_OSS = <数> がない" }
+          $build = [int]$Matches[1] + ${{ github.run_number }}
+          if ($build -gt 65535) { throw "BUILD $build が 16 bit を超える" }
+          if ($s -notmatch '(?m)^BUILD = BUILD_OSS\s*$') { throw "$f に BUILD = BUILD_OSS がない" }
+          $s = $s -replace '(?m)^BUILD = BUILD_OSS\s*$', "BUILD = $build"
           [IO.File]::WriteAllText((Resolve-Path $f), $s)
-          Select-String -Path $f -Pattern '^(MAJOR|MINOR|BUILD|REVISION) ='
+          $out = New-TemporaryFile
+          python mozc-src/src/build_tools/mozc_version.py --template_path $f --output $out --target_platform=Windows
+          $got = (Select-String -Path $out -Pattern '^BUILD=(\d+)').Matches[0].Groups[1].Value
+          Write-Host "版の BUILD: $got"
+          if ($got -ne "$build") { throw "Mozc が読んだ BUILD($got)が書いた値($build)と違う" }
       # MSI に同梱するモデル(docs/adr/0012、パッチ 0003)。変換の手順が同じなら前に作ったものを使う。
       # medium は GPU のない PC の Low と Unreal で使う(docs/adr/0024)。
       - id: zenz
