@@ -22211,10 +22211,10 @@ index d92e814fd..792ecb2c2 100644
  #endif  // MOZC_USER_DICTIONARY_REWRITER
 diff --git a/src/rewriter/zenz_scorer.cc b/src/rewriter/zenz_scorer.cc
 new file mode 100644
-index 000000000..f2deb4b31
+index 000000000..cf952ebbb
 --- /dev/null
 +++ b/src/rewriter/zenz_scorer.cc
-@@ -0,0 +1,735 @@
+@@ -0,0 +1,760 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/zenz_scorer.h"
@@ -22248,7 +22248,8 @@ index 000000000..f2deb4b31
 +constexpr uint32_t kNumContext = 2048;
 +// 1 回の計算で扱うトークン数。大きいと、結果(ロジット)を受け取る領域が語彙数 × この数だけ要る
 +// (LLM は語彙が 15 万なので、4096 だと約 2.5 GB)。
-+constexpr int kBatch = 512;
++// 256 にすると、512 と速さは同じで VRAM が約 170 MB 減る(docs/adr/0032)。
++constexpr int kBatch = 256;
 +constexpr int kMaxCandidates = 32;
 +constexpr size_t kMaxContextChars = 40;
 +
@@ -22665,17 +22666,15 @@ index 000000000..f2deb4b31
 +  std::vector<std::vector<std::vector<llama_token>>> result(n_roots);
 +  // シーケンス: 前置きは 0..n_roots-1。ビームは 2 組(交互に使う)で、根ごとに beams 個ずつ。
 +  int total_beams = 0;
-+  size_t prefix_tokens = 0;
 +  for (const Root& r : roots) {
 +    if (r.beams < 1 || r.prefix.empty() ||
 +        r.prefix.size() + r.max_len + 1 > kNumContext) {
 +      return result;
 +    }
 +    total_beams += r.beams;
-+    prefix_tokens += r.prefix.size();
 +  }
 +  if (n_roots == 0 || n_roots + 2 * total_beams > max_seq_ + 1 ||
-+      prefix_tokens > static_cast<size_t>(kBatch)) {
++      n_roots > kBatch) {
 +    return result;
 +  }
 +  const llama_vocab* vocab = llama_model_get_vocab(model_);
@@ -22687,7 +22686,36 @@ index 000000000..f2deb4b31
 +  if (reuse) {
 +    if (!UsePrefix(roots[0].prefix)) return result;
 +  } else {
++    // 各根の前置きの最後の 1 トークンより前を、kBatch 以内の組に分けて計算する(ロジットは要らない)。
++    // 前置きがいくら長くても失敗しないように(docs/adr/0032)。
 +    ResetMemory();
++    llama_batch b = llama_batch_init(kBatch, 0, 1);
++    b.n_tokens = 0;
++    auto flush = [&]() {
++      if (b.n_tokens == 0) return true;
++      const int rc = Decode(ctx_, b, zenz_);
++      b.n_tokens = 0;
++      return rc == 0;
++    };
++    bool ok = true;
++    for (int r = 0; r < n_roots && ok; ++r) {
++      const auto& prefix = roots[r].prefix;
++      for (size_t i = 0; i + 1 < prefix.size() && ok; ++i) {
++        if (b.n_tokens == kBatch) ok = flush();
++        const int at = b.n_tokens++;
++        b.token[at] = prefix[i];
++        b.pos[at] = i;
++        b.n_seq_id[at] = 1;
++        b.seq_id[at][0] = r;
++        b.logits[at] = 0;
++      }
++    }
++    ok = ok && flush();
++    llama_batch_free(b);
++    if (!ok) {
++      ResetMemory();
++      return result;
++    }
 +  }
 +
 +  struct Beam {
@@ -22705,21 +22733,18 @@ index 000000000..f2deb4b31
 +  };
 +  std::vector<State> st(n_roots);
 +  {
-+    // すべての根の前置きを 1 回の計算で評価する(使い回した所は除く)。
-+    llama_batch b = llama_batch_init(prefix_tokens, 0, 1);
++    // すべての根の前置きの最後のトークンを 1 回の計算で評価し、最初の分布を得る。
++    llama_batch b = llama_batch_init(n_roots, 0, 1);
 +    int at = 0;
 +    int seq_next = n_roots;
-+    for (int r = 0; r < n_roots; ++r) {
++    for (int r = 0; r < n_roots; ++r, ++at) {
 +      const auto& prefix = roots[r].prefix;
-+      for (size_t i = reuse ? prefix.size() - 1 : 0; i < prefix.size();
-+           ++i, ++at) {
-+        b.token[at] = prefix[i];
-+        b.pos[at] = i;
-+        b.n_seq_id[at] = 1;
-+        b.seq_id[at][0] = r;
-+        b.logits[at] = i + 1 == prefix.size();
-+      }
-+      st[r].live.push_back({{}, 0.f, r, at - 1});
++      b.token[at] = prefix.back();
++      b.pos[at] = prefix.size() - 1;
++      b.n_seq_id[at] = 1;
++      b.seq_id[at][0] = r;
++      b.logits[at] = 1;
++      st[r].live.push_back({{}, 0.f, r, at});
 +      st[r].bank_start[0] = seq_next;
 +      st[r].bank_start[1] = seq_next + roots[r].beams;
 +      seq_next += 2 * roots[r].beams;
