@@ -19109,10 +19109,10 @@ index b1af98c8a..40bbc83be 100644
    return name;
  }
 diff --git a/src/gui/config_dialog/config_dialog.cc b/src/gui/config_dialog/config_dialog.cc
-index abbf55d68..39d6c7f1d 100644
+index abbf55d68..59f090b35 100644
 --- a/src/gui/config_dialog/config_dialog.cc
 +++ b/src/gui/config_dialog/config_dialog.cc
-@@ -30,8 +30,22 @@
+@@ -30,9 +30,24 @@
  // Qt component of configure dialog for Mozc
  #include "gui/config_dialog/config_dialog.h"
  
@@ -19133,9 +19133,20 @@ index abbf55d68..39d6c7f1d 100644
 +#include <dxgi.h>
 +#endif  // _WIN32
  #include <cstdint>
++#include <fstream>
  #include <istream>
  #include <map>
-@@ -83,6 +97,90 @@ void Connect(const QList<T *> &objects, const char *signal,
+ #include <memory>
+@@ -43,6 +58,8 @@
+ #include "absl/log/log.h"
+ #include "absl/strings/string_view.h"
+ #include "base/config_file_stream.h"
++#include "base/file_util.h"
++#include "base/system_util.h"
+ #include "client/client.h"
+ #include "config/config_handler.h"
+ #include "config/stats_config_util.h"
+@@ -83,6 +100,120 @@ void Connect(const QList<T *> &objects, const char *signal,
  
  namespace mozc {
  namespace gui {
@@ -19222,11 +19233,41 @@ index abbf55d68..39d6c7f1d 100644
 +  return "AI に使える GPU が見つかりません。どの品質を選んでも Low(CPU)で動きます。";
 +}
 +
++// Kotori: 実際に動いている AI の状態(変換サーバーがユーザーのプロファイルの
++// kotori_ai_status.txt に書く。rewriter/lm_rewriter.cc の WriteStatus、docs/adr/0026)。
++std::string KotoriAiStatus() {
++  std::ifstream in(FileUtil::JoinPath(SystemUtil::GetUserProfileDirectory(),
++                                      "kotori_ai_status.txt"),
++                   std::ios::binary);
++  std::map<std::string, std::string> kv;
++  for (std::string line; std::getline(in, line);) {
++    if (!line.empty() && line.back() == '\r') line.pop_back();
++    const size_t eq = line.find('=');
++    if (eq != std::string::npos) kv[line.substr(0, eq)] = line.substr(eq + 1);
++  }
++  const std::string& state = kv["state"];
++  const std::string& device = kv["device"];
++  const std::string where = device == "CPU" ? "CPU で動作" : "GPU: " + device;
++  if (state == "llm") {
++    return "AI の状態: 動いています(変換用の AI と日本語 LLM、" + where + ")。";
++  } else if (state == "zenz") {
++    return "AI の状態: 動いています(変換用の AI " + kv["zenz"] + "、" + where + ")。";
++  } else if (state == "loading") {
++    return "AI の状態: モデルを読み込んでいます。";
++  } else if (state == "error") {
++    return "AI の状態: 動いていません(" + kv["message"] +
++           " を読み込めません)。入れ直すと直ることがあります。";
++  } else if (state == "off") {
++    return "AI の状態: AI 変換は切れています。";
++  }
++  return "AI の状態: まだ分かりません(日本語を一度入力すると表示されます)。";
++}
++
 +}  // namespace
  
  using ::mozc::config::StatsConfigUtil;
  
-@@ -152,6 +250,160 @@ ConfigDialog::ConfigDialog()
+@@ -152,6 +283,164 @@ ConfigDialog::ConfigDialog()
    symbolsSettingComboBox->addItem(QString::fromUtf8("「」／"));
    symbolsSettingComboBox->addItem(QString::fromUtf8("[]・"));
  
@@ -19314,6 +19355,10 @@ index abbf55d68..39d6c7f1d 100644
 +      gpu->setObjectName("kotoriNote");
 +      gpu->setWordWrap(true);
 +      l->addWidget(gpu);
++      auto *status = new QLabel(QString::fromUtf8(KotoriAiStatus().c_str()), page);
++      status->setObjectName("kotoriNote");
++      status->setWordWrap(true);
++      l->addWidget(status);
 +      QObject::connect(kotoriLmEnabledCheckBox_, &QCheckBox::toggled,
 +                       kotoriLmQualityComboBox_, &QWidget::setEnabled);
 +    }
@@ -19387,7 +19432,7 @@ index abbf55d68..39d6c7f1d 100644
    keymapSettingComboBox->addItem(tr("Custom keymap"));
    keymapSettingComboBox->addItem(tr("ATOK"));
    keymapSettingComboBox->addItem(tr("MS-IME"));
-@@ -524,6 +776,20 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
+@@ -524,6 +813,20 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
    custom_keymap_table_ = config.custom_keymap_table();
    custom_roman_table_ = config.custom_roman_table();
  
@@ -19408,7 +19453,7 @@ index abbf55d68..39d6c7f1d 100644
    // tab2
    SET_COMBOBOX(historyLearningLevelComboBox, HistoryLearningLevel,
                 history_learning_level);
-@@ -612,6 +878,16 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
+@@ -612,6 +915,16 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
      config->set_custom_roman_table(custom_roman_table_);
    }
  
@@ -19566,10 +19611,10 @@ index 4bbcddeca..886ed0552 100644
 +)
 diff --git a/src/rewriter/llama_runtime.cc b/src/rewriter/llama_runtime.cc
 new file mode 100644
-index 000000000..0c6e2fb2f
+index 000000000..b7fd9ece6
 --- /dev/null
 +++ b/src/rewriter/llama_runtime.cc
-@@ -0,0 +1,275 @@
+@@ -0,0 +1,289 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/llama_runtime.h"
@@ -19636,6 +19681,11 @@ index 000000000..0c6e2fb2f
 +
 +bool LlamaHasGpu() { return LlamaGpuDevice() != nullptr; }
 +
++std::string LlamaGpuName() {
++  ggml_backend_dev_t dev = LlamaGpuDevice();
++  return dev != nullptr ? ggml_backend_dev_description(dev) : std::string();
++}
++
 +#else  // _WIN32
 +
 +// llama.dll と ggml.dll の関数を実行時に引く。インポートライブラリを使わないので、
@@ -19680,6 +19730,7 @@ index 000000000..0c6e2fb2f
 +  decltype(&::ggml_backend_dev_get) dev_get = nullptr;
 +  decltype(&::ggml_backend_dev_type) dev_type = nullptr;
 +  decltype(&::ggml_backend_dev_memory) dev_memory = nullptr;
++  decltype(&::ggml_backend_dev_description) dev_description = nullptr;
 +};
 +
 +Api g_api;
@@ -19724,8 +19775,11 @@ index 000000000..0c6e2fb2f
 +      GetProcAddress(base, "ggml_backend_dev_type"));
 +  g_api.dev_memory = reinterpret_cast<decltype(g_api.dev_memory)>(
 +      GetProcAddress(base, "ggml_backend_dev_memory"));
++  g_api.dev_description = reinterpret_cast<decltype(g_api.dev_description)>(
++      GetProcAddress(base, "ggml_backend_dev_description"));
 +  if (g_api.dev_count == nullptr || g_api.dev_get == nullptr ||
-+      g_api.dev_type == nullptr || g_api.dev_memory == nullptr) {
++      g_api.dev_type == nullptr || g_api.dev_memory == nullptr ||
++      g_api.dev_description == nullptr) {
 +    return false;
 +  }
 +  g_api.llama_log_set(QuietLog, nullptr);
@@ -19753,6 +19807,11 @@ index 000000000..0c6e2fb2f
 +}
 +
 +bool LlamaHasGpu() { return LlamaGpuDevice() != nullptr; }
++
++std::string LlamaGpuName() {
++  ggml_backend_dev_t dev = LlamaGpuDevice();
++  return dev != nullptr ? g_api.dev_description(dev) : std::string();
++}
 +
 +#endif  // _WIN32
 +
@@ -19847,10 +19906,10 @@ index 000000000..0c6e2fb2f
 +#endif  // _WIN32
 diff --git a/src/rewriter/llama_runtime.h b/src/rewriter/llama_runtime.h
 new file mode 100644
-index 000000000..9d46ce41a
+index 000000000..cf2c801ea
 --- /dev/null
 +++ b/src/rewriter/llama_runtime.h
-@@ -0,0 +1,34 @@
+@@ -0,0 +1,37 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
 +// Kotori: llama.cpp の実行時の準備(docs/adr/0016)。
@@ -19882,15 +19941,18 @@ index 000000000..9d46ce41a
 +// LlamaGpuDevice() があるか。
 +bool LlamaHasGpu();
 +
++// LlamaGpuDevice() の名前(設定画面の AI の状態に出す)。なければ空。
++std::string LlamaGpuName();
++
 +}  // namespace mozc
 +
 +#endif  // MOZC_REWRITER_LLAMA_RUNTIME_H_
 diff --git a/src/rewriter/lm_rewriter.cc b/src/rewriter/lm_rewriter.cc
 new file mode 100644
-index 000000000..14d2823ef
+index 000000000..ee977bfa3
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.cc
-@@ -0,0 +1,1551 @@
+@@ -0,0 +1,1590 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/lm_rewriter.h"
@@ -20386,6 +20448,43 @@ index 000000000..14d2823ef
 +  const char* preload = Env("KOTORI_LM_PRELOAD");
 +  sync_load_ = preload != nullptr && *preload == '0';
 +  if (!sync_load_) RequestLoad(config::ConfigHandler::GetCopiedConfig());
++}
++
++void LmRewriter::WriteStatus(const config::Config& config,
++                             const char* state) const {
++  if (sync_load_) return;  // 評価では書かない
++  // 1 行に 1 項目(キー=値)。入力した文字は書かない。
++  std::string text;
++  auto line = [&](absl::string_view key, absl::string_view value) {
++    absl::StrAppend(&text, key, "=", value, "\n");
++  };
++  auto base = [](const std::string& path) {
++    const size_t p = path.find_last_of("/\\");
++    return p == std::string::npos ? path : path.substr(p + 1);
++  };
++  const bool runtime = EnsureLlamaRuntime(runtime_dir_);
++  const std::string gpu = runtime ? LlamaGpuName() : std::string();
++  if (!config.kotori_lm_enabled()) {
++    line("state", "off");
++  } else if (std::string(state) == "loading") {
++    line("state", "loading");
++  } else if (!runtime) {
++    line("state", "error");
++    line("message", "llama.dll");
++  } else if (scorer_ == nullptr) {
++    line("state", "error");
++    line("message", base(loaded_path_));
++  } else {
++    line("state", llm_ != nullptr ? "llm" : "zenz");
++  }
++  line("device", gpu.empty() ? "CPU" : gpu);
++  if (scorer_ != nullptr) line("zenz", base(loaded_path_));
++  if (llm_ != nullptr) line("llm", base(llm_path_));
++  const std::string path =
++      FileUtil::JoinPath(SystemUtil::GetUserProfileDirectory(),
++                         "kotori_ai_status.txt");
++  std::ofstream out(path, std::ios::binary | std::ios::trunc);
++  out << text;
 +}
 +
 +void LmRewriter::RequestLoad(const config::Config& config) const {
@@ -21350,6 +21449,7 @@ index 000000000..14d2823ef
 +        loading_ = true;
 +        {
 +          absl::MutexLock model_lock(mutex_);
++          WriteStatus(config, "loading");
 +          size_t k = 0, llm_top = 0;
 +          int beams = 0;
 +          ZenzScorer* llm = nullptr;
@@ -21358,6 +21458,7 @@ index 000000000..14d2823ef
 +          if (predict_ && config.kotori_lm_predict()) {
 +            PrepareFor(config, &k, &llm, &beams, &llm_top, true, true);
 +          }
++          WriteStatus(config, "ready");
 +        }
 +        loading_ = false;
 +        continue;
@@ -21444,10 +21545,10 @@ index 000000000..14d2823ef
 +}  // namespace mozc
 diff --git a/src/rewriter/lm_rewriter.h b/src/rewriter/lm_rewriter.h
 new file mode 100644
-index 000000000..99eb12d8a
+index 000000000..15ff3672d
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.h
-@@ -0,0 +1,266 @@
+@@ -0,0 +1,270 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
 +// Kotori: AI による変換(docs/adr/0013、0015、0016)。
@@ -21541,6 +21642,10 @@ index 000000000..99eb12d8a
 +  ZenzScorer* PrepareFor(const config::Config& config, size_t* k,
 +                         ZenzScorer** llm, int* beams, size_t* llm_top,
 +                         bool for_predict, bool may_load) const
++      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
++  // 実際に動いている AI の状態を、ユーザーのプロファイルの kotori_ai_status.txt に書く
++  // (設定画面が読んで表示する。docs/adr/0026)。state は loading / ready。
++  void WriteStatus(const config::Config& config, const char* state) const
 +      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 +  // 裏のスレッドにモデルの読み込みを頼む。
 +  void RequestLoad(const config::Config& config) const;
