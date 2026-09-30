@@ -8,6 +8,8 @@ AJIMEE-Bench の各問で、読みの先頭 N 文字(ひらがな)を「打っ�
   --warm 秒: 実際の入力のように、読みを 1 文字ずつ 0.15 秒おきに入力中の候補(suggest)として送り、
   指定の秒数待ってから Tab(predict)を押す(裏で計算した予測を使う経路、docs/adr/0021)。
   Tab の応答時間の中央値と最大も出す。
+  --suggest: --warm と同じように打ったあと、Tab ではなく入力中の候補(suggest)をもう一度出して測る
+  (打鍵ごとに裏で作る軽い予測の当たり。docs/adr/0024)。
 """
 import argparse
 import threading
@@ -24,7 +26,7 @@ def kata_to_hira(s):
     return "".join(chr(ord(c) - 0x60) if "ァ" <= c <= "ヶ" else c for c in s)
 
 
-def run_warm(exe, cwd, env, typed, warm, tab_ms):
+def run_warm(exe, cwd, env, typed, warm, tab_ms, final="predict"):
     """1 文字ずつ入力中の候補を出してから Tab を押す。predict の出力だけを返す。"""
     p = subprocess.Popen([str(exe)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                          stderr=subprocess.DEVNULL, cwd=cwd, env=env)
@@ -47,7 +49,7 @@ def run_warm(exe, cwd, env, typed, warm, tab_ms):
             send(f"suggest {t[:n]}")
             time.sleep(0.15)
         time.sleep(warm)
-        got, ms = send(f"predict {t}")
+        got, ms = send(f"{final} {t}")
         tab_ms.append(ms)
         out += [l.decode("utf-8", "replace").rstrip("\r\n") for l in got]
     p.stdin.close()
@@ -64,6 +66,7 @@ def main():
     ap.add_argument("--min", type=int, default=5)
     ap.add_argument("--out", default="")
     ap.add_argument("--warm", type=float, default=-1)
+    ap.add_argument("--suggest", action="store_true", help="最後に Tab ではなく入力中の候補を測る")
     args = ap.parse_args()
     exe = Path(args.converter_main).resolve()
     cwd = exe.parent / (exe.name + ".runfiles") / "_main"
@@ -97,7 +100,8 @@ def main():
     t0 = time.time()
     tab_ms = []
     if args.warm >= 0:
-        out = run_warm(exe, cwd, env, typed, args.warm, tab_ms)
+        out = run_warm(exe, cwd, env, typed, args.warm, tab_ms,
+                       "suggest" if args.suggest else "predict")
     else:
         script = "".join(f"predict {t}\nreset\nkotori_eval_separator\n" for t in typed) + "quit\n"
         out = subprocess.run([str(exe)], input=script.encode("utf-8"), capture_output=True, cwd=cwd,

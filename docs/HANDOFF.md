@@ -15,6 +15,11 @@ beta.1〜3 を実機で使ったメンテナの報告(IME のオン/オフ・候
 `mozc/README.md` と `.github/workflows/mozc-windows.yml` を見る。下の Rust のエンジンと TIP は、
 段階 3 まで評価の基準と参考実装として残す。SPEC の改訂は別の PR でメンテナの承認を得る。
 
+**2026-09-30 からの方針**: 精度は十分(Standard で AJIMEE 91.5%)なので、精度 90% 以上を保ったまま負荷を
+下げる。ハイエンド(GPU)向けの Standard / High / Unreal の中身は残し、GPU のない PC は新しい Low(CPU、
+zenz-medium、先回りの変換)で動かす(docs/adr/0024)。負荷は `mozc/tools/cost_bench.py`、ノート PC の
+再現は `KOTORI_LM_DEVICE=cpu` と `mozc/tools/space_latency.py` で測る。
+
 ## 1. 全体の進み具合
 
 ベータ版(SPEC 18.6 の M5)を 100 とすると約 45。

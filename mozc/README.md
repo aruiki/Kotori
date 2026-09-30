@@ -56,7 +56,10 @@ Windows で手元でビルドする: 作業ツリーの `src` で
 | `eval_all.sh` | 品質 3 段階 × 評価セット 4 つ(AJIMEE・慣用句・ニュアンス・日常)の Acc@1 と、Mozc 単体より悪くなった問題 |
 | `stress_test.py` | 負荷試験。いろいろな読み(1〜300 文字、記号・絵文字)で候補・変換・Tab を交互に送り、落ちないか・遅れないか |
 | `typing_test.py` | 打鍵の再現。1 文字ずつ入力中の候補を出し、AI の予測と応答時間を見る |
+| `cost_bench.py` | 入力中の AI の計算量。日常の文を打って変換し、AI の稼働率(計算の時間 / かかった時間)を出す(docs/adr/0024) |
+| `space_latency.py` | 打ってから Space を押したときの応答時間。`KOTORI_LM_DEVICE=cpu` で GPU のない PC を再現する |
 | `../eval_predict.py --warm 秒` | Tab の予測の当たりと応答時間(実際の入力のように候補を出してから Tab) |
+| `../eval_predict.py --warm 秒 --suggest` | 入力中の候補(打鍵ごとの軽い予測)の当たり |
 | `capture_window.py` | 設定画面などのウィンドウだけを PNG に撮る(MSI を `msiexec /a` で展開した exe で) |
 | `dump_icons.py` | exe / dll に入っているアイコンを並べて見る |
 | `gen_icons.py`・`gen_assets.py`・`kotori_mark.py` | アイコン、インストーラの画像と使用許諾を作る |

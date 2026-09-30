@@ -1,15 +1,16 @@
 diff --git a/src/data/kotori/BUILD.bazel b/src/data/kotori/BUILD.bazel
 new file mode 100644
-index 000000000..60a35d9f6
+index 000000000..37e745a0f
 --- /dev/null
 +++ b/src/data/kotori/BUILD.bazel
-@@ -0,0 +1,13 @@
+@@ -0,0 +1,14 @@
 +# Kotori: MSI に同梱する物(docs/adr/0016、0017)。モデル(*.gguf)はコミットしないので、ビルドの前に
 +# ここに置く(mozc/README.md)。
 +package(default_visibility = ["//visibility:public"])
 +
 +exports_files([
 +    "zenz-v2.5-small-q8_0.gguf",
++    "zenz-v2.5-medium-q8_0.gguf",
 +    "tinyswallow-1.5b-q5_k_m.gguf",
 +    "NOTICE-zenz.txt",
 +    "NOTICE-tinyswallow.txt",
@@ -36,10 +37,10 @@ index 000000000..fe00a8fcf
 +  インストール先の LICENSE-llama.cpp.txt を参照。
 diff --git a/src/data/kotori/NOTICE-zenz.txt b/src/data/kotori/NOTICE-zenz.txt
 new file mode 100644
-index 000000000..5cdf85162
+index 000000000..49c71071a
 --- /dev/null
 +++ b/src/data/kotori/NOTICE-zenz.txt
-@@ -0,0 +1,12 @@
+@@ -0,0 +1,18 @@
 +Kotori IME に同梱している言語モデル
 +
 +zenz-v2.5-small (c) Keita Miwa
@@ -47,13 +48,19 @@ index 000000000..5cdf85162
 +  ライセンス: CC BY-SA 4.0 https://creativecommons.org/licenses/by-sa/4.0/
 +  元にしたモデル: ku-nlp/gpt2-small-japanese-char (CC BY-SA 4.0)
 +
++zenz-v2.5-medium (c) Keita Miwa
++  https://huggingface.co/Miwa-Keita/zenz-v2.5-medium
++  ライセンス: CC BY-SA 4.0 https://creativecommons.org/licenses/by-sa/4.0/
++  元にしたモデル: ku-nlp/gpt2-medium-japanese-char (CC BY-SA 4.0)
++
 +変更点: 公開されている重みを llama.cpp の convert_hf_to_gguf.py で GGUF にし、
 +8 bit(q8_0)に量子化した。語彙と学習した内容は変えていない。
-+このファイル(zenz-v2.5-small-q8_0.gguf)は同じ CC BY-SA 4.0 で利用できる。
++これらのファイル(zenz-v2.5-small-q8_0.gguf、zenz-v2.5-medium-q8_0.gguf)は同じ CC BY-SA 4.0 で
++利用できる。
 +
 +llama.cpp (MIT): https://github.com/ggml-org/llama.cpp
 diff --git a/src/data/kotori/banner.bmp b/src/data/kotori/banner.bmp
-new file mode 100755
+new file mode 100644
 index 0000000000000000000000000000000000000000..329cbbfc1132fdcd10965f8d4bf700999ebd4cb7
 GIT binary patch
 literal 85894
@@ -123,7 +130,7 @@ literal 0
 HcmV?d00001
 
 diff --git a/src/data/kotori/dialog.bmp b/src/data/kotori/dialog.bmp
-new file mode 100755
+new file mode 100644
 index 0000000000000000000000000000000000000000..2194641514cc0d26db625024371cc79d691ac8b0
 GIT binary patch
 literal 461814
@@ -557,10 +564,10 @@ HcmV?d00001
 
 diff --git a/src/data/kotori/license.rtf b/src/data/kotori/license.rtf
 new file mode 100644
-index 000000000..aff38d5e6
+index 000000000..9245bc5a5
 --- /dev/null
 +++ b/src/data/kotori/license.rtf
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,19 @@
 +{\rtf1\ansi\ansicpg932\deff0{\fonttbl{\f0\fnil\fcharset128 Yu Gothic UI;}}\viewkind4\uc1\pard\f0\fs18 Kotori\u26085?\u26412?\u-30050?\u20837?\u21147? \u20351?\u29992?\u-30159?\u-29954?\u12392?\u31532?\u19977?\u-32763?\u12477?\u12501?\u12488?\u12454?\u12455?\u12450?\u12398?\u-30616?\u31034?\par
 +\par
 +Kotori\u26085?\u26412?\u-30050?\u20837?\u21147?(\u20197?\u19979? Kotori)\u12399? Mozc(Copyright 2010-2026 Google Inc.\u12289?BSD-3-Clause)\u12434?\u25913?\u22793?\u12375?\u12383?\u26085?\u26412?\u-30050?\u20837?\u21147?\u12391?\u12377?\u12290?Kotori \u12399? Google \u12364?\u25552?\u20379?\u12539?\u25512?\u22888?\u12377?\u12427?\u12418?\u12398?\u12391?\u12399?\u12354?\u12426?\u12414?\u12379?\u12435?\u12290?Kotori \u29420?\u-32278?\u12398?\u25913?\u22793?\u-28440?\u20998?\u12418? BSD-3-Clause \u12391?\u25552?\u20379?\u12375?\u12414?\u12377?\u12290?\par
@@ -572,6 +579,7 @@ index 000000000..aff38d5e6
 +\u12539?Qt 6: LGPL-3.0(\u21205?\u30340?\u12522?\u12531?\u12463?)\par
 +\u12539?llama.cpp / ggml: MIT(Copyright The ggml authors)\par
 +\u12539?zenz-v2.5-small: CC BY-SA 4.0(\u169? Keita Miwa\u12290?\u20803?\u12399? ku-nlp/gpt2-small-japanese-char)\u12290?8 bit \u12395?\u-28209?\u23376?\u21270?\u12375?\u12390?\u21516?\u26801?\par
++\u12539?zenz-v2.5-medium: CC BY-SA 4.0(\u169? Keita Miwa\u12290?\u20803?\u12399? ku-nlp/gpt2-medium-japanese-char)\u12290?8 bit \u12395?\u-28209?\u23376?\u21270?\u12375?\u12390?\u21516?\u26801?\par
 +\u12539?TinySwallow-1.5B: Apache-2.0(Sakana AI)\u12290?5 bit \u12395?\u-28209?\u23376?\u21270?\u12375?\u12390?\u21516?\u26801?\par
 +\u12539?Microsoft Visual C++ \u12521?\u12531?\u12479?\u12452?\u12512?: Microsoft \u12398?\u12521?\u12452?\u12475?\u12531?\u12473?\par
 +\par
@@ -581,15 +589,16 @@ index 000000000..aff38d5e6
 +}
 \ No newline at end of file
 diff --git a/src/win32/installer/BUILD.bazel b/src/win32/installer/BUILD.bazel
-index 1c31b5159..e421c9dbb 100644
+index 1c31b5159..99474796e 100644
 --- a/src/win32/installer/BUILD.bazel
 +++ b/src/win32/installer/BUILD.bazel
-@@ -93,6 +93,19 @@ genrule(
+@@ -93,6 +93,20 @@ genrule(
          "//base:mozc_version_txt",
          "//data/images/win:product_icon.ico",
          "//data/installer:credits_en.html",
 +        "//data/kotori:NOTICE-zenz.txt",
 +        "//data/kotori:zenz-v2.5-small-q8_0.gguf",
++        "//data/kotori:zenz-v2.5-medium-q8_0.gguf",
 +        "//data/kotori:NOTICE-tinyswallow.txt",
 +        "//data/kotori:tinyswallow-1.5b-q5_k_m.gguf",
 +        "//data/kotori:license.rtf",
@@ -604,11 +613,12 @@ index 1c31b5159..e421c9dbb 100644
          "@qt_win//:bin/Qt6Core.dll",
          "@wix//:wix.exe",
      ] + select({
-@@ -117,6 +130,18 @@ genrule(
+@@ -117,6 +131,19 @@ genrule(
          "--custom_action=$(location //win32/custom_action)",
          "--icon_path=$(location //data/images/win:product_icon.ico)",
          "--credit_file=$(location //data/installer:credits_en.html)",
 +        "--zenz_model=$(location //data/kotori:zenz-v2.5-small-q8_0.gguf)",
++        "--zenz_medium_model=$(location //data/kotori:zenz-v2.5-medium-q8_0.gguf)",
 +        "--zenz_notice=$(location //data/kotori:NOTICE-zenz.txt)",
 +        "--llm_model=$(location //data/kotori:tinyswallow-1.5b-q5_k_m.gguf)",
 +        "--llm_notice=$(location //data/kotori:NOTICE-tinyswallow.txt)",
@@ -624,14 +634,15 @@ index 1c31b5159..e421c9dbb 100644
          "--wxs_path=$(location " + _WXS_FILE + ")",
          "--wix_path=$(location @wix//:wix.exe)",
 diff --git a/src/win32/installer/build_installer.py b/src/win32/installer/build_installer.py
-index c2e71a077..c0e398b0e 100644
+index c2e71a077..a9e1735fe 100644
 --- a/src/win32/installer/build_installer.py
 +++ b/src/win32/installer/build_installer.py
-@@ -154,6 +154,19 @@ def run_wix4(args) -> None:
+@@ -154,6 +154,20 @@ def run_wix4(args) -> None:
        '-define', f'MozcTIP64Path={mozc_tip64}',
        '-define', f'MozcBroker64Path={mozc_broker}',
        '-define', f'MozcServer64Path={mozc_server}',
 +      '-define', f'KotoriZenzModelPath={pathlib.Path(args.zenz_model).resolve()}',
++      '-define', f'KotoriZenzMediumModelPath={pathlib.Path(args.zenz_medium_model).resolve()}',
 +      '-define', f'KotoriZenzNoticePath={pathlib.Path(args.zenz_notice).resolve()}',
 +      '-define', f'KotoriLlmModelPath={pathlib.Path(args.llm_model).resolve()}',
 +      '-define', f'KotoriLlmNoticePath={pathlib.Path(args.llm_notice).resolve()}',
@@ -647,11 +658,12 @@ index c2e71a077..c0e398b0e 100644
        '-define', f'MozcCacheService64Path={mozc_cache_service}',
        '-define', f'MozcRenderer64Path={mozc_renderer}',
        '-define', f'MozcToolPath={mozc_tool}',
-@@ -192,6 +205,12 @@ def main():
+@@ -192,6 +206,13 @@ def main():
    parser.add_argument('--custom_action', type=str)
    parser.add_argument('--icon_path', type=str)
    parser.add_argument('--credit_file', type=str)
 +  parser.add_argument('--zenz_model', type=str)
++  parser.add_argument('--zenz_medium_model', type=str)
 +  parser.add_argument('--zenz_notice', type=str)
 +  for name in ('llm_model', 'llm_notice', 'llama_dll', 'llama_license', 'ui_ext',
 +               'license_rtf', 'banner_bmp', 'dialog_bmp', 'settings_icon',
@@ -661,7 +673,7 @@ index c2e71a077..c0e398b0e 100644
    parser.add_argument('--wxs_path', type=str)
    parser.add_argument('--wix_path', type=str)
 diff --git a/src/win32/installer/installer_oss_64bit.wxs b/src/win32/installer/installer_oss_64bit.wxs
-index e30c37ad4..3a1214e9a 100644
+index e30c37ad4..d6bb8a52f 100644
 --- a/src/win32/installer/installer_oss_64bit.wxs
 +++ b/src/win32/installer/installer_oss_64bit.wxs
 @@ -48,7 +48,7 @@
@@ -726,11 +738,12 @@ index e30c37ad4..3a1214e9a 100644
        <ComponentRef Id="MozcTIP32" />
        <ComponentRef Id="MozcTIP64" />
        <?if $(var.MozcTIP64ArmPath) != "" and $(var.MozcTIP64XPath) != "" ?>
-@@ -148,6 +154,14 @@
+@@ -148,6 +154,15 @@
        <?endif?>
        <ComponentRef Id="MozcBroker" />
        <ComponentRef Id="MozcConverter" />
 +      <ComponentRef Id="KotoriZenzModel" />
++      <ComponentRef Id="KotoriZenzMediumModel" />
 +      <ComponentRef Id="KotoriZenzNotice" />
 +      <ComponentRef Id="KotoriLlmModel" />
 +      <ComponentRef Id="KotoriDesktopShortcut" />
@@ -741,12 +754,16 @@ index e30c37ad4..3a1214e9a 100644
        <ComponentRef Id="MozcCacheService" />
        <ComponentRef Id="MozcRenderer" />
        <ComponentRef Id="MozcTool" />
-@@ -242,6 +256,21 @@
+@@ -242,6 +257,25 @@
  
      <StandardDirectory Id="ProgramFilesFolder">
        <Directory Id="MozcDir" Name="Kotori">
 +        <Component Id="KotoriZenzModel">
 +          <File Id="zenz_model.gguf" Name="zenz-v2.5-small-q8_0.gguf" DiskId="1" Checksum="yes" Source="$(var.KotoriZenzModelPath)" Vital="yes" />
++        </Component>
++        <!-- Kotori: GPU のない PC の Low と Unreal で使う大きい zenz(docs/adr/0024)。 -->
++        <Component Id="KotoriZenzMediumModel">
++          <File Id="zenz_medium_model.gguf" Name="zenz-v2.5-medium-q8_0.gguf" DiskId="1" Checksum="yes" Source="$(var.KotoriZenzMediumModelPath)" Vital="yes" />
 +        </Component>
 +        <Component Id="KotoriLlmModel">
 +          <File Id="llm_model.gguf" Name="tinyswallow-1.5b-q5_k_m.gguf" DiskId="1" Checksum="yes" Source="$(var.KotoriLlmModelPath)" Vital="yes" />
@@ -763,7 +780,7 @@ index e30c37ad4..3a1214e9a 100644
          <Component Id="MozcConverter">
            <File Id="mozc_server.exe" Name="mozc_server.exe" DiskId="1" Checksum="yes" Source="$(var.MozcServer64Path)" Vital="yes" />
          </Component>
-@@ -381,5 +410,37 @@
+@@ -381,5 +415,37 @@
      <Component Id="PrelaunchProcesses" Directory="TARGETDIR">
        <RegistryValue Id="RunBroker" Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="Kotori Prelauncher" Action="write" Type="string" Value="&quot;[MozcDir]mozc_broker.exe&quot; --mode=prelaunch_processes" />
      </Component>

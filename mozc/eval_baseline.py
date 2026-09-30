@@ -67,8 +67,12 @@ def main() -> int:
     # 問題ごとに start → reset し、知らないコマンドの出力を区切りにする。
     script = "".join(f"start {r}\nreset\n{SEP}\n" for r in readings) + "quit\n"
     t0 = time.time()
-    out = subprocess.run([str(exe)], input=script.encode("utf-8"), capture_output=True,
-                         cwd=cwd, env=env, timeout=36000).stdout.decode("utf-8", "replace")
+    proc = subprocess.run([str(exe)], input=script.encode("utf-8"), capture_output=True,
+                          cwd=cwd, env=env, timeout=36000)
+    out = proc.stdout.decode("utf-8", "replace")
+    # KOTORI_LM_TIME を付けたときは、AI の変換にかかった時間(文全体の選択)の分布も出す。
+    times = sorted(float(m.group(1)) for m in
+                   re.finditer(r"\[time\].* total=(\d+)ms", proc.stderr.decode("utf-8", "replace")))
     elapsed = time.time() - t0
     blocks, cur = [], []
     for line in out.splitlines():
@@ -85,6 +89,9 @@ def main() -> int:
         rows.append({"index": it["index"], "input": it["input"], "top1": top,
                      "expected": it["expected_output"], "ok": ok})
     print(f"Acc@1 {hit}/{len(items)} = {100 * hit / len(items):.1f}%  ({elapsed:.0f} 秒)")
+    if times:
+        print(f"AI の変換 中央値 {times[len(times) // 2]:.0f} ms、p95 {times[int(len(times) * 0.95)]:.0f} ms、"
+              f"最大 {times[-1]:.0f} ms")
     if args.out:
         json.dump(rows, open(args.out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     return 0
