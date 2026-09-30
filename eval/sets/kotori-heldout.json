@@ -1,0 +1,1155 @@
+[
+ {
+  "index": "h-work-01",
+  "domain": "work",
+  "context_text": "",
+  "input": "こんしゅうちゅうにみつもりしょをおおくりします",
+  "expected_output": [
+   "今週中に見積書をお送りします",
+   "今週中に見積もり書をお送りします"
+  ]
+ },
+ {
+  "index": "h-work-02",
+  "domain": "work",
+  "context_text": "",
+  "input": "かいぎしつのよやくをへんこうしました",
+  "expected_output": [
+   "会議室の予約を変更しました"
+  ]
+ },
+ {
+  "index": "h-work-03",
+  "domain": "work",
+  "context_text": "",
+  "input": "せんぽうからのへんしんをまっています",
+  "expected_output": [
+   "先方からの返信を待っています"
+  ]
+ },
+ {
+  "index": "h-work-04",
+  "domain": "work",
+  "context_text": "",
+  "input": "しょうにんのてつづきがおわりました",
+  "expected_output": [
+   "承認の手続きが終わりました"
+  ]
+ },
+ {
+  "index": "h-work-05",
+  "domain": "work",
+  "context_text": "",
+  "input": "けいやくしょのげんぽんをゆうそうします",
+  "expected_output": [
+   "契約書の原本を郵送します"
+  ]
+ },
+ {
+  "index": "h-work-06",
+  "domain": "work",
+  "context_text": "",
+  "input": "らいげつからしんたいせいになります",
+  "expected_output": [
+   "来月から新体制になります"
+  ]
+ },
+ {
+  "index": "h-work-07",
+  "domain": "work",
+  "context_text": "",
+  "input": "ごふめいなてんがあればおしらせください",
+  "expected_output": [
+   "ご不明な点があればお知らせください",
+   "ご不明な点があればお知らせ下さい"
+  ]
+ },
+ {
+  "index": "h-work-08",
+  "domain": "work",
+  "context_text": "",
+  "input": "ほうこくしょのていしゅつきげんはきんようびです",
+  "expected_output": [
+   "報告書の提出期限は金曜日です"
+  ]
+ },
+ {
+  "index": "h-work-09",
+  "domain": "work",
+  "context_text": "",
+  "input": "とりひきさきとのうちあわせがながびいています",
+  "expected_output": [
+   "取引先との打ち合わせが長引いています",
+   "取引先との打合せが長引いています"
+  ]
+ },
+ {
+  "index": "h-work-10",
+  "domain": "work",
+  "context_text": "",
+  "input": "じんじいどうのおしらせです",
+  "expected_output": [
+   "人事異動のお知らせです"
+  ]
+ },
+ {
+  "index": "h-work-11",
+  "domain": "work",
+  "context_text": "",
+  "input": "せいきゅうしょのきんがくにあやまりがありました",
+  "expected_output": [
+   "請求書の金額に誤りがありました"
+  ]
+ },
+ {
+  "index": "h-work-12",
+  "domain": "work",
+  "context_text": "",
+  "input": "しゅっちょうのけいひをせいさんします",
+  "expected_output": [
+   "出張の経費を精算します"
+  ]
+ },
+ {
+  "index": "h-work-13",
+  "domain": "work",
+  "context_text": "見積もりの金額について質問がありました。",
+  "input": "このけんはかちょうにかくにんします",
+  "expected_output": [
+   "この件は課長に確認します"
+  ]
+ },
+ {
+  "index": "h-work-14",
+  "domain": "work",
+  "context_text": "",
+  "input": "ぎじろくをきょうゆうふぉるだにあげました",
+  "expected_output": [
+   "議事録を共有フォルダに上げました",
+   "議事録を共有フォルダにあげました"
+  ]
+ },
+ {
+  "index": "h-work-15",
+  "domain": "work",
+  "context_text": "",
+  "input": "のうきがいっしゅうかんおくれるみこみです",
+  "expected_output": [
+   "納期が一週間遅れる見込みです",
+   "納期が1週間遅れる見込みです",
+   "納期が１週間遅れる見込みです"
+  ]
+ },
+ {
+  "index": "h-work-16",
+  "domain": "work",
+  "context_text": "",
+  "input": "かくにんのうえごへんしんいただけますか",
+  "expected_output": [
+   "確認の上ご返信いただけますか",
+   "確認のうえご返信いただけますか"
+  ]
+ },
+ {
+  "index": "h-work-17",
+  "domain": "work",
+  "context_text": "",
+  "input": "しんきのあんけんについてごそうだんがあります",
+  "expected_output": [
+   "新規の案件についてご相談があります"
+  ]
+ },
+ {
+  "index": "h-work-18",
+  "domain": "work",
+  "context_text": "",
+  "input": "あすはしゃないけんしゅうのためふざいです",
+  "expected_output": [
+   "明日は社内研修のため不在です"
+  ]
+ },
+ {
+  "index": "h-work-19",
+  "domain": "work",
+  "context_text": "",
+  "input": "ごていあんのないようをけんとういたします",
+  "expected_output": [
+   "ご提案の内容を検討いたします",
+   "ご提案の内容を検討致します"
+  ]
+ },
+ {
+  "index": "h-work-20",
+  "domain": "work",
+  "context_text": "",
+  "input": "ねんまつねんしのきゅうぎょうびをおしらせします",
+  "expected_output": [
+   "年末年始の休業日をお知らせします"
+  ]
+ },
+ {
+  "index": "h-chat-01",
+  "domain": "chat",
+  "context_text": "",
+  "input": "いまえきについたよ",
+  "expected_output": [
+   "今駅に着いたよ"
+  ]
+ },
+ {
+  "index": "h-chat-02",
+  "domain": "chat",
+  "context_text": "今日は早く帰れそう。",
+  "input": "ばんごはんなににする？",
+  "expected_output": [
+   "晩ご飯何にする？",
+   "晩御飯何にする？",
+   "晩ごはん何にする？"
+  ]
+ },
+ {
+  "index": "h-chat-03",
+  "domain": "chat",
+  "context_text": "",
+  "input": "ちょっとおくれそう、ごめんね",
+  "expected_output": [
+   "ちょっと遅れそう、ごめんね"
+  ]
+ },
+ {
+  "index": "h-chat-04",
+  "domain": "chat",
+  "context_text": "",
+  "input": "しゅうまつえいがみにいかない？",
+  "expected_output": [
+   "週末映画見に行かない？",
+   "週末映画観に行かない？"
+  ]
+ },
+ {
+  "index": "h-chat-05",
+  "domain": "chat",
+  "context_text": "",
+  "input": "きのうはたのしかったね",
+  "expected_output": [
+   "昨日は楽しかったね"
+  ]
+ },
+ {
+  "index": "h-chat-06",
+  "domain": "chat",
+  "context_text": "",
+  "input": "かさもってきたほうがいいよ",
+  "expected_output": [
+   "傘持ってきた方がいいよ",
+   "傘持ってきたほうがいいよ"
+  ]
+ },
+ {
+  "index": "h-chat-07",
+  "domain": "chat",
+  "context_text": "",
+  "input": "でんわしてもいい？",
+  "expected_output": [
+   "電話してもいい？"
+  ]
+ },
+ {
+  "index": "h-chat-08",
+  "domain": "chat",
+  "context_text": "昨日の会議でちょっと揉めたんだ。",
+  "input": "そのはなしはあとでくわしくきかせて",
+  "expected_output": [
+   "その話は後で詳しく聞かせて"
+  ]
+ },
+ {
+  "index": "h-chat-09",
+  "domain": "chat",
+  "context_text": "",
+  "input": "ねつがさがってよかった",
+  "expected_output": [
+   "熱が下がって良かった",
+   "熱が下がってよかった"
+  ]
+ },
+ {
+  "index": "h-chat-10",
+  "domain": "chat",
+  "context_text": "",
+  "input": "あしたははやおきしなきゃ",
+  "expected_output": [
+   "明日は早起きしなきゃ"
+  ]
+ },
+ {
+  "index": "h-chat-11",
+  "domain": "chat",
+  "context_text": "",
+  "input": "れいぞうこにぷりんがあるよ",
+  "expected_output": [
+   "冷蔵庫にプリンがあるよ"
+  ]
+ },
+ {
+  "index": "h-chat-12",
+  "domain": "chat",
+  "context_text": "",
+  "input": "こんどいっしょにごはんたべよう",
+  "expected_output": [
+   "今度一緒にご飯食べよう",
+   "今度一緒にごはん食べよう"
+  ]
+ },
+ {
+  "index": "h-chat-13",
+  "domain": "chat",
+  "context_text": "",
+  "input": "しゃしんおくってくれてありがとう",
+  "expected_output": [
+   "写真送ってくれてありがとう"
+  ]
+ },
+ {
+  "index": "h-chat-14",
+  "domain": "chat",
+  "context_text": "",
+  "input": "いまてがはなせないからあとでれんらくする",
+  "expected_output": [
+   "今手が離せないから後で連絡する"
+  ]
+ },
+ {
+  "index": "h-chat-15",
+  "domain": "chat",
+  "context_text": "",
+  "input": "たんじょうびおめでとう",
+  "expected_output": [
+   "誕生日おめでとう"
+  ]
+ },
+ {
+  "index": "h-chat-16",
+  "domain": "chat",
+  "context_text": "",
+  "input": "みちがこんでてまにあわないかも",
+  "expected_output": [
+   "道が混んでて間に合わないかも"
+  ]
+ },
+ {
+  "index": "h-chat-17",
+  "domain": "chat",
+  "context_text": "",
+  "input": "かぜひかないようにきをつけてね",
+  "expected_output": [
+   "風邪ひかないように気をつけてね",
+   "風邪引かないように気をつけてね",
+   "風邪ひかないように気を付けてね",
+   "風邪引かないように気を付けてね"
+  ]
+ },
+ {
+  "index": "h-chat-18",
+  "domain": "chat",
+  "context_text": "",
+  "input": "そのみせはよやくしたほうがいいよ",
+  "expected_output": [
+   "その店は予約した方がいいよ",
+   "その店は予約したほうがいいよ"
+  ]
+ },
+ {
+  "index": "h-chat-19",
+  "domain": "chat",
+  "context_text": "",
+  "input": "けっきょくどうなったの？",
+  "expected_output": [
+   "結局どうなったの？"
+  ]
+ },
+ {
+  "index": "h-chat-20",
+  "domain": "chat",
+  "context_text": "",
+  "input": "おみやげかってかえるね",
+  "expected_output": [
+   "お土産買って帰るね"
+  ]
+ },
+ {
+  "index": "h-tech-01",
+  "domain": "tech",
+  "context_text": "",
+  "input": "さーばーのせっていをみなおします",
+  "expected_output": [
+   "サーバーの設定を見直します"
+  ]
+ },
+ {
+  "index": "h-tech-02",
+  "domain": "tech",
+  "context_text": "",
+  "input": "でーたべーすのばっくあっぷをとりました",
+  "expected_output": [
+   "データベースのバックアップを取りました",
+   "データベースのバックアップをとりました"
+  ]
+ },
+ {
+  "index": "h-tech-03",
+  "domain": "tech",
+  "context_text": "サンプルコードを見てください。",
+  "input": "このかんすうはひきすうをふたつとります",
+  "expected_output": [
+   "この関数は引数を二つ取ります",
+   "この関数は引数を2つ取ります",
+   "この関数は引数を２つ取ります",
+   "この関数は引数を二つとります",
+   "この関数は引数を2つとります"
+  ]
+ },
+ {
+  "index": "h-tech-04",
+  "domain": "tech",
+  "context_text": "",
+  "input": "ていきてきにあっぷでーとをかくにんしてください",
+  "expected_output": [
+   "定期的にアップデートを確認してください"
+  ]
+ },
+ {
+  "index": "h-tech-05",
+  "domain": "tech",
+  "context_text": "",
+  "input": "えらーめっせーじをこぴーしてください",
+  "expected_output": [
+   "エラーメッセージをコピーしてください"
+  ]
+ },
+ {
+  "index": "h-tech-06",
+  "domain": "tech",
+  "context_text": "",
+  "input": "めもりのしようりょうがふえています",
+  "expected_output": [
+   "メモリの使用量が増えています"
+  ]
+ },
+ {
+  "index": "h-tech-07",
+  "domain": "tech",
+  "context_text": "",
+  "input": "ぱすわーどはじゅうにもじいじょうにしてください",
+  "expected_output": [
+   "パスワードは12文字以上にしてください",
+   "パスワードは１２文字以上にしてください",
+   "パスワードは十二文字以上にしてください"
+  ]
+ },
+ {
+  "index": "h-tech-08",
+  "domain": "tech",
+  "context_text": "",
+  "input": "へんこうをこみっとしてぷっしゅしました",
+  "expected_output": [
+   "変更をコミットしてプッシュしました"
+  ]
+ },
+ {
+  "index": "h-tech-09",
+  "domain": "tech",
+  "context_text": "",
+  "input": "ねっとわーくのせつぞくがふあんていです",
+  "expected_output": [
+   "ネットワークの接続が不安定です"
+  ]
+ },
+ {
+  "index": "h-tech-10",
+  "domain": "tech",
+  "context_text": "",
+  "input": "かくちょうきのうをゆうこうにします",
+  "expected_output": [
+   "拡張機能を有効にします"
+  ]
+ },
+ {
+  "index": "h-tech-11",
+  "domain": "tech",
+  "context_text": "モニターを新しくしたので、",
+  "input": "がめんのかいぞうどをかえました",
+  "expected_output": [
+   "画面の解像度を変えました"
+  ]
+ },
+ {
+  "index": "h-tech-12",
+  "domain": "tech",
+  "context_text": "",
+  "input": "このばぐはつぎのばーじょんでしゅうせいされます",
+  "expected_output": [
+   "このバグは次のバージョンで修正されます"
+  ]
+ },
+ {
+  "index": "h-tech-13",
+  "domain": "tech",
+  "context_text": "",
+  "input": "ふぁいるのあくせすけんをかくにんします",
+  "expected_output": [
+   "ファイルのアクセス権を確認します"
+  ]
+ },
+ {
+  "index": "h-tech-14",
+  "domain": "tech",
+  "context_text": "",
+  "input": "しょりのないようをろぐにしゅつりょくします",
+  "expected_output": [
+   "処理の内容をログに出力します"
+  ]
+ },
+ {
+  "index": "h-tech-15",
+  "domain": "tech",
+  "context_text": "",
+  "input": "じどうてすとがすべてつうかしました",
+  "expected_output": [
+   "自動テストが全て通過しました",
+   "自動テストがすべて通過しました"
+  ]
+ },
+ {
+  "index": "h-tech-16",
+  "domain": "tech",
+  "context_text": "",
+  "input": "きかいがくしゅうのもでるをくんれんします",
+  "expected_output": [
+   "機械学習のモデルを訓練します"
+  ]
+ },
+ {
+  "index": "h-tech-17",
+  "domain": "tech",
+  "context_text": "",
+  "input": "あんごうかされたつうしんをつかいます",
+  "expected_output": [
+   "暗号化された通信を使います"
+  ]
+ },
+ {
+  "index": "h-tech-18",
+  "domain": "tech",
+  "context_text": "",
+  "input": "でばいすどらいばーをさいいんすとーるしました",
+  "expected_output": [
+   "デバイスドライバーを再インストールしました"
+  ]
+ },
+ {
+  "index": "h-tech-19",
+  "domain": "tech",
+  "context_text": "",
+  "input": "このせっていはさいきどうごにはんえいされます",
+  "expected_output": [
+   "この設定は再起動後に反映されます"
+  ]
+ },
+ {
+  "index": "h-tech-20",
+  "domain": "tech",
+  "context_text": "",
+  "input": "げんいんをとくていするためにちょうさちゅうです",
+  "expected_output": [
+   "原因を特定するために調査中です"
+  ]
+ },
+ {
+  "index": "h-name-01",
+  "domain": "name",
+  "context_text": "",
+  "input": "きょうとえきからばすでいきます",
+  "expected_output": [
+   "京都駅からバスで行きます"
+  ]
+ },
+ {
+  "index": "h-name-02",
+  "domain": "name",
+  "context_text": "",
+  "input": "ほっかいどうのさっぽろしにすんでいます",
+  "expected_output": [
+   "北海道の札幌市に住んでいます"
+  ]
+ },
+ {
+  "index": "h-name-03",
+  "domain": "name",
+  "context_text": "",
+  "input": "なつやすみにおきなわへいきました",
+  "expected_output": [
+   "夏休みに沖縄へ行きました"
+  ]
+ },
+ {
+  "index": "h-name-04",
+  "domain": "name",
+  "context_text": "",
+  "input": "ふじさんがきれいにみえました",
+  "expected_output": [
+   "富士山が綺麗に見えました",
+   "富士山がきれいに見えました"
+  ]
+ },
+ {
+  "index": "h-name-05",
+  "domain": "name",
+  "context_text": "",
+  "input": "なごやでいちばんゆうめいなりょうり",
+  "expected_output": [
+   "名古屋で一番有名な料理"
+  ]
+ },
+ {
+  "index": "h-name-06",
+  "domain": "name",
+  "context_text": "",
+  "input": "よこはまのちゅうかがいであいましょう",
+  "expected_output": [
+   "横浜の中華街で会いましょう"
+  ]
+ },
+ {
+  "index": "h-name-07",
+  "domain": "name",
+  "context_text": "",
+  "input": "ひろしまのへいわきねんこうえん",
+  "expected_output": [
+   "広島の平和記念公園"
+  ]
+ },
+ {
+  "index": "h-name-08",
+  "domain": "name",
+  "context_text": "",
+  "input": "おおさかじょうのちかくにとまりました",
+  "expected_output": [
+   "大阪城の近くに泊まりました"
+  ]
+ },
+ {
+  "index": "h-name-09",
+  "domain": "name",
+  "context_text": "",
+  "input": "しんかんせんでとうきょうからはかたまで",
+  "expected_output": [
+   "新幹線で東京から博多まで"
+  ]
+ },
+ {
+  "index": "h-name-10",
+  "domain": "name",
+  "context_text": "",
+  "input": "かまくらのだいぶつをけんがくしました",
+  "expected_output": [
+   "鎌倉の大仏を見学しました"
+  ]
+ },
+ {
+  "index": "h-name-11",
+  "domain": "name",
+  "context_text": "",
+  "input": "ながののすきーじょうはゆきがおおい",
+  "expected_output": [
+   "長野のスキー場は雪が多い"
+  ]
+ },
+ {
+  "index": "h-name-12",
+  "domain": "name",
+  "context_text": "",
+  "input": "せんだいのぎゅうたんがすきです",
+  "expected_output": [
+   "仙台の牛タンが好きです"
+  ]
+ },
+ {
+  "index": "h-name-13",
+  "domain": "name",
+  "context_text": "先月、香川と愛媛を旅行して、",
+  "input": "しこくのうどんめぐりをしました",
+  "expected_output": [
+   "四国のうどん巡りをしました"
+  ]
+ },
+ {
+  "index": "h-name-14",
+  "domain": "name",
+  "context_text": "",
+  "input": "にっこうのとうしょうぐうはせかいいさんです",
+  "expected_output": [
+   "日光の東照宮は世界遺産です"
+  ]
+ },
+ {
+  "index": "h-name-15",
+  "domain": "name",
+  "context_text": "",
+  "input": "かなざわのけんろくえんにいきたい",
+  "expected_output": [
+   "金沢の兼六園に行きたい"
+  ]
+ },
+ {
+  "index": "h-name-16",
+  "domain": "name",
+  "context_text": "",
+  "input": "なつめそうせきのしょうせつをよみました",
+  "expected_output": [
+   "夏目漱石の小説を読みました"
+  ]
+ },
+ {
+  "index": "h-name-17",
+  "domain": "name",
+  "context_text": "",
+  "input": "おだのぶながはせんごくじだいのぶしょうです",
+  "expected_output": [
+   "織田信長は戦国時代の武将です"
+  ]
+ },
+ {
+  "index": "h-name-18",
+  "domain": "name",
+  "context_text": "",
+  "input": "しずおかけんはおちゃのさんちです",
+  "expected_output": [
+   "静岡県はお茶の産地です"
+  ]
+ },
+ {
+  "index": "h-name-19",
+  "domain": "name",
+  "context_text": "",
+  "input": "こうべぎゅうをたべました",
+  "expected_output": [
+   "神戸牛を食べました"
+  ]
+ },
+ {
+  "index": "h-name-20",
+  "domain": "name",
+  "context_text": "",
+  "input": "ならのしかにえさをあげた",
+  "expected_output": [
+   "奈良の鹿に餌をあげた",
+   "奈良の鹿にエサをあげた"
+  ]
+ },
+ {
+  "index": "h-num-01",
+  "domain": "num",
+  "context_text": "",
+  "input": "かいひはさんぜんえんです",
+  "expected_output": [
+   "会費は3000円です",
+   "会費は3,000円です",
+   "会費は３０００円です",
+   "会費は３，０００円です",
+   "会費は三千円です"
+  ]
+ },
+ {
+  "index": "h-num-02",
+  "domain": "num",
+  "context_text": "",
+  "input": "ごごさんじにしゅうごうしてください",
+  "expected_output": [
+   "午後3時に集合してください",
+   "午後３時に集合してください",
+   "午後三時に集合してください"
+  ]
+ },
+ {
+  "index": "h-num-03",
+  "domain": "num",
+  "context_text": "",
+  "input": "よていはしがつとおかです",
+  "expected_output": [
+   "予定は4月10日です",
+   "予定は４月１０日です"
+  ]
+ },
+ {
+  "index": "h-num-04",
+  "domain": "num",
+  "context_text": "",
+  "input": "さんかしゃはごじゅうにんでした",
+  "expected_output": [
+   "参加者は50人でした",
+   "参加者は５０人でした",
+   "参加者は五十人でした"
+  ]
+ },
+ {
+  "index": "h-num-05",
+  "domain": "num",
+  "context_text": "",
+  "input": "うりあげはぜんねんよりじゅっぱーせんとふえました",
+  "expected_output": [
+   "売り上げは前年より10%増えました",
+   "売上は前年より10%増えました",
+   "売り上げは前年より１０％増えました",
+   "売上は前年より１０％増えました",
+   "売り上げは前年より10％増えました",
+   "売上は前年より10％増えました"
+  ]
+ },
+ {
+  "index": "h-num-06",
+  "domain": "num",
+  "context_text": "",
+  "input": "だいさんしょうからよんでください",
+  "expected_output": [
+   "第3章から読んでください",
+   "第３章から読んでください",
+   "第三章から読んでください"
+  ]
+ },
+ {
+  "index": "h-num-07",
+  "domain": "num",
+  "context_text": "",
+  "input": "でんしゃはななふんおきにきます",
+  "expected_output": [
+   "電車は7分おきに来ます",
+   "電車は７分おきに来ます",
+   "電車は七分おきに来ます"
+  ]
+ },
+ {
+  "index": "h-num-08",
+  "domain": "num",
+  "context_text": "",
+  "input": "にじゅっさいのたんじょうび",
+  "expected_output": [
+   "20歳の誕生日",
+   "２０歳の誕生日",
+   "二十歳の誕生日"
+  ]
+ },
+ {
+  "index": "h-num-09",
+  "domain": "num",
+  "context_text": "ダイエットを始めて一か月。",
+  "input": "たいじゅうがにきろへりました",
+  "expected_output": [
+   "体重が2キロ減りました",
+   "体重が２キロ減りました"
+  ]
+ },
+ {
+  "index": "h-num-10",
+  "domain": "num",
+  "context_text": "",
+  "input": "ほんのしめきりはあさってのしょうごです",
+  "expected_output": [
+   "本の締め切りは明後日の正午です",
+   "本の締切は明後日の正午です"
+  ]
+ },
+ {
+  "index": "h-num-11",
+  "domain": "num",
+  "context_text": "",
+  "input": "ひとりいちまいずつくばります",
+  "expected_output": [
+   "一人一枚ずつ配ります",
+   "1人1枚ずつ配ります",
+   "１人１枚ずつ配ります"
+  ]
+ },
+ {
+  "index": "h-num-12",
+  "domain": "num",
+  "context_text": "",
+  "input": "きおんはさんじゅうごどまであがった",
+  "expected_output": [
+   "気温は35度まで上がった",
+   "気温は３５度まで上がった",
+   "気温は三十五度まで上がった"
+  ]
+ },
+ {
+  "index": "h-num-13",
+  "domain": "num",
+  "context_text": "",
+  "input": "だいいっかいのかいぎをひらきます",
+  "expected_output": [
+   "第1回の会議を開きます",
+   "第１回の会議を開きます",
+   "第一回の会議を開きます"
+  ]
+ },
+ {
+  "index": "h-num-14",
+  "domain": "num",
+  "context_text": "",
+  "input": "このみちをにひゃくめーとるすすんでください",
+  "expected_output": [
+   "この道を200メートル進んでください",
+   "この道を２００メートル進んでください",
+   "この道を二百メートル進んでください"
+  ]
+ },
+ {
+  "index": "h-num-15",
+  "domain": "num",
+  "context_text": "",
+  "input": "ねんにいちどけんこうしんだんをうけます",
+  "expected_output": [
+   "年に一度健康診断を受けます",
+   "年に1度健康診断を受けます",
+   "年に１度健康診断を受けます"
+  ]
+ },
+ {
+  "index": "h-num-16",
+  "domain": "num",
+  "context_text": "",
+  "input": "ぜいこみでいちまんえんです",
+  "expected_output": [
+   "税込みで1万円です",
+   "税込で1万円です",
+   "税込みで１万円です",
+   "税込で１万円です",
+   "税込みで一万円です",
+   "税込で一万円です",
+   "税込みで10,000円です",
+   "税込で10,000円です"
+  ]
+ },
+ {
+  "index": "h-num-17",
+  "domain": "num",
+  "context_text": "",
+  "input": "じゅうがつついたちからかかくがかわります",
+  "expected_output": [
+   "10月1日から価格が変わります",
+   "１０月１日から価格が変わります"
+  ]
+ },
+ {
+  "index": "h-num-18",
+  "domain": "num",
+  "context_text": "",
+  "input": "れいわななねんのけいかく",
+  "expected_output": [
+   "令和7年の計画",
+   "令和７年の計画",
+   "令和七年の計画"
+  ]
+ },
+ {
+  "index": "h-num-19",
+  "domain": "num",
+  "context_text": "",
+  "input": "いっしゅうかんにさんかいうんどうします",
+  "expected_output": [
+   "1週間に3回運動します",
+   "１週間に３回運動します",
+   "一週間に三回運動します"
+  ]
+ },
+ {
+  "index": "h-num-20",
+  "domain": "num",
+  "context_text": "",
+  "input": "ごじゅうおんじゅんにならべます",
+  "expected_output": [
+   "五十音順に並べます"
+  ]
+ },
+ {
+  "index": "h-news-01",
+  "domain": "news",
+  "context_text": "",
+  "input": "せいふはあらたなけいざいたいさくをはっぴょうした",
+  "expected_output": [
+   "政府は新たな経済対策を発表した"
+  ]
+ },
+ {
+  "index": "h-news-02",
+  "domain": "news",
+  "context_text": "",
+  "input": "たいふうのえいきょうででんしゃがうんきゅうした",
+  "expected_output": [
+   "台風の影響で電車が運休した"
+  ]
+ },
+ {
+  "index": "h-news-03",
+  "domain": "news",
+  "context_text": "",
+  "input": "かぶかはおおはばにじょうしょうした",
+  "expected_output": [
+   "株価は大幅に上昇した"
+  ]
+ },
+ {
+  "index": "h-news-04",
+  "domain": "news",
+  "context_text": "",
+  "input": "ちきゅうおんだんかへのたいさくがもとめられている",
+  "expected_output": [
+   "地球温暖化への対策が求められている"
+  ]
+ },
+ {
+  "index": "h-news-05",
+  "domain": "news",
+  "context_text": "",
+  "input": "せんきょのとうひょうりつがていかした",
+  "expected_output": [
+   "選挙の投票率が低下した"
+  ]
+ },
+ {
+  "index": "h-news-06",
+  "domain": "news",
+  "context_text": "",
+  "input": "ちいきのいりょうたいせいがかだいになっている",
+  "expected_output": [
+   "地域の医療体制が課題になっている"
+  ]
+ },
+ {
+  "index": "h-news-07",
+  "domain": "news",
+  "context_text": "",
+  "input": "けんきゅうちーむがあたらしいかせきをはっけんした",
+  "expected_output": [
+   "研究チームが新しい化石を発見した"
+  ]
+ },
+ {
+  "index": "h-news-08",
+  "domain": "news",
+  "context_text": "",
+  "input": "こうつうじこのけんすうがへっている",
+  "expected_output": [
+   "交通事故の件数が減っている"
+  ]
+ },
+ {
+  "index": "h-news-09",
+  "domain": "news",
+  "context_text": "",
+  "input": "しょうしこうれいかがすすんでいる",
+  "expected_output": [
+   "少子高齢化が進んでいる"
+  ]
+ },
+ {
+  "index": "h-news-10",
+  "domain": "news",
+  "context_text": "",
+  "input": "ぶっかだかがかけいをあっぱくしている",
+  "expected_output": [
+   "物価高が家計を圧迫している"
+  ]
+ },
+ {
+  "index": "h-news-11",
+  "domain": "news",
+  "context_text": "",
+  "input": "だいがくにゅうしのせいどがかわる",
+  "expected_output": [
+   "大学入試の制度が変わる"
+  ]
+ },
+ {
+  "index": "h-news-12",
+  "domain": "news",
+  "context_text": "",
+  "input": "げんぱつのさいかどうをめぐるぎろん",
+  "expected_output": [
+   "原発の再稼働を巡る議論",
+   "原発の再稼働をめぐる議論"
+  ]
+ },
+ {
+  "index": "h-news-13",
+  "domain": "news",
+  "context_text": "",
+  "input": "かんこうきゃくがおおはばにふえた",
+  "expected_output": [
+   "観光客が大幅に増えた"
+  ]
+ },
+ {
+  "index": "h-news-14",
+  "domain": "news",
+  "context_text": "",
+  "input": "ぼうさいくんれんがおこなわれた",
+  "expected_output": [
+   "防災訓練が行われた"
+  ]
+ },
+ {
+  "index": "h-news-15",
+  "domain": "news",
+  "context_text": "",
+  "input": "さいばんしょははんけつをいいわたした",
+  "expected_output": [
+   "裁判所は判決を言い渡した"
+  ]
+ },
+ {
+  "index": "h-news-16",
+  "domain": "news",
+  "context_text": "",
+  "input": "ひなんじょにしょくりょうがとどけられた",
+  "expected_output": [
+   "避難所に食料が届けられた"
+  ]
+ },
+ {
+  "index": "h-news-17",
+  "domain": "news",
+  "context_text": "",
+  "input": "きしょうちょうはおおあめけいほうをはっぴょうした",
+  "expected_output": [
+   "気象庁は大雨警報を発表した"
+  ]
+ },
+ {
+  "index": "h-news-18",
+  "domain": "news",
+  "context_text": "",
+  "input": "ゆしゅつがくがかこさいこうをきろくした",
+  "expected_output": [
+   "輸出額が過去最高を記録した"
+  ]
+ },
+ {
+  "index": "h-news-19",
+  "domain": "news",
+  "context_text": "",
+  "input": "いしのふそくがしんこくになっている",
+  "expected_output": [
+   "医師の不足が深刻になっている"
+  ]
+ },
+ {
+  "index": "h-news-20",
+  "domain": "news",
+  "context_text": "",
+  "input": "ほうあんがかけつされた",
+  "expected_output": [
+   "法案が可決された"
+  ]
+ }
+]

@@ -150,6 +150,15 @@ def main() -> int:
     if times:
         print(f"AI の変換 中央値 {times[len(times) // 2]:.0f} ms、p95 {times[int(len(times) * 0.95)]:.0f} ms、"
               f"最大 {times[-1]:.0f} ms")
+    # 分野(domain)のある評価セット(kotori-heldout)では、分野ごとの Acc@1 も出す。
+    domains = {}
+    for it, row in zip(items, rows):
+        if "domain" in it:
+            d = domains.setdefault(it["domain"], [0, 0])
+            d[0] += row["ok"]
+            d[1] += 1
+    if domains:
+        print("  " + "、".join(f"{k} {v[0]}/{v[1]}" for k, v in domains.items()))
     acc = 100 * hit / len(items)
     if args.out:
         json.dump(rows, open(args.out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
