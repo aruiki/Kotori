@@ -8,8 +8,14 @@
 LM リランク(docs/adr/0013、0016)は環境変数 KOTORI_ZENZ_MODEL などで設定する(rewriter/lm_rewriter.h)。
 --context は問題の前の文(context_text)を AI に渡す(アプリから直前の文を受け取った場合に当たる)。
 前の文は「読み<TAB>前の文」のファイルを KOTORI_LM_CONTEXT_MAP で渡す。
+
+converter_main が異常終了した、出力が問題の数に足りない、時間切れのときは失敗(終了コード 1)にする。
+--min-acc を付けると、Acc@1 がそれ未満のときも失敗(終了コード 2)にする(回帰の検出用)。
+--out を付けると、結果の隣に実行条件(<out>.manifest.json: データ・変換器・モデルの SHA-256、
+KOTORI_ の環境変数、コミット、GPU)も残す(docs/IMPROVEMENT_PROPOSALS.md の案 11)。
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -42,12 +48,50 @@ def first_candidates(lines) -> str:
     return "".join(parts)
 
 
+def sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def manifest(args, exe: Path, env: dict, acc: float, n: int) -> dict:
+    """結果を再現するための実行条件。"""
+    def run(cmd):
+        try:
+            return subprocess.run(cmd, capture_output=True, text=True, timeout=30).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return ""
+    models = {}
+    model_dir = env.get("KOTORI_MODEL_DIR")
+    paths = [env.get("KOTORI_ZENZ_MODEL"), env.get("KOTORI_LLM_MODEL")]
+    if model_dir and Path(model_dir).is_dir():
+        paths += [str(p) for p in sorted(Path(model_dir).glob("*.gguf"))]
+    for p in paths:
+        if p and Path(p).is_file() and p not in models:
+            models[p] = sha256(Path(p))
+    return {
+        "data": {"path": args.data, "sha256": sha256(Path(args.data)), "items": n},
+        "context": args.context,
+        "acc": acc,
+        "converter_main": {"path": str(exe), "sha256": sha256(exe)},
+        "models": models,
+        "env": {k: v for k, v in sorted(env.items()) if k.startswith("KOTORI_")},
+        "commit": run(["git", "rev-parse", "HEAD"]),
+        "gpu": run(["nvidia-smi", "--query-gpu=name,driver_version", "--format=csv,noheader"]),
+        "time": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("converter_main")
     ap.add_argument("--data", default="eval/data/ajimee-bench.json")
     ap.add_argument("--out", default="")
     ap.add_argument("--context", action="store_true", help="問題の context_text を前の文として AI に渡す")
+    ap.add_argument("--timeout", type=float, default=36000, help="全体の制限時間(秒)")
+    ap.add_argument("--min-acc", type=float, default=None, help="Acc@1(%%)がこれ未満なら失敗にする")
     args = ap.parse_args()
 
     exe = Path(args.converter_main).resolve()
@@ -67,8 +111,19 @@ def main() -> int:
     # 問題ごとに start → reset し、知らないコマンドの出力を区切りにする。
     script = "".join(f"start {r}\nreset\n{SEP}\n" for r in readings) + "quit\n"
     t0 = time.time()
-    proc = subprocess.run([str(exe)], input=script.encode("utf-8"), capture_output=True,
-                          cwd=cwd, env=env, timeout=36000)
+    try:
+        proc = subprocess.run([str(exe)], input=script.encode("utf-8"), capture_output=True,
+                              cwd=cwd, env=env, timeout=args.timeout)
+    except subprocess.TimeoutExpired:
+        print(f"失敗: {args.timeout:.0f} 秒で終わらなかった", file=sys.stderr)
+        return 1
+    except OSError as e:
+        print(f"失敗: 変換器を起動できない: {e}", file=sys.stderr)
+        return 1
+    if proc.returncode != 0:
+        print(f"失敗: 変換器が終了コード {proc.returncode} で終わった", file=sys.stderr)
+        print(proc.stderr.decode("utf-8", "replace")[-2000:], file=sys.stderr)
+        return 1
     out = proc.stdout.decode("utf-8", "replace")
     # KOTORI_LM_TIME を付けたときは、AI の変換にかかった時間(文全体の選択)の分布も出す。
     times = sorted(float(m.group(1)) for m in
@@ -81,6 +136,9 @@ def main() -> int:
             cur = []
         else:
             cur.append(line)
+    if len(blocks) < len(items):
+        print(f"失敗: 出力が {len(blocks)} 問分しかない(問題は {len(items)} 問)", file=sys.stderr)
+        return 1
     rows, hit = [], 0
     for i, it in enumerate(items):
         top = first_candidates(blocks[i]) if i < len(blocks) else ""
@@ -92,8 +150,14 @@ def main() -> int:
     if times:
         print(f"AI の変換 中央値 {times[len(times) // 2]:.0f} ms、p95 {times[int(len(times) * 0.95)]:.0f} ms、"
               f"最大 {times[-1]:.0f} ms")
+    acc = 100 * hit / len(items)
     if args.out:
         json.dump(rows, open(args.out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        json.dump(manifest(args, exe, env, acc, len(items)),
+                  open(args.out + ".manifest.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    if args.min_acc is not None and acc < args.min_acc:
+        print(f"失敗: Acc@1 {acc:.1f}% が基準 {args.min_acc:.1f}% を下回った", file=sys.stderr)
+        return 2
     return 0
 
 
