@@ -5,3 +5,6 @@
 /eval/results-lm/
 /eval/results-mozc/
 /training/zenz/models/
+
+# ほかの AI ツールの作業フォルダ
+/.codex/

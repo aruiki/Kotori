@@ -1,8 +1,81 @@
 # 開発の手引き
 
-環境の作り方、毎日使うコマンド、PR の出し方。規約は `AGENTS.md`、現状は `docs/HANDOFF.md`。
+環境の作り方、毎日使うコマンド、PR とリリースの出し方。規約は `AGENTS.md`、現状は `docs/HANDOFF.md`。
+**今の製品は Mozc 版**(1 章)。2 章以降は旧 Rust 版(`crates/`、`frontends/`)。
 
-## 1. 環境を作る
+## 1. Mozc 版(現在の製品)
+
+### 1.1 環境(Windows)
+
+1. Git for Windows(`git config --global core.autocrlf false`)、GitHub CLI(`gh`)。
+2. Visual Studio 2022 Build Tools の「C++ によるデスクトップ開発」。
+3. Python 3(評価の道具)、Bazelisk(`winget install Bazel.Bazelisk`)。
+4. このリポジトリ(`git clone --recurse-submodules https://github.com/aruiki/KotoriIME-japanese-.git`)。
+
+### 1.2 Mozc の作業ツリーを作る
+
+変更は、パッチを当てた Mozc の作業ツリーで書く。パスは短い所に置く(例 `C:\Users\<名前>\mz`。
+`mozc/tools/` の道具の既定もここ)。
+
+```sh
+git clone https://github.com/google/mozc.git ~/mz
+cd ~/mz && git checkout <.github/workflows/mozc-windows.yml の MOZC_COMMIT>
+for p in <リポジトリ>/mozc/patches/*.patch; do git apply --whitespace=nowarn "$p"; done
+cd src && python build_tools/update_deps.py && python build_tools/build_qt.py --release --confirm_license
+```
+
+モデルは `src/data/kotori/` に置く(zenz-v2.5-small・medium、TinySwallow-1.5B。作り方は
+`training/zenz/`・`training/llm/`、またはインストール先からコピー)。
+
+### 1.3 ビルドと確かめ方
+
+Git Bash では Bazel のターゲットの前に `MSYS_NO_PATHCONV=1` を付ける(`//` が書き換えられるため)。
+
+| やること | コマンド(`~/mz/src` で) |
+| --- | --- |
+| 変換器だけ(評価用、数分) | `MSYS_NO_PATHCONV=1 bazelisk build //converter:converter_main --config release_build` |
+| 設定画面だけ | `MSYS_NO_PATHCONV=1 bazelisk build //gui/tool:mozc_tool --config release_build` |
+| MSI(20 分ほど) | `MSYS_NO_PATHCONV=1 bazelisk build package --config release_build`(`bazel-bin/win32/installer/Mozc64.msi`) |
+| 単体テスト | `MSYS_NO_PATHCONV=1 bazelisk test //rewriter:lm_rewriter_test --config release_build` |
+
+評価と計測はリポジトリで(`eval/fetch.sh` で AJIMEE-Bench を取得しておく)。変換器とモデルの場所は
+`KOTORI_CONVERTER_MAIN`・`KOTORI_INSTALL_DIR`、または環境変数(`mozc/README.md` の一覧)で変える。
+
+| やること | コマンド |
+| --- | --- |
+| 精度(3 品質 × 4 セット) | `mozc/tools/eval_all.sh ~/mz/src/bazel-bin/converter/converter_main.exe` |
+| 精度(最終評価用、調整に使わない) | `python mozc/eval_baseline.py --context --data eval/sets/kotori-heldout.json <converter_main>` |
+| GPU の負荷 | `python mozc/tools/cost_bench.py` |
+| ノート PC(GPU なし)の Space | `python mozc/tools/space_latency.py KOTORI_LM_DEVICE=cpu` |
+| 負荷試験 | `python mozc/tools/stress_test.py`(`KOTORI_LM_DEVICE=cpu` でも) |
+| 予測 | `python mozc/eval_predict.py <converter_main> --data eval/sets/kotori-predict.json --warm 1` |
+| 性能表 | `python mozc/tools/perf_table.py`(`docs/PERFORMANCE.md`) |
+| 設定画面の画像 | `msiexec /a <MSI> /qn TARGETDIR=<展開先>` のあと `python mozc/tools/capture_window.py <展開先>/PFiles/Kotori/mozc_tool.exe --mode=config_dialog out.png` |
+
+### 1.4 パッチを作り直して PR にする
+
+```sh
+bash mozc/tools/make_patches.sh ~/mz <google/mozc の clone(~/mz でよい)>
+```
+
+0002・0003 を作業ツリーから作り直し、素の Mozc に 0001〜0003 が順に当たるかまで確かめる。パッチは手で直さない。
+どのファイルが何のためかは `mozc/patches/README.md`。
+
+### 1.5 リリース
+
+1. main にマージする(CI の「Mozc (Windows)」が MSI のビルドと単体テストを回す)。
+2. Actions の「Mozc (Windows)」を main で手動実行する(`gh workflow run "Mozc (Windows)" --ref main`)。
+   版(`mozc/VERSION` の beta の番号)と MSI の版(`version.bzl` の BUILD)は自動で上がり、`mozc/release-notes.md`
+   を本文にして Latest として公開する。約 45 分。
+3. 公開された MSI を展開して、版・同梱物・設定画面を確かめる。実機の確認項目は `docs/ACCEPTANCE.md`。
+
+### 1.6 手元の置き場(リポジトリの外)
+
+- `~/mz`: Mozc の作業ツリー(ビルドの出力を含めて数 GB)。
+- `~/kotori-dev/`: 評価用のモデル(`models/`)、llama.cpp の公式ビルド(`tools/`)、変換用の Python 環境。
+  中身は同じフォルダの README。
+
+## 2. 旧 Rust 版: 環境を作る
 
 ### Windows(IME を実際に動かすならこちら)
 
@@ -24,9 +97,9 @@
 ### Linux
 
 Rust・just・CMake・C/C++ コンパイラ(gcc か clang)・git があればよい。Windows のコードの確認には
-`docs/DEVELOPMENT.md` の「5. Linux で Windows のコードを確かめる」を使う。
+6 章を使う。
 
-## 2. 毎日使うコマンド
+## 3. 旧 Rust 版: 毎日使うコマンド
 
 | コマンド | 中身 |
 | --- | --- |
@@ -44,27 +117,28 @@ Rust・just・CMake・C/C++ コンパイラ(gcc か clang)・git があればよ
 
 1つのクレートだけ試すときは `cargo test -p kotori-session` のようにする。
 
-## 3. 作業の流れ(1つの作業 = 1つの PR)
+## 4. 作業の流れ(1つの作業 = 1つの PR)
 
 1. `docs/tasks/` からカードを1枚選ぶ(番号の小さい順)。カードにない作業をするときは、先に
    カードを書く。
 2. `main` から枝を切る: `git switch -c <種類>/<短い名前> origin/main`(例 `feat/tip-display-attributes`)。
 3. カードの「手順」に沿って書く。テストのない機能追加はしない。
-4. `just ci` を通す(Windows のコードに触れたら `just tip` も)。Rust のコードに触れたら
-   `just check` も通す。
+4. 確かめる。Mozc 版は 1.3 の評価と計測(数値の前後比較を PR に貼る)、旧 Rust 版は `just ci`
+   (Windows のコードに触れたら `just tip`、Rust に触れたら `just check`)。
 5. コミットは Conventional Commits(`feat(session): ...`)で、本文に関係する REQ ID を書く。
 6. push して PR を作る。本文は `.github/pull_request_template.md` の形に沿う。
-7. CI が全部緑(Windows のジョブを含む)ならマージする。赤なら原因を直して push し直す。
+7. CI が全部緑(Windows のジョブを含む)ならマージする(マージコミット。積み重ねた PR は `AGENTS.md` の
+   はまりどころを見る)。赤なら原因を直して push し直す。
    テストを消したり無効にしたりして緑にしない。
 8. カードを `docs/tasks/done/` に移し、`docs/HANDOFF.md` の進み具合を更新する。
 
-## 4. Windows で IME を動かして試す
+## 5. 旧 Rust 版: Windows で IME を動かして試す
 
 `frontends/windows/README.md` を見る。サーバーのログを見たいときは、IME を使う前に
 `target\release\kotori-server.exe --dict target\kotori\system.dict` を手で起動しておく
 (TIP は既存のサーバーにつなぐ)。
 
-## 5. Linux で Windows のコードを確かめる
+## 6. 旧 Rust 版: Linux で Windows のコードを確かめる
 
 - Rust の Windows 向けコード: `KOTORI_LM_NO_NATIVE=1 cargo clippy --workspace --all-targets --locked --target x86_64-pc-windows-gnu -- -D warnings`
   (`rustup target add x86_64-pc-windows-gnu` が要る。`just check` が実行する)。
@@ -76,7 +150,7 @@ Rust・just・CMake・C/C++ コンパイラ(gcc か clang)・git があればよ
   (`cargo build` は cdylib のリンクに link.exe を要するので Linux では失敗する)。
 - どちらも最終的な正は CI の windows ランナー。
 
-## 6. 困ったとき
+## 7. 困ったとき
 
 - まず `docs/HANDOFF.md` の「はまりどころ」を見る。
 - 仕様にない判断が要るときは、`docs/adr/NNNN-<題>.md` に選択肢と理由を書き、最も保守的な案で進める。
