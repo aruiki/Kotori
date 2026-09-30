@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
-# zenz-v2.5-small(Hugging Face、CC-BY-SA 4.0)を取得して SHA-256 を検証する(docs/SPEC.md 6.1)。
+# zenz-v2.5(Hugging Face、CC-BY-SA 4.0)を取得して SHA-256 を検証する(docs/SPEC.md 6.1)。
 # モデルはコミットしない。取得先は training/zenz/models/(.gitignore 済み)。
+#
+# 使い方: fetch.sh [xsmall|small|medium] [出力ディレクトリ]   (既定は small)
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
-out="${1:-$here/models/zenz-v2.5-small}"
+size="${1:-small}"
+out="${2:-$here/models/zenz-v2.5-$size}"
 
-REPO="Miwa-Keita/zenz-v2.5-small"
-REVISION="1e408d69a7e284efa4e4d63e456f50e363a82953"
+case "$size" in
+  xsmall) REVISION="9bfb00e795f89284fe9164f0fbde171d046fc546" ;;
+  small) REVISION="1e408d69a7e284efa4e4d63e456f50e363a82953" ;;
+  medium) REVISION="623bc8edf5417129b8269b628223d08245e9c68e" ;;
+  *) echo "サイズは xsmall / small / medium のどれか: $size" >&2; exit 2 ;;
+esac
+REPO="Miwa-Keita/zenz-v2.5-$size"
 
 if command -v sha256sum >/dev/null 2>&1; then
   sha256() { sha256sum "$1" | cut -d' ' -f1; }
@@ -31,5 +39,5 @@ while read -r expected name; do
     exit 1
   fi
   mv "$dest.part" "$dest"
-done < "$here/zenz-v2.5-small.sha256"
-echo "zenz-v2.5-small を $out に用意した" >&2
+done < "$here/zenz-v2.5-$size.sha256"
+echo "zenz-v2.5-$size を $out に用意した" >&2
