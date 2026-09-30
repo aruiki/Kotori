@@ -1,95 +1,66 @@
-# 引き継ぎ(2026-09-30 時点)
+# 引き継ぎ(2026-10-01 時点)
 
-この文書は、クラウドのセッションからローカル PC(または別のエージェント)へ開発を引き継ぐための
-現状のまとめ。作業の規約は `AGENTS.md`、環境の作り方とコマンドは `docs/DEVELOPMENT.md`、
-次にやる作業は `docs/tasks/` にある。**作業を始める前に、この3つを読む。**
+開発を別のセッション・エージェント・人に引き継ぐための現状のまとめ。作業の規約は `AGENTS.md`、環境とコマンドと
+リリースは `docs/DEVELOPMENT.md`、次の作業は `docs/tasks/`。**作業を始める前に、この 3 つを読む。**
 
-## 0. 方針の切り替え(最優先で読む)
+## 0. 方針(最優先で読む)
 
-**製品の目標は docs/adr/0014**: Mozc の安心と AI の精度を両立した「高品質版 Google 日本語入力」。
-品質は数字(AJIMEE-Bench、Kotori 難問セット、大規模回帰セット、Google 日本語入力との比較)で示す。
+- 製品の目標は「高品質版 Google 日本語入力」(docs/adr/0014)。**Mozc をベースにし、AI の変換を組み込む**
+  (docs/adr/0012)。`crates/`・`frontends/` の Rust 版は旧版で、機能は足さない。
+- **精度は十分**(Standard で AJIMEE 91.5%、最終評価用のセット 97.5%)。今は精度(Standard 90% 以上)を保ったまま、
+  負荷・待ち時間・使い勝手を良くする。ハイエンド(GPU)向けの Standard / High / Unreal の中身は保ち、
+  GPU のない PC は Low(CPU、zenz-medium、先回りの変換)で動かす(docs/adr/0024)。
+- メンテナは判断を任せている。確認を取らずに進め、数値と一緒に報告する(`AGENTS.md`)。
 
-beta.1〜3 を実機で使ったメンテナの報告(IME のオン/オフ・候補ウィンドウなどのフロントエンドが
-うまく動かない)を受けて、**Mozc をベースにし、Kotori の LM リランクを組み込む**方針に変えた
-(docs/adr/0012、メンテナが判断を任せた)。段階 1(素の Mozc を CI でビルドする)から進める。
-`mozc/README.md` と `.github/workflows/mozc-windows.yml` を見る。下の Rust のエンジンと TIP は、
-段階 3 まで評価の基準と参考実装として残す。SPEC の改訂は別の PR でメンテナの承認を得る。
-
-**2026-09-30 からの方針**: 精度は十分(Standard で AJIMEE 91.5%)なので、精度 90% 以上を保ったまま負荷を
-下げる。ハイエンド(GPU)向けの Standard / High / Unreal の中身は残し、GPU のない PC は新しい Low(CPU、
-zenz-medium、先回りの変換)で動かす(docs/adr/0024)。負荷は `mozc/tools/cost_bench.py`、ノート PC の
-再現は `KOTORI_LM_DEVICE=cpu` と `mozc/tools/space_latency.py` で測る。
-
-## 1. 全体の進み具合
-
-### 現在の製品(Mozc 版、Windows の MSI)
+## 1. 進み具合(Mozc 版)
 
 | 項目 | 状態 |
 | --- | --- |
-| 段階 1〜2(docs/adr/0012) | 完了。Mozc を CI でビルドし、名前・識別子を Kotori にした(カード 21) |
-| 段階 3(AI の変換) | 完了。zenz の生成と TinySwallow-1.5B の採点(docs/adr/0016)、入力中の AI 予測と Tab(0018〜0021)、設定画面(0022)、LLM の重み(0023) |
-| 段階 4(評価と配布) | ベータ版を GitHub Releases で配布中(`mozc/VERSION` の beta の番号)。MSI の版はリリースごとに上がる(カード 22) |
-| 実機での確認 | メンテナに頼んでいる(上書きインストール、ノート PC、ダークモードの設定画面など) |
+| 名前・識別子(カード 21) | 完了 |
+| AI の変換(docs/adr/0013〜0023) | 完了。zenz の生成と TinySwallow-1.5B の採点、入力中の予測と Tab、設定画面、LLM の重み |
+| 負荷と待ち時間(docs/adr/0024〜0029、カード 23〜28) | 完了。GPU の稼働率 68.6% → 46.6%。ノート PC で固まらない(内蔵 GPU を使わない、時間の上限、先回りの変換、待ちの解消)。新しい Low。予測キャッシュの設定の区切り、AI の状態の表示、生成した文の文節分け、ユーザー辞書の保護、ハイコントラスト |
+| 評価の基盤 | 最終評価用のセット `kotori-heldout`(120 問、調整に使わない)、評価器の失敗の検出と実行条件の記録、予測の節約文字数と外れ候補、性能表(`docs/PERFORMANCE.md`)、単体テストを CI で |
+| 配布 | GitHub Releases の `Kotori64.msi`(v0.3.0-beta.5 から、上書きインストールで入れ替わる) |
+| 実機での確認 | メンテナに頼んでいる(`docs/ACCEPTANCE.md`)。ノート PC、ダークモード・ハイコントラストの設定画面、上書きインストール |
 
-精度(前の文あり): AJIMEE-Bench は Mozc 単体 51.0%、Low 88.0%(GPU なし、docs/adr/0024)、Standard 91.5%、High 92.5%。
-日常の文 81 問は Low / Standard / High 97.5%(`eval/README.md`、docs/adr/0023)。改善の候補と優先順位は `docs/IMPROVEMENT_PROPOSALS.md`。
+精度(前の文あり、Acc@1):
 
-### 旧 Rust 版(履歴。段階 3 までの評価の基準と参考実装)
-
-| マイルストーン | 状態 |
-| --- | --- |
-| M0 基盤 | 完了(PR #1〜#8) |
-| M1 ラティス変換 | 完了(PR #7、#10〜#22)。KTB-conv だけ未作成(7.2 のパイプラインが要る) |
-| M2 ニューラルリランク | 実装は完了(PR #24〜#36)。REQ-6-1 が未達、Google 日本語入力との比較が未実施(docs/adr/0008) |
-| M3 Windows フロントエンド | 約 7 割で止めた(PR #37〜#43、#45〜#64)。Mozc 版に切り替えたので、候補ウィンドウの描画(カード 14、Issue #54)は進めない |
-
-精度: AJIMEE-Bench Acc@1 はラティス単体 53.0%、zenz-v2.5-small のリランクで 79.5%(`eval/README.md`)。
+| | AJIMEE | 日常 | 最終評価用(heldout) |
+| --- | ---: | ---: | ---: |
+| Mozc 単体 | 51.0% | 80.2% | 84.2% |
+| Low(GPU なしの PC) | 88.0% | 97.5% | 98.3% |
+| Standard(既定) | 91.5% | 97.5% | 97.5% |
+| High | 92.5% | 97.5% | 97.5% |
 
 ## 2. コードの地図
 
 | 場所 | 中身 |
 | --- | --- |
-| `mozc/patches` | google/mozc(コミット固定)に当てるパッチ。0001 名前と識別子、0002 AI の変換・予測・設定画面、0003 インストーラと同梱物 |
-| `mozc/tools`、`mozc/eval_*.py` | 評価・負荷試験・画像の作成・パッチの作り直し(一覧は `mozc/README.md`) |
-| `.github/workflows/mozc-windows.yml` | MSI を作り、手動で実行するとリリースする |
-| `training/zenz`、`training/llm` | 同梱するモデル(zenz-v2.5、TinySwallow-1.5B)の取得と変換 |
-| 以下の `crates/`・`frontends/` | 旧 Rust 版 |
-| `crates/kotori-composer` | ローマ字かな変換(5.2) |
-| `crates/kotori-dict`、`kotori-dictc` | システム辞書の形式・読み込み・コンパイラ(5.3、ADR 0004) |
-| `crates/kotori-lattice` | ラティス、Viterbi、N-best、文節、特殊変換(5.4〜5.6、ADR 0005) |
-| `crates/kotori-lm` | llama.cpp の FFI、zenz の採点器、リランクの世代・締め切り・バックグラウンド読み込み、重み(6章、ADR 0006、0007) |
-| `crates/kotori-session` | キーマップ(`data/keymaps/ms-ime.tsv`)と入力の状態機械、ラティスによる変換器(11章) |
-| `crates/kotori-server` | サーバー本体。セッションごとに状態機械を持つ。辞書と LM はバックグラウンドで読み、LM があれば2段階で応答する(4章、6章) |
-| `crates/kotori-renderer` | 候補ウィンドウ(Windows)。今は受けた内容をログに出すだけ。位置の計算は `placement.rs`(ADR 0010) |
-| `crates/kotori-proto` | IPC のメッセージ(`proto/kotori.proto`)とフレーム |
-| `crates/kotori-client` | IPC クライアント、サーバーの自動起動と再接続(`managed.rs`)、パイプの ACL(`acl.rs`、ADR 0011)、renderer への送信(`renderer.rs`)、C ABI(`ffi.rs`、`renderer_ffi.rs`、`include/kotori_client.h`) |
-| `crates/kotori-eval` | 評価(`run`)、遅延の計測(`bench-lm`)、重みの探索(`tune`)、対話 REPL |
-| `frontends/windows` | TSF TIP(C++20、CMake)と `build.ps1`・`install.ps1`・`uninstall.ps1`。手順は `README.md` |
-| `training/zenz` | zenz-v2.5 の取得と GGUF 変換(ADR 0007) |
-| `docs/adr` | 設計判断の記録。0001〜0011 は主に旧 Rust 版、0012 以降は Mozc 版 |
+| `mozc/patches/` | google/mozc(コミット固定)に当てるパッチ。ファイルごとの目的と ADR は `mozc/patches/README.md` |
+| `mozc/tools/`、`mozc/eval_*.py` | 評価・計測・負荷試験・画像・パッチの作り直し(一覧と環境変数は `mozc/README.md`) |
+| `eval/` | 評価セット(`eval/sets/`)、AJIMEE の取得(`eval/fetch.sh`)、記録(`eval/README.md`) |
+| `.github/workflows/mozc-windows.yml` | MSI のビルドと単体テスト。手動で実行するとリリース |
+| `training/zenz`、`training/llm` | 同梱するモデル(zenz-v2.5 small・medium、TinySwallow-1.5B)の取得と変換 |
+| `docs/adr/` | 設計判断。0012 以降が Mozc 版、0001〜0011 は主に旧 Rust 版 |
+| `docs/` | `SPEC.md`(仕様。Mozc 版に合わせた改訂は未)、`ACCEPTANCE.md`(実機の確認表)、`PERFORMANCE.md`、`IMPROVEMENT_PROPOSALS.md`(改善案 15 件、多くは対応済み)、`licenses.md` |
+| `crates/`、`frontends/`、`justfile` | 旧 Rust 版(評価の基準として残す) |
 
-## 3. メンテナの判断待ち
+## 3. メンテナの判断待ち・未決
 
-| 事項 | 内容 | 場所 |
-| --- | --- | --- |
-| REQ-6-1・13.2 の数値 | 2段階応答を前提に「リランク反映 p95 600ms(モデル s、K=16)」へ変える案。SPEC の変更なので承認が要る | Issue #32 |
-| 17.2 の unsafe の範囲 | 辞書の mmap 1 か所だけ kotori-dict で unsafe を許す案 | Issue #9 |
-| 17.2 の unsafe の範囲(renderer) | 候補ウィンドウの描画に Win32・Direct2D の unsafe が要る。renderer の Win32 境界で許す案を推す。Issue #9 と同じ SPEC の PR にまとめられる | Issue #54 |
-| 開発用データと KTB-conv | 7.2 のパイプラインを作るか。zenz-v2.5-dataset は zenz の学習データなので調整に使わない | ADR 0008 |
-| Google 日本語入力の実測 | M2 の完了条件。Windows の計測ツール(14.2)が要る | ADR 0008 |
-
-判断が出るまでは ADR 0008 のとおり進める(SPEC の数値は変えない)。
+| 事項 | 内容 |
+| --- | --- |
+| SPEC の改訂 | `docs/SPEC.md` は旧 Rust 版の構成と数値のまま。Mozc 版に合わせる改訂は、承認付きの PR で行う |
+| 実機の結果 | ノート PC(内蔵 GPU)で Low が十分速いか。内蔵 GPU で zenz だけを動かす案(カード 32)はその結果で決める |
+| Google 日本語入力・Microsoft IME との比較 | 同じ条件で比べる手順を作ってから(`docs/IMPROVEMENT_PROPOSALS.md` の案 12) |
 
 ## 4. すぐにやること
 
-1. **Windows 実機での確認**(Mozc 版の MSI): 前の版からの上書きインストール、GPU のないノート PC で
-   打って Space、設定画面(ダークモード、表示の拡大)、メモ帳・ブラウザ・Office・管理者として動くアプリでの
-   入力。問題はアプリ名と症状を Issue にする。
-2. `docs/tasks/` の番号の小さいカードから進める。カードがなければ、改善の候補(評価の基盤、待ち時間、
-   実アプリの受け入れ試験など)から 1 目的のカードを書く(カードの形は `docs/tasks/README.md`)。
-3. 旧 Rust 版の判断待ち(3 章)は、SPEC を Mozc 版に合わせて改訂するときにまとめて扱う。
+1. リリースした MSI を展開して確かめる(版、同梱物、設定画面)。実機の報告が来たら最優先で直す。
+2. `docs/tasks/README.md` の未着手のカード(29〜32)を番号順に。
 
 ## 5. はまりどころ(このプロジェクトで実際に起きたこと)
+
+Mozc 版と AI の作業でのはまりどころは `AGENTS.md` にある。以下は主に旧 Rust 版のもの。
 
 - **Windows の CI でだけ落ちるテスト**: 読み込み中(mmap 中)のファイルを上書きできない。テストで
   同じファイル名のモデルや辞書を作り直さない(`crates/kotori-lm/src/zenz_tests.rs`)。

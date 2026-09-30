@@ -9,6 +9,26 @@
 実装、仕様変更、Issue・PR の作成は含みません。新しいベンチマークや Windows 実機試験も実施していません。
 コードから考えられる改善余地と、記録済みの問題を区別しています。
 
+## 対応状況(2026-10-01)
+
+| ID | 状況 | どこで |
+| --- | --- | --- |
+| 01 | 最終評価用のセット 120 問を作った。数百問にするのはカード 30 | eval/sets/kotori-heldout.json、eval/README.md |
+| 02 | 評価器が失敗を返す。単体テストを CI で回す。モデル込みの回帰は未 | mozc/eval_baseline.py、mozc-windows.yml |
+| 03 | Space・Tab の時間の上限、Mozc の結果への切り替え | docs/adr/0024、0025、0029 |
+| 04 | 予測キャッシュを設定の署名で区切る、シークレットで捨てる | docs/adr/0025 |
+| 05 | 受け入れ試験の確認表。実機での実施は未 | docs/ACCEPTANCE.md |
+| 06 | 生成した文を文節に分ける | docs/adr/0027 |
+| 07 | ユーザー辞書の語を AI で変えない | docs/adr/0027 |
+| 08 | 実際に動いている AI の状態を設定画面に出す | docs/adr/0026 |
+| 09 | 性能表(GPU・CPU)。内蔵 GPU などの実機は未(カード 32) | docs/PERFORMANCE.md |
+| 10 | 節約文字数・外れ候補の割合を測る。外れを減らすのはカード 29 | eval/README.md |
+| 11 | 評価の実行条件(manifest)を残す | mozc/eval_baseline.py |
+| 12 | 文書・導入案内・URL を揃えた。他の IME との比較はカード 30 | docs/HANDOFF.md、docs/DEVELOPMENT.md |
+| 13 | パッチの索引 | mozc/patches/README.md |
+| 14 | ハイコントラスト・フォーカスの枠。実機の確認は未 | docs/adr/0028 |
+| 15 | 前置きの使い回し、候補の木 | docs/adr/0024 |
+
 ## 1. 現状の捉え方
 
 現在の製品は **Mozc を土台に、zenz の生成と TinySwallow の採点を加えた Windows IME**です。

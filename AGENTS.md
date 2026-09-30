@@ -1,62 +1,79 @@
 # AGENTS.md
 
-Kotori IME の実装を担う AI エージェント向けの作業規約(docs/SPEC.md 17.4)。
+Kotori日本語入力を開発する AI エージェント(Claude Code、Codex など)向けの作業規約。人間の開発者にも当てはまる。
 
-**最初に読む**: `docs/HANDOFF.md`(現状と判断待ち)→ `docs/DEVELOPMENT.md`(環境とコマンド)→
-`docs/tasks/README.md`(次の作業カード)。作業は1枚のカードを1つの PR にして進める。
+**最初に読む(この順)**: `docs/HANDOFF.md`(現状・次の作業)→ `docs/DEVELOPMENT.md`(環境・コマンド・リリース)→
+`docs/tasks/README.md`(作業カード)→ 作業に関係する `docs/adr/`。仕様の全体は `docs/SPEC.md`。
 
-1. 作業開始前に `docs/SPEC.md` の該当章と `docs/adr/` を読む。
-2. 18章のマイルストーン順に進め、現在のマイルストーンの完了条件にない機能には着手しない。
-3. 1つのPRは1つの目的に絞り、差分は原則600行以下にする。テストのない機能追加はしない。
-4. PRを出す前に `just ci`(フォーマット、lint、テスト、ゴールデン、縮小評価、ベンチ)をローカルで通す。
-5. 仕様にない判断が必要なら、`docs/adr/NNNN-<題>.md` に選択肢と理由を書き、最も保守的な案で進める。仕様との矛盾を見つけたら、実装を止めてIssueを立てる。
-6. `docs/SPEC.md` の変更は、人間のメンテナの承認があるPRでのみ行う。
-7. ネットワークにアクセスする依存を `kotori-server` 系に追加しない(REQ-15-1)。
-8. 精度または性能の数値が下がる変更は、PR本文に評価結果の前後比較を貼る(REQ-14-2)。
-9. Windows固有のコードはLinux上では検証できないため、windowsランナーのCI結果で確認してからマージする。
+## いまの製品と方針
 
-## 現在のマイルストーン
-
-**目標**: Mozc という安心のベースに AI を載せ、膨大なテストデータで難しい課題を解ける品質にし、
-「高品質版 Google 日本語入力」を目指す(docs/adr/0014)。
-
-**方針の切り替え**: Mozc をベースにし、LM リランクを組み込む(docs/adr/0012)。段階 1〜4 の順に
-進める。下の M0〜M3 の記録は Rust 版のもので、段階 3 まで参考として残す。
-
-M3 Windowsフロントエンド(SPEC 18.4)。M2 の完了条件の一部を残したまま進めている(docs/adr/0008)。
-
-- M0 は PR #1〜#8 で完了(#8 で Windows パイプのデッドロックを直したあと、main の CI が両OSで緑)。
-- M1 は PR #7、#10〜#22 で完了。ラティス単体の精度は `eval/README.md` に記録した
-  (AJIMEE-Bench Acc@1 53.0%)。
-- M2 は PR #24〜#35 で実装項目を入れた。llama.cpp の FFI、zenz-v2.5 の GGUF 変換(`just zenz`)、
-  共有接頭辞のバッチ採点、世代番号による打ち切り、バックグラウンド読み込み、評価への組み込み
-  (`just eval-lm`)、遅延の計測(`just bench-lm`)、重みの格子探索(`kotori-eval tune`)がある。
-  zenz-v2.5-small のリランクで AJIMEE-Bench Acc@1 79.5%。完了条件のうち次が残っている:
-  - REQ-6-1(p95 20ms)は満たせていない(small・K=16 で p95 564ms)。2段階応答で進め、数値は
-    Issue #32 と SPEC の PR で扱う。
-  - KTB-conv と重みの調整用の dev セットは、7.2 のパイプラインを作るときに作る。重みは既定値のまま。
-  - Google 日本語入力との比較は、M3 で Windows の計測ツールを作るときに行う。
-- M3 は PR #37〜#43 で、キーマップ、状態機械、サーバーへの組み込み、C ABI、サーバーの自動起動と
-  再接続、TSF TIP の骨格とキー処理まで入れた。PR #45〜#64 で作業カード 01〜13、15、16 と 14 の前半
-  (表示属性、パスワード欄、左文脈、文節の伸縮、文字種変換、カーソル移動、インストール、パイプの ACL、
-  LM リランクの2段階応答、renderer への送信)を入れた。候補ウィンドウの描画(カード 14 の後半)は
-  Issue #54(SPEC 17.2 の unsafe の範囲)の判断待ち。実機での確認は利用者に頼んでいる。
+- 製品は **Mozc をベースにした Windows の IME**(docs/adr/0012)。google/mozc をコミットで固定して取得し、
+  `mozc/patches/` のパッチで AI の変換(zenz-v2.5 の生成・採点、TinySwallow-1.5B の採点、入力中の予測)と
+  設定画面、インストーラを加える。配布は GitHub Releases の `Kotori64.msi`。
+- `crates/`・`frontends/`・`justfile` の Rust のエンジンと自前の TSF TIP は **旧 Rust 版**。評価の基準として残すが、
+  機能は足さない(CI が緑のままであればよい)。
+- 目標は「高品質版 Google 日本語入力」(docs/adr/0014)。**精度はもう十分**なので、今は精度(Standard で
+  AJIMEE-Bench 90% 以上)を保ったまま、負荷・待ち時間・使い勝手を良くする(docs/adr/0024〜0029)。
+  ハイエンド(GPU)向けの Standard / High / Unreal の中身は保ち、GPU のない PC は Low(CPU)で動かす。
+- **メンテナは判断を任せている**。細かい確認は取らずに進め、結果と数値を報告する。止めるのは、仕様との矛盾、
+  取り消せない操作、権限の都合で自分ではできない操作のときだけ。
 
 ## 作業の手順(毎回これに従う)
 
-1. `docs/tasks/` から番号の小さいカードを1枚選び、「読むもの」を全部読む。
-2. `main` から枝を切る。カードの「手順」の順に書く。カードにないことはしない。
-3. カードの「テスト」を書き、`just ci` を通す。Rust を変えたら `just check`、Windows のコードを
-   変えたら(Windows なら)`just tip` も通す。
-4. 迷ったら推測で進めず、`docs/HANDOFF.md` の「はまりどころ」と関係する ADR を読む。それでも決まらない
-   ときは ADR に選択肢を書いて最も保守的な案を選ぶ。仕様と矛盾したら止めて Issue を立てる。
-5. PR は `.github/pull_request_template.md` の形で出す。CI が全部緑になってからマージする。
-6. カードを `docs/tasks/done/` に移し、`docs/HANDOFF.md` の進み具合を直す。
+1. `docs/tasks/` から番号の小さいカードを選び、「読むもの」を読む。カードがなければ先にカードを書く。
+2. `main` から枝を切る(`git switch -c <種類>/<名前> origin/main`)。1 つの PR は 1 つの目的に絞る。
+3. Mozc 版の変更は、Mozc の作業ツリー(`docs/DEVELOPMENT.md` の「Mozc 版」)で書いてビルドし、評価してから、
+   `mozc/tools/make_patches.sh` でパッチを作り直してコミットする。パッチを手で編集しない。
+4. 確かめる(下の「確かめ方」)。数値が変わる変更は、**PR 本文に前後の比較を貼る**(REQ-14-2)。
+5. 仕様にない判断は `docs/adr/NNNN-<題>.md` に選択肢・理由・結果の数値を書く。
+6. PR は `.github/pull_request_template.md` の形で出す。コミットは Conventional Commits、本文に関係する REQ ID。
+7. CI が緑ならマージする(マージコミット。下の「はまりどころ」)。カードを `docs/tasks/done/` に移し、
+   `docs/HANDOFF.md` を直す。
+8. リリースは Actions の「Mozc (Windows)」を main で手動実行する(版は自動で上がる。`docs/DEVELOPMENT.md`)。
 
-## コーディング規約の要点(17.2)
+## 確かめ方(Mozc 版)
 
-- Rust は edition 2021、MSRV 1.80、`rustfmt`、`clippy -D warnings`。
-- `unsafe` はワークスペースで deny。`kotori-lm` と `kotori-client` の FFI 境界でのみ許可し、各ブロックに `// SAFETY:` を書く。
-- ライブラリは `thiserror`、バイナリは `anyhow`。キー処理経路で `unwrap` / `expect` を使わない。
-- 辞書バイナリ・モデル・データセットはコミットしない。取得スクリプトと SHA-256 を置く。
-- コミットは Conventional Commits 形式で、関係する REQ ID を本文に書く。
+| 何を | 道具 | 基準 |
+| --- | --- | --- |
+| 精度(調整・回帰用) | `mozc/tools/eval_all.sh`(AJIMEE・慣用句・ニュアンス・日常) | 下がらないこと。Mozc より悪くなった問題を見る |
+| 精度(最終評価用) | `eval_baseline.py --data eval/sets/kotori-heldout.json` | **調整に使わない**。報告にだけ使う(eval/README.md) |
+| GPU の負荷 | `mozc/tools/cost_bench.py`(AI の稼働率) | GPU の使用率は他のアプリで揺れるので、計算の時間で比べる |
+| Space の待ち・ノート PC | `mozc/tools/space_latency.py KOTORI_LM_DEVICE=cpu` | 固まらない。正解数も出る |
+| 落ちない・待たせない | `mozc/tools/stress_test.py`(GPU と `KOTORI_LM_DEVICE=cpu`) | 異常終了なし、変換の最大が上限内 |
+| 予測 | `mozc/eval_predict.py --warm 1`(`--suggest` で入力中の候補) | 当たり・節約文字数・外れ候補の割合 |
+| 単体テスト | `bazelisk test //rewriter:lm_rewriter_test` | 通る(CI でも回る) |
+| 設定画面 | `mozc/tools/capture_window.py`(MSI を展開した mozc_tool) | 崩れない。倍率・ダークモード |
+
+評価と調整の環境変数は `mozc/README.md` の一覧。性能表は `docs/PERFORMANCE.md`。
+
+## 守ること
+
+- 辞書・モデル・データセットはコミットしない(取得スクリプトと SHA-256 を置く)。ライセンスは `docs/licenses.md` と
+  インストーラの使用許諾(`mozc/tools/gen_assets.py`)に書き足す。
+- 実行時にネットワークへ出ない(モデルと実行環境は MSI に同梱)。
+- `docs/SPEC.md` の変更は、メンテナの承認がある PR でのみ行う。仕様と矛盾したら止めて Issue を立てる。
+- Windows 固有の変更は、手元の Windows か CI の Windows ランナーで確かめてからマージする。
+- テストを消したり無効にしたりして CI を緑にしない。
+
+## はまりどころ(AI が実際にはまったこと)
+
+- **Git Bash のヒアドキュメントで `\\` が崩れる**: `python - <<'EOF'` の中に `"\\n"` や `D:\\bazel` を書くと、
+  改行や制御文字(`\b`)に化けることがある。C++ やパスを書き換えるスクリプトは、Write でファイルに書いてから
+  `python ファイル` で実行する。書き換えた後は制御文字がないか `grep -P '[\x08\x0c]'` で確かめる。
+- **Bazel のターゲットが MSYS に書き換えられる**: Git Bash では `MSYS_NO_PATHCONV=1 bazelisk build //converter:converter_main ...`。
+- **実験中にビルドしない**: 走っている `converter_main.exe` を bazel が差し替えると、結果が混ざる。別のビルドが
+  CPU を使っている間の時間の計測も揺れる(先に `tasklist` を見る)。
+- **Bazel の出力は読み取り専用**: `bazel-bin` からコピーしたファイルを上書きするときは `chmod u+w` してから。
+- **積み重ねた PR のマージ**: 下の PR を `--delete-branch` でマージすると、上の PR が付け替えられずに閉じることが
+  ある。先に上の PR の base を main に変えてからマージするか、一番上のブランチからまとめて出し直す。
+  squash は積み重ねた PR で衝突を起こすので、マージコミットを使う。
+- **MSI の版**: リリースごとに `version.bzl` の BUILD を上げている(カード 22)。同じ版の MSI を上書きしても
+  ファイルは入れ替わらない。
+- **内蔵 GPU は AI に使わない**: 専用 GPU(VRAM 3 GiB 以上)だけを使う(docs/adr/0024)。
+- 旧 Rust 版の CI でだけ落ちるテスト、CRLF、UNIX ソケットのパス長などは `docs/HANDOFF.md` の「はまりどころ」。
+
+## コーディング規約
+
+- Mozc のパッチ(C++): Mozc の書き方に合わせる(Google C++ スタイル、`absl`、`// Kotori:` で始まるコメントで
+  Kotori の変更だと分かるようにする)。コメントと文書は日本語。
+- 旧 Rust 版: edition 2021、MSRV 1.80、`rustfmt`、`clippy -D warnings`、`unsafe` は FFI 境界だけ(`// SAFETY:`)。
