@@ -54,6 +54,17 @@ jobs:
             git -C mozc-src apply --whitespace=nowarn $p.FullName
             if ($LASTEXITCODE -ne 0) { throw "$($p.Name) を当てられない" }
           }
+      # Windows Installer は版の先頭3つで上書きの入れ替えを決めるので、Mozc の BUILD に実行番号を足して
+      # リリースごとに版を上げる(docs/tasks/22)。版が同じだと上書きで古いファイルが残る。
+      - name: 版を上げる
+        shell: pwsh
+        run: |
+          $f = 'mozc-src/src/version.bzl'
+          $s = Get-Content $f -Raw
+          if ($s -notmatch '(?m)^BUILD = BUILD_OSS$') { throw "$f に BUILD = BUILD_OSS がない" }
+          $s = $s -replace '(?m)^BUILD = BUILD_OSS$', 'BUILD = BUILD_OSS + ${{ github.run_number }}'
+          Set-Content -NoNewline $f $s
+          Select-String -Path $f -Pattern '^(MAJOR|MINOR|BUILD|REVISION) ='
       # MSI に同梱するモデル(docs/adr/0012、パッチ 0003)。変換の手順が同じなら前に作ったものを使う。
       - id: zenz
         uses: actions/cache@v4
