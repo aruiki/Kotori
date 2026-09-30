@@ -67,7 +67,9 @@ bash mozc/tools/make_patches.sh ~/mz <google/mozc の clone(~/mz でよい)>
 2. Actions の「Mozc (Windows)」を main で手動実行する(`gh workflow run "Mozc (Windows)" --ref main`)。
    版(`mozc/VERSION` の beta の番号)と MSI の版(`version.bzl` の BUILD)は自動で上がり、`mozc/release-notes.md`
    を本文にして Latest として公開する。約 45 分。
-3. 公開された MSI を展開して、版・同梱物・設定画面を確かめる。実機の確認項目は `docs/ACCEPTANCE.md`。
+3. **`python mozc/tools/check_release.py` を回す**(公開された MSI のハッシュ、前の版より版が上がっているか、同梱物、
+   実行ファイルの版)。NG があればリリースノートに注意を書き、直した版を出す。設定画面は `capture_window.py` で見る。
+   実機の確認項目は `docs/ACCEPTANCE.md`。
 
 ### 1.6 手元の置き場(リポジトリの外)
 
