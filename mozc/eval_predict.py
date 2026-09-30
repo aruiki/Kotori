@@ -3,6 +3,8 @@
 
 AJIMEE-Bench の各問で、読みの先頭 N 文字(ひらがな)を「打った途中」とし、前の文を渡して予測させる。
 上位 K 件に、正解の文の先頭と一致する候補(MIN 文字以上)があれば当たり。当たった候補の長さの平均も出す。
+節約できた文字数(当たった候補のうち打った部分の変換より長い分)と、外れ候補の割合(予測の候補のうち
+正解の文の先頭にならず、入力の邪魔になるもの)も出す(docs/IMPROVEMENT_PROPOSALS.md の案 10)。
 
 使い方: python3 mozc/eval_predict.py <converter_main> [--data 評価セット.json] [--typed 5] [--top 3] [--min 5]
   --warm 秒: 実際の入力のように、読みを 1 文字ずつ 0.15 秒おきに入力中の候補(suggest)として送り、
@@ -114,7 +116,7 @@ def main():
             cur = []
         else:
             cur.append(line)
-    hit, saved = 0, []
+    hit, saved, gained, shown, off = 0, [], [], 0, 0
     for i, r in enumerate(rows):
         cands = []
         for line in blocks[i] if i < len(blocks) else []:
@@ -128,10 +130,19 @@ def main():
         if good:
             hit += 1
             saved.append(max(len(c) for c in good))
+            # 節約できた文字数: 当たった候補のうち、打った部分の変換より長い分(案 10)。
+            gained.append(max(len(c) for c in good) - len(r.get("conv", "")))
+        # 外れ候補: 打った部分の変換より長い(予測の)候補のうち、正解の文の先頭にならないもの。
+        # 出すと入力の邪魔になる。
+        longer = [c for c in cands[: args.top] if len(c) > len(r.get("conv", ""))]
+        shown += len(longer)
+        off += sum(1 for c in longer if not r["truth"].startswith(c))
     n = len(rows)
     full = sum(1 for r in rows if r["truth"] in r.get("cands", []))
     print(f"文まで当たり {full}/{n}  ", end="")
     print(f"当たり {hit}/{n} = {100 * hit / n:.1f}%  当たった候補の長さ {sum(saved) / max(1, len(saved)):.1f} 文字  ({elapsed:.0f} 秒)")
+    print(f"節約できた文字数 合計 {sum(gained)}(1 問あたり {sum(gained) / max(1, n):.1f})  "
+          f"外れ候補 {off}/{shown} = {100 * off / max(1, shown):.1f}%")
     if tab_ms:
         tab_ms.sort()
         print(f"Tab の応答 中央値 {tab_ms[len(tab_ms) // 2]:.0f} ms、最大 {tab_ms[-1]:.0f} ms")
