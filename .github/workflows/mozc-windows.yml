@@ -146,6 +146,13 @@ jobs:
         env:
           ANDROID_NDK_HOME: ""
         run: bazelisk build package --config release_build --disk_cache=D:\bazel-disk-cache
+      # Kotori の変更の単体テスト(モデルなしで動くもの。docs/IMPROVEMENT_PROPOSALS.md の案 02)。
+      - name: テストする
+        shell: cmd
+        working-directory: .\mozc-src\src
+        env:
+          ANDROID_NDK_HOME: ""
+        run: bazelisk test //rewriter:lm_rewriter_test --config release_build --disk_cache=D:\bazel-disk-cache
       # パッチで名前を Kotori にしたので、ファイル名も合わせる(docs/adr/0012 の段階 2)。
       - name: インストーラの名前を変える
         shell: pwsh
