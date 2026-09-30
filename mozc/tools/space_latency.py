@@ -49,7 +49,7 @@ def main() -> None:
         return (time.time() - t0) * 1000, out[start:]
 
     t_start = time.time()
-    space, keys = [], []
+    space, keys, ok = [], [], 0
     for it in items:
         r = kata_to_hira(it["input"])
         for n in range(1, len(r) + 1):
@@ -63,12 +63,13 @@ def main() -> None:
             s = line.decode("utf-8", "replace")
             if s.startswith("  0/"):
                 top += s.split(" ", 3)[-1].strip()
+        ok += top in it["expected_output"]
         print(f"{time.time() - t_start:5.1f}s  Space {ms:5.0f} ms  {r[:14]:<14} {top[:24]}")
     p.stdin.close()
     space.sort()
     keys.sort()
     print(f"Space: 中央値 {space[len(space) // 2]:.0f} ms、最大 {space[-1]:.0f} ms / "
-          f"入力中の候補: 最大 {keys[-1]:.0f} ms")
+          f"入力中の候補: 最大 {keys[-1]:.0f} ms / 正解 {ok}/{len(items)}")
 
 
 if __name__ == "__main__":
