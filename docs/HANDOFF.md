@@ -18,9 +18,10 @@
 | --- | --- |
 | 名前・識別子(カード 21) | 完了 |
 | AI の変換(docs/adr/0013〜0023) | 完了。zenz の生成と TinySwallow-1.5B の採点、入力中の予測と Tab、設定画面、LLM の重み |
-| 負荷と待ち時間(docs/adr/0024〜0029、カード 23〜28) | 完了。GPU の稼働率 68.6% → 46.6%。ノート PC で固まらない(内蔵 GPU を使わない、時間の上限、先回りの変換、待ちの解消)。新しい Low。予測キャッシュの設定の区切り、AI の状態の表示、生成した文の文節分け、ユーザー辞書の保護、ハイコントラスト |
+| 負荷と待ち時間(docs/adr/0024〜0032、カード 23〜31・34) | 完了。GPU の稼働率 68.6% → 46.6%、VRAM 1.66 → 1.49 GB(Standard)。ノート PC で固まらない(内蔵 GPU を使わない、時間の上限、先回りの変換、待ちの解消)。新しい Low。予測キャッシュの設定の区切り、AI の状態の表示、生成した文の文節分け、ユーザー辞書の保護、ハイコントラスト、予測の外れ候補の削減、Unreal の見直し(High + zenz-medium) |
 | 評価の基盤 | 最終評価用のセット `kotori-heldout`(300 問、調整に使わない)、評価器の失敗の検出と実行条件の記録、予測の節約文字数と外れ候補、性能表(`docs/PERFORMANCE.md`)、単体テストを CI で |
-| 配布 | GitHub Releases の `Kotori64.msi`(v0.3.0-beta.5 から、上書きインストールで入れ替わる) |
+| 配布 | GitHub Releases の `Kotori64.msi`。beta.5 は版の上げ方の誤りで上書きが効かなかったので、beta.6 で直した(カード 35)。公開後に `python mozc/tools/check_release.py` で版を確かめる |
+| CI | Mozc (Windows) は約 15〜20 分(キャッシュが当たるとき)。Bazel のキャッシュは main(リリースの実行)でだけ保存する。PR ごとに保存すると上限 10 GB を超えて Qt のキャッシュが消え、95 分かかる |
 | 実機での確認 | メンテナに頼んでいる(`docs/ACCEPTANCE.md`)。ノート PC、ダークモード・ハイコントラストの設定画面、上書きインストール |
 
 精度(前の文あり、Acc@1):
@@ -31,6 +32,7 @@
 | Low(GPU なしの PC) | 88.0% | 97.5% | 98.3% |
 | Standard(既定) | 91.5% | 97.5% | 96.3% |
 | High | 92.5% | 97.5% | 96.3% |
+| Unreal | 93.0% | 97.5% | — |
 
 ## 2. コードの地図
 
@@ -42,21 +44,22 @@
 | `.github/workflows/mozc-windows.yml` | MSI のビルドと単体テスト。手動で実行するとリリース |
 | `training/zenz`、`training/llm` | 同梱するモデル(zenz-v2.5 small・medium、TinySwallow-1.5B)の取得と変換 |
 | `docs/adr/` | 設計判断。0012 以降が Mozc 版、0001〜0011 は主に旧 Rust 版 |
-| `docs/` | `SPEC.md`(仕様。Mozc 版に合わせた改訂は未)、`ACCEPTANCE.md`(実機の確認表)、`PERFORMANCE.md`、`IMPROVEMENT_PROPOSALS.md`(改善案 15 件、多くは対応済み)、`licenses.md` |
+| `docs/` | `SPEC.md`(仕様。Mozc 版に合わせた改訂は PR #113 で承認待ち)、`ACCEPTANCE.md`(実機の確認表)、`PERFORMANCE.md`、`IMPROVEMENT_PROPOSALS.md`(改善案 15 件、多くは対応済み)、`licenses.md` |
 | `crates/`、`frontends/`、`justfile` | 旧 Rust 版(評価の基準として残す) |
 
 ## 3. メンテナの判断待ち・未決
 
 | 事項 | 内容 |
 | --- | --- |
-| SPEC の改訂 | `docs/SPEC.md` は旧 Rust 版の構成と数値のまま。Mozc 版に合わせる改訂は、承認付きの PR で行う |
+| SPEC の改訂 | 先頭に「0. Mozc 版での読み替え」と今の性能の目標値を足す案を PR #113 で出した。承認待ち(マージしない) |
 | 実機の結果 | ノート PC(内蔵 GPU)で Low が十分速いか。内蔵 GPU で zenz だけを動かす案(カード 32)はその結果で決める |
 | Google 日本語入力・Microsoft IME との比較 | 同じ条件で比べる手順を作ってから(`docs/IMPROVEMENT_PROPOSALS.md` の案 12) |
 
 ## 4. すぐにやること
 
 1. リリースした MSI を展開して確かめる(版、同梱物、設定画面)。実機の報告が来たら最優先で直す。
-2. `docs/tasks/README.md` の未着手のカード(29〜32)を番号順に。
+2. `docs/tasks/README.md` の未着手のカード。32(内蔵 GPU)は実機の結果待ち、33 は保留なので、新しい改善は
+   カードを書いてから(負荷・待ち時間・使い勝手。精度は Standard で AJIMEE 90% 以上を保つ)。
 
 ## 5. はまりどころ(このプロジェクトで実際に起きたこと)
 
