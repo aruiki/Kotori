@@ -19549,7 +19549,7 @@ index 7d735374e..3988c7598 100644
    //
    // Cloud (300-319)
 diff --git a/src/rewriter/BUILD.bazel b/src/rewriter/BUILD.bazel
-index 4bbcddeca..886ed0552 100644
+index 4bbcddeca..dcc3dcc69 100644
 --- a/src/rewriter/BUILD.bazel
 +++ b/src/rewriter/BUILD.bazel
 @@ -1536,6 +1536,7 @@ mozc_cc_library(
@@ -19560,7 +19560,7 @@ index 4bbcddeca..886ed0552 100644
          ":merger_rewriter",
          ":number_rewriter",
          ":remove_redundant_candidate_rewriter",
-@@ -1743,3 +1744,48 @@ mozc_cc_test(
+@@ -1743,3 +1744,58 @@ mozc_cc_test(
          "//testing:gunit_main",
      ],
  )
@@ -19581,6 +19581,16 @@ index 4bbcddeca..886ed0552 100644
 +        ":llama_runtime",
 +        "@com_google_absl//absl/strings",
 +        "@llama_cpp//:llama",
++    ],
++)
++
++mozc_cc_test(
++    name = "lm_rewriter_test",
++    size = "small",
++    srcs = ["lm_rewriter_test.cc"],
++    deps = [
++        ":lm_rewriter",
++        "//testing:gunit_main",
 +    ],
 +)
 +
@@ -19949,10 +19959,10 @@ index 000000000..cf2c801ea
 +#endif  // MOZC_REWRITER_LLAMA_RUNTIME_H_
 diff --git a/src/rewriter/lm_rewriter.cc b/src/rewriter/lm_rewriter.cc
 new file mode 100644
-index 000000000..ee977bfa3
+index 000000000..423484bf3
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.cc
-@@ -0,0 +1,1590 @@
+@@ -0,0 +1,1688 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/lm_rewriter.h"
@@ -19980,6 +19990,7 @@ index 000000000..ee977bfa3
 +#include "absl/container/flat_hash_map.h"
 +#include "absl/strings/match.h"
 +#include "absl/strings/str_cat.h"
++#include "absl/strings/str_join.h"
 +#include "absl/synchronization/mutex.h"
 +#include "base/file_util.h"
 +#include "base/system_util.h"
@@ -20212,10 +20223,12 @@ index 000000000..ee977bfa3
 +// (1 文字で読み 1〜6 文字)をたどり、両方の終わりに着けば合う。
 +// prefix_only なら、text の先頭部分で reading を使い切れば合うとする(予測の候補用。
 +// 「今日はいい天気」は読み「きょうはいいて」で始まる)。
-+bool MatchesReading(const dictionary::DictionaryInterface& dic,
-+                    const dictionary::SingleKanjiDictionary* single_kanji,
-+                    absl::string_view text, absl::string_view reading,
-+                    bool prefix_only = false) {
++// units を渡すと、合ったときの表記と読みの対応(辞書の語・かな・数字などの単位ごと)を入れる。
++bool MatchesReading(
++    const dictionary::DictionaryInterface& dic,
++    const dictionary::SingleKanjiDictionary* single_kanji,
++    absl::string_view text, absl::string_view reading, bool prefix_only = false,
++    std::vector<std::pair<std::string, std::string>>* units = nullptr) {
 +  const std::vector<std::string> t = Chars(text);
 +  const std::vector<std::string> r = Chars(reading);
 +  std::vector<size_t> r_off(r.size() + 1, 0);
@@ -20224,21 +20237,46 @@ index 000000000..ee977bfa3
 +  for (size_t i = t.size(); i-- > 0;) t_prefix[i] = t[i] + t_prefix[i + 1];
 +  std::vector<std::vector<bool>> seen(t.size() + 1,
 +                                      std::vector<bool>(r.size() + 1, false));
++  // 状態 (i, j) に来る前の状態(対応を取り出すため)。
++  std::vector<std::vector<std::pair<int, int>>> from(
++      t.size() + 1, std::vector<std::pair<int, int>>(r.size() + 1, {-1, -1}));
 +  std::vector<std::optional<PrefixCollector>> lookups(r.size());
 +  std::vector<std::optional<PrefixCollector>> reverse(t.size() + 1);
 +  absl::flat_hash_map<std::string, std::vector<std::string>> kanji_cache;
 +  std::vector<std::pair<size_t, size_t>> stack = {{0, 0}};
 +  seen[0][0] = true;
++  size_t ci = 0, cj = 0;  // 今たどっている状態(push が from に書く)
 +  auto push = [&](size_t i, size_t j) {
 +    if (i <= t.size() && j <= r.size() && !seen[i][j]) {
 +      seen[i][j] = true;
++      from[i][j] = {static_cast<int>(ci), static_cast<int>(cj)};
 +      stack.emplace_back(i, j);
 +    }
 +  };
 +  while (!stack.empty()) {
 +    const auto [i, j] = stack.back();
 +    stack.pop_back();
-+    if (i == t.size() && j == r.size()) return true;
++    ci = i;
++    cj = j;
++    if (i == t.size() && j == r.size()) {
++      if (units != nullptr) {
++        // 終わりから前の状態をたどり、単位ごとの表記と読みを取り出す。
++        units->clear();
++        size_t a = i, b = j;
++        while (a > 0 || b > 0) {
++          const auto [pa, pb] = from[a][b];
++          if (pa < 0) break;
++          std::string ut, ur;
++          for (size_t x = pa; x < a; ++x) ut += t[x];
++          for (size_t y = pb; y < b; ++y) ur += r[y];
++          units->emplace_back(std::move(ut), std::move(ur));
++          a = pa;
++          b = pb;
++        }
++        std::reverse(units->begin(), units->end());
++      }
++      return true;
++    }
 +    if (prefix_only && j == r.size()) return true;
 +    // 読みの残り(3 文字まで)が語の途中で終わる場合(「て」→「天気」)。text の続きの語を
 +    // 逆引きし(表記 → 読み)、その読みが残りの読みで始まれば合う。
@@ -20299,6 +20337,35 @@ index 000000000..ee977bfa3
 +    }
 +  }
 +  return false;
++}
++
++// 生成した文を、表記と読みの対応(MatchesReading の units)で文節に分ける(docs/adr/0027)。
++// ひらがなで終わる単位の後に、ひらがな以外(漢字・カタカナ・数字など)で始まる単位が来たら区切る
++// (「明日の|会議は|10時からです」)。文節は最大 max 個で、超えた分は最後の文節につなぐ。
++void SplitIntoSegmentsImpl(
++    const std::vector<std::pair<std::string, std::string>>& units, size_t max,
++    std::vector<std::string>* keys, std::vector<std::string>* values) {
++  auto is_hiragana = [](absl::string_view c) {
++    if (c.size() != 3 || static_cast<unsigned char>(c[0]) != 0xE3) return false;
++    const uint32_t cp =
++        ((c[0] & 0x0F) << 12) | ((c[1] & 0x3F) << 6) | (c[2] & 0x3F);
++    return cp >= 0x3041 && cp <= 0x309F;
++  };
++  keys->clear();
++  values->clear();
++  bool prev_hiragana = false;
++  for (const auto& [text, yomi] : units) {
++    const std::vector<std::string> chars = Chars(text);
++    if (chars.empty()) continue;
++    const bool starts_content = !is_hiragana(chars.front());
++    if (keys->empty() || (prev_hiragana && starts_content && keys->size() < max)) {
++      keys->emplace_back();
++      values->emplace_back();
++    }
++    keys->back() += yomi;
++    values->back() += text;
++    prev_hiragana = is_hiragana(chars.back());
++  }
 +}
 +
 +// 評価用: KOTORI_LM_CONTEXT_MAP に「読み<TAB>前の文」の行を書いたファイル(UTF-8)を渡すと、
@@ -20385,6 +20452,16 @@ index 000000000..ee977bfa3
 +
 +}  // namespace
 +
++namespace kotori_internal {
++
++void SplitIntoSegments(
++    const std::vector<std::pair<std::string, std::string>>& units, size_t max,
++    std::vector<std::string>* keys, std::vector<std::string>* values) {
++  SplitIntoSegmentsImpl(units, max, keys, values);
++}
++
++}  // namespace kotori_internal
++
 +LmRewriter::LmRewriter(const dictionary::DictionaryInterface* dictionary,
 +                       const dictionary::SingleKanjiDictionary* single_kanji)
 +    : dictionary_(dictionary), single_kanji_(single_kanji) {
@@ -20441,6 +20518,7 @@ index 000000000..ee977bfa3
 +  if (const char* v = Env("KOTORI_LM_BUDGET")) budget_ms_ = std::atoi(v);
 +  if (const char* v = Env("KOTORI_LM_PRECONVERT")) preconvert_ = *v != '0';
 +  if (const char* v = Env("KOTORI_LM_TAB_BUDGET")) tab_budget_ms_ = std::atoi(v);
++  if (const char* v = Env("KOTORI_LM_SPLIT")) split_generated_ = *v != '0';
 +  // モデルの読み込みと、入力中のサジェストに出す予測を裏で行うスレッド。
 +  worker_ = std::thread([this] { WorkerLoop(); });
 +  // 今の設定のモデルを裏で読み込んでおく(最初の変換で 1 秒以上待たないため)。
@@ -20689,6 +20767,12 @@ index 000000000..ee977bfa3
 +    values.push_back(c.value);
 +    if (cands.size() >= max_sentences_) break;
 +  }
++  // ユーザー辞書の語を含む文が Mozc の 1 位なら、利用者が登録した表記を AI で変えない
++  // (docs/adr/0027、改善案 07)。
++  if (!cands.empty() && cands.front() != nullptr &&
++      (cands.front()->attributes & converter::Attribute::USER_DICTIONARY)) {
++    return std::nullopt;
++  }
 +  // ラティスの 1 位のひらがなの数。生成した文がこれより 4 文字以上多ければ、読みを漢字に変えずに
 +  // 写しただけとみなして除く(zenz は読みを写した文を高く採点することがある)。
 +  const size_t lattice_kana =
@@ -20791,9 +20875,25 @@ index 000000000..ee977bfa3
 +
 +  Best best{reading, context, {}, {}};
 +  if (cands[top] == nullptr) {
-+    // 生成した文は区切りを持たないので、全体を 1 つの文節にする。
-+    best.keys.push_back(reading);
-+    best.values.push_back(values[top]);
++    // 生成した文は区切りを持たないので、表記と読みの対応で文節に分ける(一語だけ直しやすく
++    // するため)。対応が取れないときや分割を切ったときは、全体を 1 つの文節にする。
++    std::vector<std::pair<std::string, std::string>> units;
++    if (split_generated_ && dictionary_ != nullptr &&
++        MatchesReading(*dictionary_, single_kanji_, values[top], reading, false,
++                       &units)) {
++      SplitIntoSegmentsImpl(units, ResizeSegmentsRequest().segment_sizes.size(),
++                            &best.keys, &best.values);
++      if (Env("KOTORI_LM_DEBUG") != nullptr) {
++        for (const auto& [ut, ur] : units) {
++          std::fprintf(stderr, "[kotori] unit %s/%s\n", ut.c_str(), ur.c_str());
++        }
++      }
++    }
++    if (best.keys.empty() || absl::StrJoin(best.keys, "") != reading ||
++        absl::StrJoin(best.values, "") != values[top]) {
++      best.keys = {reading};
++      best.values = {values[top]};
++    }
 +  } else {
 +    for (const auto& inner : cands[top]->inner_segments()) {
 +      best.keys.emplace_back(inner.GetKey());
@@ -20845,6 +20945,10 @@ index 000000000..ee977bfa3
 +    if (seg.candidates_size() == 0 || seg.candidate(0).value == value) {
 +      continue;
 +    }
++    // ユーザー辞書の語は置き換えない。
++    if (seg.candidate(0).attributes & converter::Attribute::USER_DICTIONARY) {
++      continue;
++    }
 +    int found = -1;
 +    for (size_t j = 1; j < seg.candidates_size(); ++j) {
 +      if (seg.candidate(j).value == value) {
@@ -20880,7 +20984,11 @@ index 000000000..ee977bfa3
 +    Segment& seg = *segments->mutable_conversion_segment(s);
 +    const size_t n = std::min(seg.candidates_size(), k);
 +    if (BudgetMs() > 0 && std::chrono::steady_clock::now() > deadline) break;
-+    if (n >= 2 && !seg.key().empty()) {
++    // ユーザー辞書の語が 1 位の文節は並べ替えない。
++    const bool user_top =
++        seg.candidates_size() > 0 &&
++        (seg.candidate(0).attributes & converter::Attribute::USER_DICTIONARY);
++    if (n >= 2 && !seg.key().empty() && !user_top) {
 +      // 読みと候補の後ろに、残りの文節の読みと第 1 候補をつなぐ。「はが」だけでは
 +      // 葉/歯を決められないが、「はがいたい」なら決められる。
 +      std::string reading(seg.key());
@@ -21545,10 +21653,10 @@ index 000000000..ee977bfa3
 +}  // namespace mozc
 diff --git a/src/rewriter/lm_rewriter.h b/src/rewriter/lm_rewriter.h
 new file mode 100644
-index 000000000..15ff3672d
+index 000000000..3c921cc76
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.h
-@@ -0,0 +1,270 @@
+@@ -0,0 +1,284 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
 +// Kotori: AI による変換(docs/adr/0013、0015、0016)。
@@ -21566,6 +21674,7 @@ index 000000000..15ff3672d
 +#include <condition_variable>
 +#include <deque>
 +#include <mutex>
++#include <utility>
 +#include <vector>
 +
 +#include "absl/base/thread_annotations.h"
@@ -21579,6 +21688,17 @@ index 000000000..15ff3672d
 +#include "rewriter/zenz_scorer.h"
 +
 +namespace mozc {
++
++namespace kotori_internal {
++
++// 生成した文を、表記と読みの対応(単位ごと)で文節に分ける(docs/adr/0027)。ひらがなで終わる単位の
++// 後に、ひらがな以外で始まる単位が来たら区切る。文節は最大 max 個で、超えた分は最後の文節につなぐ。
++// テストのために公開している。
++void SplitIntoSegments(
++    const std::vector<std::pair<std::string, std::string>>& units, size_t max,
++    std::vector<std::string>* keys, std::vector<std::string>* values);
++
++}  // namespace kotori_internal
 +
 +// 2 段で変換を選ぶ。
 +//
@@ -21773,6 +21893,8 @@ index 000000000..15ff3672d
 +  int preconvert_delay_ms_ = 120;
 +  // キャッシュのない Tab で、その場で予測を作る時間の上限(ms、KOTORI_LM_TAB_BUDGET。0 なら上限なし)。
 +  int tab_budget_ms_ = 700;
++  // 生成した文を文節に分けるか(KOTORI_LM_SPLIT。docs/adr/0027)。
++  bool split_generated_ = true;
 +  // 先回りの変換の結果。
 +  mutable std::optional<Generated> gen_cache_ ABSL_GUARDED_BY(mutex_);
 +  // 裏で計算中の先回りの変換と、変換の要求が来ている読み(読み + TAB + 前の文)。job_mu_ で守る。
@@ -21819,6 +21941,65 @@ index 000000000..15ff3672d
 +}  // namespace mozc
 +
 +#endif  // MOZC_REWRITER_LM_REWRITER_H_
+diff --git a/src/rewriter/lm_rewriter_test.cc b/src/rewriter/lm_rewriter_test.cc
+new file mode 100644
+index 000000000..e5cd343cc
+--- /dev/null
++++ b/src/rewriter/lm_rewriter_test.cc
+@@ -0,0 +1,53 @@
++// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
++
++#include "rewriter/lm_rewriter.h"
++
++#include <string>
++#include <utility>
++#include <vector>
++
++#include "testing/gunit.h"
++
++namespace mozc {
++namespace {
++
++using Units = std::vector<std::pair<std::string, std::string>>;
++
++TEST(LmRewriterSplitTest, SplitsBeforeContentAfterHiragana) {
++  const Units units = {{"明日", "あした"}, {"の", "の"},     {"会議", "かいぎ"},
++                       {"は", "は"},       {"10", "じゅう"}, {"時", "じ"},
++                       {"から", "から"},   {"です", "です"}};
++  std::vector<std::string> keys, values;
++  kotori_internal::SplitIntoSegments(units, 8, &keys, &values);
++  EXPECT_EQ(keys, (std::vector<std::string>{"あしたの", "かいぎは",
++                                            "じゅうじからです"}));
++  EXPECT_EQ(values, (std::vector<std::string>{"明日の", "会議は", "10時からです"}));
++}
++
++TEST(LmRewriterSplitTest, KeepsConsecutiveContentTogether) {
++  // 漢字の後に漢字が続くとき(ひらがなで終わっていない)は区切らない。
++  const Units units = {{"東京", "とうきょう"}, {"特許", "とっきょ"}, {"が", "が"}};
++  std::vector<std::string> keys, values;
++  kotori_internal::SplitIntoSegments(units, 8, &keys, &values);
++  EXPECT_EQ(values, (std::vector<std::string>{"東京特許が"}));
++  EXPECT_EQ(keys, (std::vector<std::string>{"とうきょうとっきょが"}));
++}
++
++TEST(LmRewriterSplitTest, JoinsOverflowIntoLastSegment) {
++  const Units units = {{"本", "ほん"}, {"を", "を"}, {"机", "つくえ"},
++                       {"に", "に"},   {"彼", "かれ"}, {"が", "が"}};
++  std::vector<std::string> keys, values;
++  kotori_internal::SplitIntoSegments(units, 2, &keys, &values);
++  EXPECT_EQ(values, (std::vector<std::string>{"本を", "机に彼が"}));
++  EXPECT_EQ(keys, (std::vector<std::string>{"ほんを", "つくえにかれが"}));
++}
++
++TEST(LmRewriterSplitTest, EmptyUnits) {
++  std::vector<std::string> keys, values;
++  kotori_internal::SplitIntoSegments({}, 8, &keys, &values);
++  EXPECT_TRUE(keys.empty());
++  EXPECT_TRUE(values.empty());
++}
++
++}  // namespace
++}  // namespace mozc
 diff --git a/src/rewriter/rewriter.cc b/src/rewriter/rewriter.cc
 index d92e814fd..792ecb2c2 100644
 --- a/src/rewriter/rewriter.cc
