@@ -19887,10 +19887,10 @@ index 000000000..9d46ce41a
 +#endif  // MOZC_REWRITER_LLAMA_RUNTIME_H_
 diff --git a/src/rewriter/lm_rewriter.cc b/src/rewriter/lm_rewriter.cc
 new file mode 100644
-index 000000000..9df449b64
+index 000000000..14d2823ef
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.cc
-@@ -0,0 +1,1516 @@
+@@ -0,0 +1,1551 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/lm_rewriter.h"
@@ -19917,6 +19917,7 @@ index 000000000..9df449b64
 +
 +#include "absl/container/flat_hash_map.h"
 +#include "absl/strings/match.h"
++#include "absl/strings/str_cat.h"
 +#include "absl/synchronization/mutex.h"
 +#include "base/file_util.h"
 +#include "base/system_util.h"
@@ -20377,6 +20378,7 @@ index 000000000..9df449b64
 +  if (const char* v = Env("KOTORI_MODEL_DIR")) model_dir_ = v;
 +  if (const char* v = Env("KOTORI_LM_BUDGET")) budget_ms_ = std::atoi(v);
 +  if (const char* v = Env("KOTORI_LM_PRECONVERT")) preconvert_ = *v != '0';
++  if (const char* v = Env("KOTORI_LM_TAB_BUDGET")) tab_budget_ms_ = std::atoi(v);
 +  // モデルの読み込みと、入力中のサジェストに出す予測を裏で行うスレッド。
 +  worker_ = std::thread([this] { WorkerLoop(); });
 +  // 今の設定のモデルを裏で読み込んでおく(最初の変換で 1 秒以上待たないため)。
@@ -20491,6 +20493,21 @@ index 000000000..9df449b64
 +    *llm = llm_.get();
 +  }
 +  return scorer_.get();
++}
++
++std::string LmRewriter::CacheKey(const config::Config& config,
++                                 const std::string& context) const {
++  // 予測の結果を変える設定(品質、AI モデル、LLM のファイル)。違う設定で作った予測は使わない
++  // (docs/IMPROVEMENT_PROPOSALS.md の案 04)。
++  return absl::StrCat(static_cast<int>(config.kotori_lm_quality()), ",",
++                      static_cast<int>(config.kotori_lm_model()), ",",
++                      config.kotori_lm_model_path(), "\x1f", context);
++}
++
++void LmRewriter::ClearPredictions() const {
++  std::lock_guard<std::mutex> lock(job_mu_);
++  cache_.clear();
++  if (job_ && !job_->convert) job_.reset();
 +}
 +
 +bool LmRewriter::HasGpu() const {
@@ -20836,7 +20853,7 @@ index 000000000..9df449b64
 +std::vector<LmRewriter::Prediction> LmRewriter::ComputePredictions(
 +    const config::Config& config, const std::string& reading,
 +    const std::string& context, std::string* conv_out, bool background,
-+    bool light) const {
++    bool light, std::chrono::steady_clock::time_point deadline) const {
 +  std::vector<Prediction> preds;
 +  size_t k = 0, llm_top = 0;
 +  int beams = 0;
@@ -20847,13 +20864,15 @@ index 000000000..9df449b64
 +  // 裏で計算しているときは、変換の要求が来たらすぐやめる。light なら打鍵に間に合うよう
 +  // 軽くする(続きは 2 件・6 トークン、辞書の語を試す段は省く)。重い計算(作り直し)は
 +  // 次の打鍵が来てもやめる。軽い計算は最後までして、次の打鍵の候補に使う。
++  const bool timed = deadline != std::chrono::steady_clock::time_point::max();
 +  auto yield = [&] {
++    if (timed && std::chrono::steady_clock::now() > deadline) return true;
 +    return background && (urgent_.load() > 0 || stop_.load() ||
 +                          (!light && new_job_.load()));
 +  };
 +  // 生成の途中(1 トークンごと)でもやめられるようにする。
-+  CancelScope cancel_scope(background ? std::function<bool()>(yield)
-+                                      : std::function<bool()>());
++  CancelScope cancel_scope(background || timed ? std::function<bool()>(yield)
++                                               : std::function<bool()>());
 +  const int mode = light ? (predict_mode_ & 3) : predict_mode_;
 +  const int n_beams = light ? light_beams_ : predict_beams_;
 +  // 打ちかけを除いた変換の続きの数。GPU(Vulkan)は 1 回に 3 トークン以上を渡すと 2 トークンの
@@ -21089,20 +21108,30 @@ index 000000000..9df449b64
 +                                   Segments* segments) const {
 +  if (!predict_ || segments->conversion_segments_size() != 1) return false;
 +  if (!request.config().kotori_lm_predict()) return false;
++  // シークレットモードでは AI の予測を作らず、覚えておいた予測も使わない。
++  if (request.incognito_mode()) return false;
 +  Segment& seg = *segments->mutable_conversion_segment(0);
 +  const std::string reading(seg.key());
 +  const size_t len = Util::CharsLen(reading);
 +  if (len < 2 || len > kMaxPredictChars) return false;
 +  const auto t0 = std::chrono::steady_clock::now();
 +  const std::string context = HistoryContext(request, *segments);
++  const std::string key = CacheKey(request.config(), context);
 +  std::string conv;
 +  // 入力中の候補のために裏で計算した予測があれば使う(Tab を待たせない)。なければ計算する。
-+  std::vector<Prediction> preds = CachedPredictions(reading, context, 6);
++  // その場の計算には時間の上限を設け、超えたら Mozc の予測だけを出す(案 03)。
++  std::vector<Prediction> preds = CachedPredictions(reading, key, 6);
 +  const bool from_cache = !preds.empty();
 +  if (!from_cache) {
++    const auto deadline = tab_budget_ms_ > 0
++                              ? t0 + std::chrono::milliseconds(tab_budget_ms_)
++                              : std::chrono::steady_clock::time_point::max();
 +    preds = ComputePredictions(request.config(), reading, context, &conv, false,
-+                               false);
-+    StorePredictions(reading, context, preds);
++                               false, deadline);
++    if (tab_budget_ms_ > 0 && std::chrono::steady_clock::now() > deadline) {
++      return false;  // 途中でやめた予測は出さず、覚えない
++    }
++    StorePredictions(reading, key, preds);
 +  }
 +  size_t k = 0, llm_top = 0;
 +  int beams = 0;
@@ -21204,7 +21233,11 @@ index 000000000..9df449b64
 +                                   Segments* segments) const {
 +  if (segments->conversion_segments_size() != 1) return false;
 +  const config::Config& config = request.config();
-+  if (!config.kotori_lm_enabled()) return false;
++  // AI を切ったとき・シークレットモードでは、覚えておいた予測を捨て、新しく作らない(案 04)。
++  if (!config.kotori_lm_enabled() || request.incognito_mode()) {
++    ClearPredictions();
++    return false;
++  }
 +  Segment& seg = *segments->mutable_conversion_segment(0);
 +  const std::string reading(seg.key());
 +  const std::vector<std::string> rchars = Chars(reading);
@@ -21214,6 +21247,7 @@ index 000000000..9df449b64
 +  // LLM の予測を使わない(GPU がない、など)ときは、今の読みの変換を裏で先に済ませておく
 +  // (先回りの変換。Space で待たせないため。docs/adr/0024)。
 +  if (!(predict_ && config.kotori_lm_predict() && UsesLlm(config))) {
++    ClearPredictions();
 +    if (preconvert_ && rchars.size() <= kMaxGenerateChars) {
 +      std::lock_guard<std::mutex> lock(job_mu_);
 +      job_ = Job{reading, context, config, true};
@@ -21223,8 +21257,9 @@ index 000000000..9df449b64
 +    return false;
 +  }
 +  // 1. 計算済みの予測のうち、今の読みに合うものを出す(読みの長いものから)。
++  const std::string key = CacheKey(config, context);
 +  std::vector<std::string> texts;
-+  for (const Prediction& p : CachedPredictions(reading, context, suggest_count_)) {
++  for (const Prediction& p : CachedPredictions(reading, key, suggest_count_)) {
 +    texts.push_back(p.text);
 +  }
 +  // 2. 今の読みの予測を裏で計算させる(待たない)。長い読みは計算しない。
@@ -21232,7 +21267,7 @@ index 000000000..9df449b64
 +    std::lock_guard<std::mutex> lock(job_mu_);
 +    bool cached = false;
 +    for (const Entry& e : cache_) {
-+      cached = cached || (e.reading == reading && e.context == context);
++      cached = cached || (e.reading == reading && e.context == key);
 +    }
 +    if (!cached) {
 +      job_ = Job{reading, context, config};
@@ -21367,7 +21402,7 @@ index 000000000..9df449b64
 +                     interrupted(light) ? " (interrupted)" : "");
 +      }
 +      if (interrupted(light)) break;
-+      StorePredictions(job.reading, job.context, preds);
++      StorePredictions(job.reading, CacheKey(job.config, job.context), preds);
 +    }
 +  }
 +}
@@ -21409,10 +21444,10 @@ index 000000000..9df449b64
 +}  // namespace mozc
 diff --git a/src/rewriter/lm_rewriter.h b/src/rewriter/lm_rewriter.h
 new file mode 100644
-index 000000000..3b9359a45
+index 000000000..99eb12d8a
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.h
-@@ -0,0 +1,256 @@
+@@ -0,0 +1,266 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
 +// Kotori: AI による変換(docs/adr/0013、0015、0016)。
@@ -21529,7 +21564,7 @@ index 000000000..3b9359a45
 +  };
 +  struct Entry {
 +    std::string reading;
-+    std::string context;
++    std::string context;  // CacheKey(設定の署名 + 前の文)
 +    std::vector<Prediction> preds;
 +  };
 +  struct Job {
@@ -21547,6 +21582,11 @@ index 000000000..3b9359a45
 +  };
 +  // 先回りの変換: 打つ手が止まったら、今の読みを zenz で生成しておく(docs/adr/0024)。
 +  void RunPreconvert(const Job& job);
++  // 予測のキャッシュのキー(予測を変える設定の署名 + 前の文)。
++  std::string CacheKey(const config::Config& config,
++                       const std::string& context) const;
++  // 覚えておいた予測と、まだ始めていない予測の仕事を捨てる。
++  void ClearPredictions() const;
 +  // AI を載せる GPU があるか。
 +  bool HasGpu() const;
 +  // この設定で LLM を使うか(GPU があり、AI モデルが zenz のみでない)。
@@ -21559,7 +21599,10 @@ index 000000000..3b9359a45
 +                                             const std::string& reading,
 +                                             const std::string& context,
 +                                             std::string* conv_out,
-+                                             bool background, bool light) const
++                                             bool background, bool light,
++                                             std::chrono::steady_clock::time_point
++                                                 deadline = std::chrono::steady_clock::
++                                                     time_point::max()) const
 +      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 +  // 計算済みの予測のうち、読み reading に合うものを最大 max 件(読みの長い計算から)。
 +  std::vector<Prediction> CachedPredictions(const std::string& reading,
@@ -21623,6 +21666,8 @@ index 000000000..3b9359a45
 +  // 先回りの変換(KOTORI_LM_PRECONVERT)と、打つ手が止まってから始めるまでの時間。
 +  bool preconvert_ = true;
 +  int preconvert_delay_ms_ = 120;
++  // キャッシュのない Tab で、その場で予測を作る時間の上限(ms、KOTORI_LM_TAB_BUDGET。0 なら上限なし)。
++  int tab_budget_ms_ = 700;
 +  // 先回りの変換の結果。
 +  mutable std::optional<Generated> gen_cache_ ABSL_GUARDED_BY(mutex_);
 +  // 裏で計算中の先回りの変換と、変換の要求が来ている読み(読み + TAB + 前の文)。job_mu_ で守る。
