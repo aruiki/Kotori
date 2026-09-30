@@ -21740,10 +21740,10 @@ index 000000000..a433d9ac1
 +}  // namespace mozc
 diff --git a/src/rewriter/lm_rewriter.h b/src/rewriter/lm_rewriter.h
 new file mode 100644
-index 000000000..0489495ba
+index 000000000..4a2c6cdcc
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.h
-@@ -0,0 +1,288 @@
+@@ -0,0 +1,285 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
 +// Kotori: AI による変換(docs/adr/0013、0015、0016)。
@@ -21800,16 +21800,12 @@ index 000000000..0489495ba
 +// zenz-v2.5-small-q8_0.gguf、LLM は設定のパス → KOTORI_LLM_MODEL → 同梱の
 +// tinyswallow-1.5b-q5_k_m.gguf(mozc_server と同じフォルダ)。
 +//
-+// 環境変数(評価と調整用):
++// 環境変数(評価と調整用)の一覧は Kotori のリポジトリの mozc/README.md にある。主なもの:
 +//   KOTORI_ZENZ_MODEL / KOTORI_LLM_MODEL  モデルのパス
 +//   KOTORI_MODEL_DIR / KOTORI_RUNTIME_DIR  モデルと llama.cpp の DLL のフォルダ
-+//   KOTORI_LM_K          文節ごとに並べ替える候補の数(0 で無効)
-+//   KOTORI_LM_BEAMS      zenz で生成する文の数(0 で生成しない)
-+//   KOTORI_LM_SENTENCE   0 で文全体の選択を切る
-+//   KOTORI_LM_WEIGHTS    "λ_zenz,λ_lattice,T"(既定 "1,1,1000")
-+//   KOTORI_LM_LLM_WEIGHT LLM の重み(既定 1)
-+//   KOTORI_LM_THREADS    推論のスレッド数(既定 4)
-+//   KOTORI_LM_PRECEDING / KOTORI_LM_CONTEXT_MAP  左の文脈を差し替える(評価用)
++//   KOTORI_LM_BEAMS / KOTORI_LM_LLM_TOP / KOTORI_LM_K  品質の中身(生成の数、LLM で採点する数、並べ替える数)
++//   KOTORI_LM_DEVICE=cpu  GPU を使わない(ノート PC の再現)
++//   KOTORI_LM_PRELOAD=0   要求の中でモデルを読み込む(評価)
 +class LmRewriter : public RewriterInterface {
 + public:
 +  // dictionary は生成した文が読みに合うかを確かめるのに使う(nullptr なら確かめない)。
@@ -21817,8 +21813,9 @@ index 000000000..0489495ba
 +             const dictionary::SingleKanjiDictionary* single_kanji);
 +  ~LmRewriter() override;
 +
-+  // 変換(スペース)と、Tab などで明示的に出す予測(PREDICTION)。入力中に毎回出る
-+  // サジェスト(SUGGESTION)では動かない(入力を重くしないため)。
++  // 変換(スペース)、Tab などで明示的に出す予測(PREDICTION)、入力中の候補(SUGGESTION)。
++  // SUGGESTION では計算せず、裏で作った予測を出し、今の読みの計算を裏のスレッドに頼むだけ
++  // (docs/adr/0019、0024)。
 +  int capability(const ConversionRequest& request) const override {
 +    return CONVERSION | PREDICTION | SUGGESTION;
 +  }
