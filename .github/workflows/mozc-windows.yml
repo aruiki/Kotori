@@ -137,8 +137,9 @@ jobs:
         working-directory: .\mozc-src\src
         run: if exist third_party\qt_src rmdir third_party\qt_src /s /q
       # Bazel の結果を使い回し、パッチを変えたときは変わったところだけ作り直す。
-      # 毎回新しい鍵で保存し、読むときは同じ Mozc のコミットの最新のものを使う。
-      - uses: actions/cache@v4
+      # 読むときは同じ Mozc のコミットの最新のものを使う。保存は main でだけ行う(1 回 2.7 GB あり、
+      # PR ごとに保存するとキャッシュの上限 10 GB を超えて Qt や main のキャッシュが消え、ビルドが 90 分近くになる)。
+      - uses: actions/cache/restore@v4
         with:
           path: D:\bazel-disk-cache
           key: mozc-bazel-${{ runner.os }}-${{ env.MOZC_COMMIT }}-${{ github.run_id }}
@@ -157,6 +158,11 @@ jobs:
         env:
           ANDROID_NDK_HOME: ""
         run: bazelisk test //rewriter:lm_rewriter_test --config release_build --disk_cache=D:\bazel-disk-cache
+      - if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: D:\bazel-disk-cache
+          key: mozc-bazel-${{ runner.os }}-${{ env.MOZC_COMMIT }}-${{ github.run_id }}
       # パッチで名前を Kotori にしたので、ファイル名も合わせる(docs/adr/0012 の段階 2)。
       - name: インストーラの名前を変える
         shell: pwsh
