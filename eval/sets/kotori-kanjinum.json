@@ -1,0 +1,240 @@
+[
+ {
+  "index": "k01",
+  "context_text": "",
+  "input": "いっせきにちょうをねらう",
+  "expected_output": [
+   "一石二鳥を狙う"
+  ]
+ },
+ {
+  "index": "k02",
+  "context_text": "",
+  "input": "みっかぼうずでおわった",
+  "expected_output": [
+   "三日坊主で終わった"
+  ]
+ },
+ {
+  "index": "k03",
+  "context_text": "",
+  "input": "じゅうにんといろのかんがえかた",
+  "expected_output": [
+   "十人十色の考え方"
+  ]
+ },
+ {
+  "index": "k04",
+  "context_text": "",
+  "input": "ななころびやおきのせいしん",
+  "expected_output": [
+   "七転び八起きの精神"
+  ]
+ },
+ {
+  "index": "k05",
+  "context_text": "",
+  "input": "やおやでやさいをかった",
+  "expected_output": [
+   "八百屋で野菜を買った"
+  ]
+ },
+ {
+  "index": "k06",
+  "context_text": "",
+  "input": "よじじゅくごをおぼえる",
+  "expected_output": [
+   "四字熟語を覚える"
+  ]
+ },
+ {
+  "index": "k07",
+  "context_text": "",
+  "input": "ににんさんきゃくできょうりょくする",
+  "expected_output": [
+   "二人三脚で協力する"
+  ]
+ },
+ {
+  "index": "k08",
+  "context_text": "",
+  "input": "いちにんまえのしょくにんになる",
+  "expected_output": [
+   "一人前の職人になる"
+  ]
+ },
+ {
+  "index": "k09",
+  "context_text": "",
+  "input": "ごじゅっぽひゃっぽのちがい",
+  "expected_output": [
+   "五十歩百歩の違い"
+  ]
+ },
+ {
+  "index": "k10",
+  "context_text": "",
+  "input": "せんりのみちもいっぽから",
+  "expected_output": [
+   "千里の道も一歩から"
+  ]
+ },
+ {
+  "index": "k11",
+  "context_text": "",
+  "input": "はっぽうびじんなたいど",
+  "expected_output": [
+   "八方美人な態度"
+  ]
+ },
+ {
+  "index": "k12",
+  "context_text": "",
+  "input": "くじゅうくりはまにいった",
+  "expected_output": [
+   "九十九里浜に行った"
+  ]
+ },
+ {
+  "index": "k13",
+  "context_text": "",
+  "input": "いっしょうけんめいがんばる",
+  "expected_output": [
+   "一生懸命頑張る",
+   "一生懸命がんばる"
+  ]
+ },
+ {
+  "index": "k14",
+  "context_text": "",
+  "input": "さんみいったいのかいかく",
+  "expected_output": [
+   "三位一体の改革"
+  ]
+ },
+ {
+  "index": "k15",
+  "context_text": "",
+  "input": "しくはっくしてかんせいした",
+  "expected_output": [
+   "四苦八苦して完成した"
+  ]
+ },
+ {
+  "index": "k16",
+  "context_text": "",
+  "input": "ひゃくぶんはいっけんにしかず",
+  "expected_output": [
+   "百聞は一見にしかず",
+   "百聞は一見に如かず"
+  ]
+ },
+ {
+  "index": "k17",
+  "context_text": "",
+  "input": "いちごいちえのであい",
+  "expected_output": [
+   "一期一会の出会い"
+  ]
+ },
+ {
+  "index": "k18",
+  "context_text": "",
+  "input": "じゅうにしのうまれどし",
+  "expected_output": [
+   "十二支の生まれ年"
+  ]
+ },
+ {
+  "index": "k19",
+  "context_text": "",
+  "input": "ななふしぎのひとつ",
+  "expected_output": [
+   "七不思議の一つ",
+   "七不思議のひとつ"
+  ]
+ },
+ {
+  "index": "k20",
+  "context_text": "",
+  "input": "さんさんごごかえっていった",
+  "expected_output": [
+   "三々五々帰っていった",
+   "三三五五帰っていった"
+  ]
+ },
+ {
+  "index": "k21",
+  "context_text": "",
+  "input": "せんさばんべつのいけん",
+  "expected_output": [
+   "千差万別の意見"
+  ]
+ },
+ {
+  "index": "k22",
+  "context_text": "",
+  "input": "いちもくおかれるそんざい",
+  "expected_output": [
+   "一目置かれる存在"
+  ]
+ },
+ {
+  "index": "k23",
+  "context_text": "",
+  "input": "ごりむちゅうのじょうたい",
+  "expected_output": [
+   "五里霧中の状態"
+  ]
+ },
+ {
+  "index": "k24",
+  "context_text": "",
+  "input": "しちごさんのおいわい",
+  "expected_output": [
+   "七五三のお祝い"
+  ]
+ },
+ {
+  "index": "k25",
+  "context_text": "",
+  "input": "はちじゅうはちやのちゃつみ",
+  "expected_output": [
+   "八十八夜の茶摘み"
+  ]
+ },
+ {
+  "index": "k26",
+  "context_text": "",
+  "input": "ひとつぶでにどおいしい",
+  "expected_output": [
+   "一粒で二度おいしい",
+   "一粒で二度美味しい"
+  ]
+ },
+ {
+  "index": "k27",
+  "context_text": "",
+  "input": "いっちょういっせきにはできない",
+  "expected_output": [
+   "一朝一夕にはできない",
+   "一朝一夕には出来ない"
+  ]
+ },
+ {
+  "index": "k28",
+  "context_text": "",
+  "input": "しちてんはっとうのくるしみ",
+  "expected_output": [
+   "七転八倒の苦しみ"
+  ]
+ },
+ {
+  "index": "k29",
+  "context_text": "",
+  "input": "さんどめのしょうじき",
+  "expected_output": [
+   "三度目の正直"
+  ]
+ }
+]

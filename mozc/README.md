@@ -53,7 +53,7 @@ Windows で手元でビルドする: 作業ツリーの `src` で
 
 | ファイル | 何をするか |
 | --- | --- |
-| `eval_all.sh` | 品質 3 段階 × 評価セット 4 つ(AJIMEE・慣用句・ニュアンス・日常)の Acc@1 と、Mozc 単体より悪くなった問題 |
+| `eval_all.sh` | 品質 3 段階 × 評価セット 4 つ(AJIMEE・慣用句・ニュアンス・日常)の Acc@1 と、Mozc 単体より悪くなった問題。結果と実行条件は品質・セットごとに `$OUT` に残し、1 つでも失敗したら終了コード 1 |
 | `stress_test.py` | 負荷試験。いろいろな読み(1〜300 文字、記号・絵文字)で候補・変換・Tab を交互に送り、落ちないか・遅れないか |
 | `typing_test.py` | 打鍵の再現。1 文字ずつ入力中の候補を出し、AI の予測と応答時間を見る |
 | `cost_bench.py` | 入力中の AI の計算量。日常の文を打って変換し、AI の稼働率(計算の時間 / かかった時間)を出す(docs/adr/0024) |
@@ -65,6 +65,10 @@ Windows で手元でビルドする: 作業ツリーの `src` で
 | `dump_icons.py` | exe / dll に入っているアイコンを並べて見る |
 | `gen_icons.py`・`gen_assets.py`・`kotori_mark.py` | アイコン、インストーラの画像と使用許諾を作る |
 | `make_patches.sh` | 作業ツリーからパッチを作り直す |
+
+`eval_baseline.py` は、変換器の異常終了・出力不足・時間切れ(`--timeout`)で終了コード 1、`--min-acc` を下回ると 2 を返す。
+`--out` を付けると、結果の隣に実行条件(`<out>.manifest.json`: データ・変換器・モデルの SHA-256、KOTORI_ の環境変数、
+コミット、GPU)も残す。
 
 `converter_main` の場所は `KOTORI_CONVERTER_MAIN`、モデルと llama.cpp の DLL の場所は `KOTORI_INSTALL_DIR`
 (既定はインストール先)で変えられる。
