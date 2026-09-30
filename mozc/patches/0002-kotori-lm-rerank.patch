@@ -21058,7 +21058,7 @@ index 000000000..fa7fb7e70
 +}  // namespace mozc
 diff --git a/src/rewriter/lm_rewriter.h b/src/rewriter/lm_rewriter.h
 new file mode 100644
-index 000000000..4e3f64614
+index 000000000..23a1f2cee
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.h
 @@ -0,0 +1,206 @@
@@ -21252,7 +21252,7 @@ index 000000000..4e3f64614
 +  bool post_segment_ = false;
 +  bool right_context_ = true;
 +  double lambda_lm_ = 1.0;
-+  double lambda_llm_ = 1.0;
++  double lambda_llm_ = 0.7;
 +  // 生成した文(ラティスにない文)の点数から引く値。LLM なし / あり。
 +  double gen_penalty_ = 0.5;
 +  double gen_penalty_llm_ = 0.0;
