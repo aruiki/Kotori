@@ -20003,10 +20003,10 @@ index 000000000..cf2c801ea
 +#endif  // MOZC_REWRITER_LLAMA_RUNTIME_H_
 diff --git a/src/rewriter/lm_rewriter.cc b/src/rewriter/lm_rewriter.cc
 new file mode 100644
-index 000000000..a616011d1
+index 000000000..fe2aa79a6
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.cc
-@@ -0,0 +1,1782 @@
+@@ -0,0 +1,1787 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/lm_rewriter.h"
@@ -20575,6 +20575,9 @@ index 000000000..a616011d1
 +  if (const char* v = Env("KOTORI_LM_TAB_BUDGET")) tab_budget_ms_ = std::atoi(v);
 +  if (const char* v = Env("KOTORI_LM_SPLIT")) split_generated_ = *v != '0';
 +  if (const char* v = Env("KOTORI_LM_FILTER_JUNK")) filter_junk_ = *v != '0';
++  if (const char* v = Env("KOTORI_LM_MIN_CONTINUATION")) {
++    min_continuation_chars_ = std::atoi(v);
++  }
 +  // モデルの読み込みと、入力中のサジェストに出す予測を裏で行うスレッド。
 +  worker_ = std::thread([this] { WorkerLoop(); });
 +  // 今の設定のモデルを裏で読み込んでおく(最初の変換で 1 秒以上待たないため)。
@@ -21223,10 +21226,12 @@ index 000000000..a616011d1
 +  auto add = [&](const std::string& text, const std::string& base,
 +                 const std::string& covered) {
 +    if (text == conv || HasDigit(text)) return;
-+    if (filter_junk_ &&
-+        IsJunkPrediction(text, absl::string_view(text).substr(
-+                                   std::min(base.size(), text.size())),
-+                         reading)) {
++    const absl::string_view continuation =
++        absl::string_view(text).substr(std::min(base.size(), text.size()));
++    if (filter_junk_ && IsJunkPrediction(text, continuation, reading)) return;
++    // 続きが 1 文字以下(「かしこま」+「ら」)は、語の途中で切れていることが多く、打つ手間も減らない。
++    if (min_continuation_chars_ > 0 &&
++        Util::CharsLen(continuation) < static_cast<size_t>(min_continuation_chars_)) {
 +      return;
 +    }
 +    for (const Prediction& p : preds) {
@@ -21791,10 +21796,10 @@ index 000000000..a616011d1
 +}  // namespace mozc
 diff --git a/src/rewriter/lm_rewriter.h b/src/rewriter/lm_rewriter.h
 new file mode 100644
-index 000000000..581253b71
+index 000000000..17b51d27c
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.h
-@@ -0,0 +1,287 @@
+@@ -0,0 +1,289 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
 +// Kotori: AI による変換(docs/adr/0013、0015、0016)。
@@ -22032,6 +22037,8 @@ index 000000000..581253b71
 +  bool split_generated_ = true;
 +  // 入力の邪魔になるだけの予測を出さないか(KOTORI_LM_FILTER_JUNK。docs/adr/0030)。
 +  bool filter_junk_ = true;
++  // 予測の続きの最小の文字数(KOTORI_LM_MIN_CONTINUATION。0 なら制限なし。docs/adr/0030)。
++  int min_continuation_chars_ = 2;
 +  // 先回りの変換の結果。
 +  mutable std::optional<Generated> gen_cache_ ABSL_GUARDED_BY(mutex_);
 +  // 裏で計算中の先回りの変換と、変換の要求が来ている読み(読み + TAB + 前の文)。job_mu_ で守る。
