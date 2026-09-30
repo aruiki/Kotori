@@ -19137,7 +19137,7 @@ index b1af98c8a..ba118cd62 100644
    return name;
  }
 diff --git a/src/gui/config_dialog/config_dialog.cc b/src/gui/config_dialog/config_dialog.cc
-index abbf55d68..c42f413d9 100644
+index abbf55d68..3167b5923 100644
 --- a/src/gui/config_dialog/config_dialog.cc
 +++ b/src/gui/config_dialog/config_dialog.cc
 @@ -30,9 +30,24 @@
@@ -19385,8 +19385,8 @@ index abbf55d68..c42f413d9 100644
 +            "Space ですぐ出ます。正確さ 88.0%(AJIMEE-Bench)、日常の文 97.5%。",
 +            "GPU で 1 回 0.08 秒ほど。GPU のある PC におすすめです。正確さ 91.5%。",
 +            "候補を多く調べます。速い GPU 向け。1 回 0.12 秒ほど、正確さ 92.5%。",
-+            "High に大きな変換用 AI(zenz-v2.5-medium)を加えた設定。速い GPU 向け。"
-+            "正確さ 92.0%。",
++            "High に、大きな変換用 AI(zenz-v2.5-medium)による候補を加えた最高設定。"
++            "速い GPU 向け。1 回 0.26 秒ほど、正確さ 93.0%。",
 +        };
 +        if (q < 0) return;
 +        quality_note->setText(QString::fromUtf8(kText[std::min(q, 3)]));
@@ -20003,10 +20003,10 @@ index 000000000..cf2c801ea
 +#endif  // MOZC_REWRITER_LLAMA_RUNTIME_H_
 diff --git a/src/rewriter/lm_rewriter.cc b/src/rewriter/lm_rewriter.cc
 new file mode 100644
-index 000000000..fe2aa79a6
+index 000000000..f99bae165
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.cc
-@@ -0,0 +1,1787 @@
+@@ -0,0 +1,1820 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/lm_rewriter.h"
@@ -20159,6 +20159,7 @@ index 000000000..fe2aa79a6
 +  const char* model; // zenz のモデル(なければ同梱の small)
 +  int beams;         // zenz で生成する文の数
 +  size_t llm_top;    // LLM で採点する候補の数(zenz の点数の上位。0 なら LLM を使わない)
++  const char* extra = nullptr;  // 候補を増やすために生成にも使う 2 つ目の zenz(docs/adr/0031)
 +};
 +
 +Quality QualityOf(config::Config::KotoriLmQuality q) {
@@ -20170,7 +20171,8 @@ index 000000000..fe2aa79a6
 +    case config::Config::KOTORI_LM_HIGH:
 +      return {16, kDefaultModelName, 8, 32};
 +    case config::Config::KOTORI_LM_UNREAL:
-+      return {16, "zenz-v2.5-medium-q8_0.gguf", 8, 32};
++      // High の中身に、zenz-v2.5-medium による生成を足す(採点は small と LLM。docs/adr/0031)。
++      return {16, kDefaultModelName, 8, 32, "zenz-v2.5-medium-q8_0.gguf"};
 +    default:
 +      return {8, kDefaultModelName, 4, 4};
 +  }
@@ -20539,6 +20541,7 @@ index 000000000..fe2aa79a6
 +  }
 +  if (const char* v = Env("KOTORI_ZENZ_MODEL")) env_model_path_ = v;
 +  if (const char* v = Env("KOTORI_LLM_MODEL")) env_llm_path_ = v;
++  if (const char* v = Env("KOTORI_ZENZ_EXTRA_MODEL")) env_extra_path_ = v;
 +  if (const char* v = Env("KOTORI_LM_BEAMS")) beams_override_ = std::atoi(v);
 +  if (const char* v = Env("KOTORI_LM_PREDICT")) predict_ = *v != '0';
 +  if (const char* v = Env("KOTORI_LM_PREDICT_MODE")) predict_mode_ = std::atoi(v);
@@ -20709,6 +20712,25 @@ index 000000000..fe2aa79a6
 +    return nullptr;
 +  }
 +  EnsureLoaded(path);
++  // 2 つ目の zenz(Unreal、または評価用の KOTORI_ZENZ_EXTRA_MODEL)。ファイルがなければ使わない。
++  {
++    std::string extra = env_extra_path_;
++    if (extra.empty() && quality.extra != nullptr) {
++      extra = FileUtil::JoinPath(model_dir_, quality.extra);
++    }
++    if (!(extra_loaded_ && extra_path_ == extra)) {
++      if (!may_load && !extra.empty()) {
++        RequestLoad(config);
++      } else {
++        extra_loaded_ = true;
++        extra_path_ = extra;
++        extra_.reset();
++        if (!extra.empty() && FileUtil::FileExists(extra).ok()) {
++          extra_ = ZenzScorer::Open(extra, threads_, runtime_dir_);
++        }
++      }
++    }
++  }
 +  // LLM(文全体の採点に加える): AI モデルが LLM か、自動で GPU があるとき(docs/adr/0016)。
 +  // ファイルは設定のパス → KOTORI_LLM_MODEL → 同梱の LLM。
 +  // 変換で LLM を使うのは llm_top が 1 以上のとき(品質 Standard 以上)。Tab の予測(for_predict)
@@ -20852,15 +20874,26 @@ index 000000000..fe2aa79a6
 +  std::vector<std::string> generated;
 +  if (beams > 0 && Util::CharsLen(reading) <= kMaxGenerateChars) {
 +    if (gen_cache_ && gen_cache_->key == key && gen_cache_->beams == beams &&
-+        gen_cache_->model == loaded_path_) {
++        gen_cache_->model == loaded_path_ + "|" + extra_path_) {
 +      generated = gen_cache_->texts;  // 先回りの変換で作ったもの
 +    } else {
 +      {
 +        CancelScope cancel(gen_over);
 +        generated = scorer->Generate(context, reading, beams);
++        // 2 つ目の zenz(Unreal)でも生成し、候補を合わせる(docs/adr/0031)。
++        {
++          if (extra_ != nullptr && !gen_over()) {
++            for (std::string& g : extra_->Generate(context, reading, beams)) {
++              if (std::find(generated.begin(), generated.end(), g) ==
++                  generated.end()) {
++                generated.push_back(std::move(g));
++              }
++            }
++          }
++        }
 +      }
 +      // 裏の先回りの変換が同じ読みを作り直さないように残す(途中でやめたものは残さない)。
-+      if (!gen_over()) gen_cache_ = Generated{key, beams, loaded_path_, generated};
++      if (!gen_over()) gen_cache_ = Generated{key, beams, loaded_path_ + "|" + extra_path_, generated};
 +    }
 +  }
 +  {
@@ -21656,13 +21689,13 @@ index 000000000..fe2aa79a6
 +        PrepareFor(job.config, &k, &llm, &beams, &llm_top, false, true);
 +    if (scorer != nullptr && beams > 0 &&
 +        !(gen_cache_ && gen_cache_->key == key && gen_cache_->beams == beams &&
-+          gen_cache_->model == loaded_path_)) {
++          gen_cache_->model == loaded_path_ + "|" + extra_path_)) {
 +      std::vector<std::string> texts;
 +      {
 +        CancelScope cancel(cancelled);
 +        texts = scorer->Generate(job.context, job.reading, beams);
 +      }
-+      if (!cancelled()) gen_cache_ = Generated{key, beams, loaded_path_, texts};
++      if (!cancelled()) gen_cache_ = Generated{key, beams, loaded_path_ + "|" + extra_path_, texts};
 +    }
 +  }
 +  {
@@ -21796,10 +21829,10 @@ index 000000000..fe2aa79a6
 +}  // namespace mozc
 diff --git a/src/rewriter/lm_rewriter.h b/src/rewriter/lm_rewriter.h
 new file mode 100644
-index 000000000..17b51d27c
+index 000000000..4fb8a55fe
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.h
-@@ -0,0 +1,289 @@
+@@ -0,0 +1,294 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
 +// Kotori: AI による変換(docs/adr/0013、0015、0016)。
@@ -22005,6 +22038,11 @@ index 000000000..17b51d27c
 +  mutable std::string llm_path_ ABSL_GUARDED_BY(mutex_);
 +  mutable bool llm_loaded_ ABSL_GUARDED_BY(mutex_) = false;
 +  mutable std::unique_ptr<ZenzScorer> llm_ ABSL_GUARDED_BY(mutex_);
++  // 2 つ目の zenz(Unreal で候補を増やす。KOTORI_ZENZ_EXTRA_MODEL で差し替える。docs/adr/0031)。
++  std::string env_extra_path_;
++  mutable bool extra_loaded_ ABSL_GUARDED_BY(mutex_) = false;
++  mutable std::string extra_path_ ABSL_GUARDED_BY(mutex_);
++  mutable std::unique_ptr<ZenzScorer> extra_ ABSL_GUARDED_BY(mutex_);
 +  mutable std::optional<Best> best_ ABSL_GUARDED_BY(mutex_);
 +  std::optional<size_t> k_override_;
 +  std::optional<int> beams_override_;
