@@ -51,6 +51,7 @@ Acc@1 が最大の重みを JSON で出す。λ_lm = 1、T = 1000 に固定し�
 | 2026-09-30 | (参考)azooKey + Zenzai(zenz-v3.2-small、推論 5 回)、前の文あり | 85.0% | - | - |
 | 2026-09-30 | 品質 Standard の既定を軽くした(生成 4 件、LLM は上位 4 件だけ採点。ADR 0018)、前の文あり | 90.5% | - | - |
 | 2026-09-30 | 文全体の選択を文節の見直しで上書きしない、生成の足切り(ADR 0020)。Standard、前の文あり(Low 86.5%、High 92.5%) | 91.5% | - | - |
+| 2026-09-30 | LLM の重み λ を 0.7 に(ADR 0023)。Standard、前の文あり。日常 81 問(`eval/sets/kotori-daily.json`)は Mozc 80.2% → 97.5% | 91.5% | - | - |
 
 Tab の予測(`mozc/eval_predict.py --data eval/sets/kotori-predict.json`、決まった言い回し 29 問): Mozc のみ 17.2% →
 AI あり 58.6%(ADR 0018)。
