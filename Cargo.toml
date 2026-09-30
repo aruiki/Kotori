@@ -7,7 +7,7 @@ version = "0.1.0-beta.1"
 edition = "2021"
 rust-version = "1.80"
 license = "Apache-2.0 OR MIT"
-repository = "https://github.com/aruiki/Kotori"
+repository = "https://github.com/aruiki/KotoriIME-japanese-"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
