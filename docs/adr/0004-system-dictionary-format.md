@@ -49,5 +49,5 @@
 
 ## 未決
 
-- mmap で開くか(5.3)は [aruiki/Kotori#9](https://github.com/aruiki/Kotori/issues/9) で判断を待つ。
+- mmap で開くか(5.3)は [aruiki/KotoriIME-japanese-#9](https://github.com/aruiki/KotoriIME-japanese-/issues/9) で判断を待つ。
   それまで `Dictionary::from_bytes` はメモリ上のバイト列を受け取る。

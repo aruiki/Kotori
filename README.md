@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/aruiki/Kotori/releases/latest"><b>ダウンロード(Windows 用 MSI)</b></a>
+  <a href="https://github.com/aruiki/KotoriIME-japanese-/releases/latest"><b>ダウンロード(Windows 用 MSI)</b></a>
   ・ <a href="#必要な環境">必要な環境</a>
   ・ <a href="#しくみ">しくみ</a>
   ・ <a href="#よくある質問">よくある質問</a>
@@ -85,7 +85,7 @@ GPU は自動で見つけて使います。ドライバー以外の準備は要�
 
 ## インストール
 
-1. [Releases](https://github.com/aruiki/Kotori/releases/latest) から `Kotori64.msi` をダウンロードして実行します。
+1. [Releases](https://github.com/aruiki/KotoriIME-japanese-/releases/latest) から `Kotori64.msi` をダウンロードして実行します。
 2. インストールすると、入力方式に **Kotori日本語入力** が加わります。タスクバーの入力方式のアイコン
    (または Windows キー + Space)で切り替えます。
 3. 設定はデスクトップの「Kotori日本語入力の設定」から開けます。

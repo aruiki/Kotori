@@ -6,7 +6,7 @@
 
 ## リリースから入れる(かんたん)
 
-[Releases](https://github.com/aruiki/Kotori/releases) から `Kotori-<版>-windows.zip` を
+[Releases](https://github.com/aruiki/KotoriIME-japanese-/releases) から `Kotori-<版>-windows.zip` を
 ダウンロードして展開し、`install.cmd` をダブルクリックする(管理者の確認で「はい」)。外すときは
 `uninstall.cmd`。手順は zip の `README.txt`(元は `README.release.txt`)にある。
 
