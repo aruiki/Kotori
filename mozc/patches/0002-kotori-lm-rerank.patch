@@ -19068,10 +19068,10 @@ index b1af98c8a..5578835eb 100644
    return name;
  }
 diff --git a/src/gui/config_dialog/config_dialog.cc b/src/gui/config_dialog/config_dialog.cc
-index abbf55d68..81d6ee32c 100644
+index abbf55d68..6c05fd8f8 100644
 --- a/src/gui/config_dialog/config_dialog.cc
 +++ b/src/gui/config_dialog/config_dialog.cc
-@@ -30,7 +30,16 @@
+@@ -30,8 +30,22 @@
  // Qt component of configure dialog for Mozc
  #include "gui/config_dialog/config_dialog.h"
  
@@ -19086,9 +19086,15 @@ index abbf55d68..81d6ee32c 100644
 +#include <QPushButton>
 +#include <QVBoxLayout>
  #include <algorithm>
++
++#ifdef _WIN32
++#include <windows.h>
++#include <dxgi.h>
++#endif  // _WIN32
  #include <cstdint>
  #include <istream>
-@@ -83,6 +92,33 @@ void Connect(const QList<T *> &objects, const char *signal,
+ #include <map>
+@@ -83,6 +97,84 @@ void Connect(const QList<T *> &objects, const char *signal,
  
  namespace mozc {
  namespace gui {
@@ -19118,77 +19124,201 @@ index abbf55d68..81d6ee32c 100644
 +QFrame#kotoriCard { background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 8px; }
 +)";
 +
++// Kotori: この PC の GPU の名前と VRAM を 1 行で(設定画面に出す)。DXGI で調べ、
++// ソフトウェアの描画(Microsoft Basic Render Driver)は除く。
++std::string KotoriGpuSummary() {
++#ifdef _WIN32
++  using CreateFactory = HRESULT(WINAPI *)(REFIID, void **);
++  HMODULE dxgi = ::LoadLibraryExW(L"dxgi.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
++  if (dxgi != nullptr) {
++    auto create = reinterpret_cast<CreateFactory>(
++        ::GetProcAddress(dxgi, "CreateDXGIFactory1"));
++    IDXGIFactory1 *factory = nullptr;
++    std::wstring best_name;
++    SIZE_T best_vram = 0;
++    if (create != nullptr &&
++        SUCCEEDED(create(__uuidof(IDXGIFactory1),
++                         reinterpret_cast<void **>(&factory)))) {
++      IDXGIAdapter1 *adapter = nullptr;
++      for (UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND;
++           ++i) {
++        DXGI_ADAPTER_DESC1 desc = {};
++        if (SUCCEEDED(adapter->GetDesc1(&desc)) &&
++            !(desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) &&
++            desc.DedicatedVideoMemory > best_vram) {
++          best_vram = desc.DedicatedVideoMemory;
++          best_name = desc.Description;
++        }
++        adapter->Release();
++      }
++      factory->Release();
++    }
++    ::FreeLibrary(dxgi);
++    if (!best_name.empty()) {
++      const double gb = static_cast<double>(best_vram) / (1024.0 * 1024 * 1024);
++      const QString name = QString::fromWCharArray(best_name.c_str());
++      QString text;
++      if (gb >= 2.0) {
++        text = QString::fromUtf8("この PC の GPU: %1(VRAM %2 GB)。Standard 以上を使えます。")
++                   .arg(name)
++                   .arg(gb, 0, 'f', 0);
++      } else {
++        text = QString::fromUtf8(
++                   "この PC の GPU: %1(VRAM %2 GB)。VRAM が少ないので Low がおすすめです。")
++                   .arg(name)
++                   .arg(gb, 0, 'f', 1);
++      }
++      return text.toUtf8().toStdString();
++    }
++  }
++#endif  // _WIN32
++  return "GPU が見つかりません。Low がおすすめです(GPU がなくても動きます)。";
++}
++
 +}  // namespace
  
  using ::mozc::config::StatsConfigUtil;
  
-@@ -152,6 +188,91 @@ ConfigDialog::ConfigDialog()
+@@ -152,6 +244,159 @@ ConfigDialog::ConfigDialog()
    symbolsSettingComboBox->addItem(QString::fromUtf8("「」／"));
    symbolsSettingComboBox->addItem(QString::fromUtf8("[]・"));
  
-+  // Kotori: 「AI変換」タブ(docs/adr/0013)。
++  // Kotori: 「AI変換」タブ(docs/adr/0013、0022)。Windows 11 の設定アプリのように、
++  // 見出しと説明の付いたカードを並べる。
 +  {
 +    auto *page = new QWidget();
 +    auto *outer = new QVBoxLayout(page);
 +    outer->setContentsMargins(16, 16, 16, 16);
++    outer->setSpacing(8);
 +    auto *title = new QLabel(QString::fromUtf8("AI 変換"), page);
 +    title->setStyleSheet("font-size: 16pt; font-weight: 600;");
 +    outer->addWidget(title);
 +    auto *lead = new QLabel(QString::fromUtf8(
-+        "AI が文全体と前の文を読んで、変換を選び直します。処理はすべてこの PC の中で行います。"), page);
++        "変換キーを押すと、AI が前後の文を読んで候補を選び直します。"
++        "処理はすべてこの PC の中で行い、入力した文字を外に送りません。"), page);
 +    lead->setObjectName("kotoriNote");
 +    lead->setWordWrap(true);
 +    outer->addWidget(lead);
-+    auto *card = new QFrame(page);
-+    card->setObjectName("kotoriCard");
-+    auto *layout = new QVBoxLayout(card);
-+    layout->setContentsMargins(16, 14, 16, 14);
-+    layout->setSpacing(10);
-+    outer->addWidget(card);
-+    kotoriLmEnabledCheckBox_ = new QCheckBox(
-+        QString::fromUtf8("AI(zenz)で変換候補を並べ替える"), page);
-+    layout->addWidget(kotoriLmEnabledCheckBox_);
-+    auto *model_row = new QHBoxLayout();
-+    model_row->addWidget(new QLabel(QString::fromUtf8("AI モデル"), page));
-+    kotoriLmModelComboBox_ = new QComboBox(page);
-+    kotoriLmModelComboBox_->addItem(QString::fromUtf8("自動(おすすめ。GPU があれば LLM も使う)"));
-+    kotoriLmModelComboBox_->addItem(QString::fromUtf8("zenz のみ(軽い。CPU でも速い)"));
-+    kotoriLmModelComboBox_->addItem(QString::fromUtf8("zenz + LLM(高精度。GPU 向け)"));
-+    model_row->addWidget(kotoriLmModelComboBox_);
-+    model_row->addStretch();
-+    layout->addLayout(model_row);
-+    auto *quality_row = new QHBoxLayout();
-+    quality_row->addWidget(new QLabel(QString::fromUtf8("変換の品質"), page));
-+    kotoriLmQualityComboBox_ = new QComboBox(page);
-+    kotoriLmQualityComboBox_->addItem(QString::fromUtf8("Low(軽い。古い PC 向け)"));
-+    kotoriLmQualityComboBox_->addItem(QString::fromUtf8("Standard(標準)"));
-+    kotoriLmQualityComboBox_->addItem(QString::fromUtf8("High(候補を多く調べる)"));
-+    kotoriLmQualityComboBox_->addItem(QString::fromUtf8("Unreal(最高精度。速い PC 向け)"));
-+    quality_row->addWidget(kotoriLmQualityComboBox_);
-+    quality_row->addStretch();
-+    layout->addLayout(quality_row);
-+    auto *quality_note = new QLabel(QString::fromUtf8(
-+        "Low は zenz-v2.5-xsmall-q8_0.gguf、Unreal は zenz-v2.5-medium-q8_0.gguf を"
-+        "インストール先に置くと使う。ないときは標準のモデルで動く。"), page);
-+    quality_note->setWordWrap(true);
-+    quality_note->setObjectName("kotoriNote");
-+    layout->addWidget(quality_note);
-+    layout->addWidget(new QLabel(QString::fromUtf8("LLM のファイル(GGUF、空欄なら同梱のもの)"), page));
-+    auto *row = new QHBoxLayout();
-+    kotoriLmModelPathEdit_ = new QLineEdit(page);
-+    kotoriLmModelPathEdit_->setPlaceholderText(QString::fromUtf8(
-+        "空欄のときは、同梱の TinySwallow-1.5B を使う"));
-+    auto *browse = new QPushButton(QString::fromUtf8("参照..."), page);
-+    row->addWidget(kotoriLmModelPathEdit_);
-+    row->addWidget(browse);
-+    layout->addLayout(row);
-+    auto *note = new QLabel(
-+        QString::fromUtf8(
-+            "llama.cpp で読める日本語の LLM(GGUF)を選べます。変更は次の変換から効きます。"),
-+        page);
-+    note->setWordWrap(true);
-+    note->setObjectName("kotoriNote");
-+    layout->addWidget(note);
++    // 見出し(太字)と説明(灰色)を縦に並べる。
++    auto heading = [page](const char *head, const char *sub) {
++      auto *box = new QVBoxLayout();
++      box->setSpacing(2);
++      auto *h = new QLabel(QString::fromUtf8(head), page);
++      h->setStyleSheet("font-weight: 600;");
++      box->addWidget(h);
++      if (sub != nullptr) {
++        auto *d = new QLabel(QString::fromUtf8(sub), page);
++        d->setObjectName("kotoriNote");
++        d->setWordWrap(true);
++        box->addWidget(d);
++      }
++      return box;
++    };
++    auto card = [page, outer]() {
++      auto *c = new QFrame(page);
++      c->setObjectName("kotoriCard");
++      auto *l = new QVBoxLayout(c);
++      l->setContentsMargins(16, 12, 16, 12);
++      l->setSpacing(10);
++      outer->addWidget(c);
++      return l;
++    };
++
++    // 1. 変換
++    {
++      auto *l = card();
++      kotoriLmEnabledCheckBox_ =
++          new QCheckBox(QString::fromUtf8("AI 変換を使う"), page);
++      kotoriLmEnabledCheckBox_->setStyleSheet("font-weight: 600;");
++      l->addWidget(kotoriLmEnabledCheckBox_);
++      auto *row = new QHBoxLayout();
++      row->addLayout(heading("変換の品質", nullptr));
++      row->addStretch();
++      kotoriLmQualityComboBox_ = new QComboBox(page);
++      kotoriLmQualityComboBox_->addItem(QString::fromUtf8("Low(軽い)"));
++      kotoriLmQualityComboBox_->addItem(QString::fromUtf8("Standard(おすすめ)"));
++      kotoriLmQualityComboBox_->addItem(QString::fromUtf8("High(高精度)"));
++      kotoriLmQualityComboBox_->addItem(QString::fromUtf8("Unreal(最高)"));
++      kotoriLmQualityComboBox_->setMinimumWidth(180);
++      row->addWidget(kotoriLmQualityComboBox_);
++      l->addLayout(row);
++      auto *quality_note = new QLabel(page);
++      quality_note->setObjectName("kotoriNote");
++      quality_note->setWordWrap(true);
++      l->addWidget(quality_note);
++      // 選んだ品質の説明(数値は eval/README.md、RTX 3060)。
++      auto describe = [quality_note](int q) {
++        static const char *const kText[] = {
++            "GPU がなくても軽く動きます。変換の正確さ 86.5%(AJIMEE-Bench)。",
++            "GPU で 1 回 0.07 秒ほど。ほとんどの PC におすすめです。正確さ 91.5%。",
++            "候補を多く調べます。速い GPU 向け。1 回 0.09 秒ほど、正確さ 92.5%。",
++            "大きなモデル(zenz-v2.5-medium)をインストール先に置いたときの最高設定。"
++            "置いていなければ High と同じです。",
++        };
++        if (q < 0) return;
++        quality_note->setText(QString::fromUtf8(kText[std::min(q, 3)]));
++      };
++      QObject::connect(kotoriLmQualityComboBox_,
++                       QOverload<int>::of(&QComboBox::currentIndexChanged),
++                       quality_note, describe);
++      describe(1);
++      auto *gpu = new QLabel(QString::fromUtf8(KotoriGpuSummary().c_str()), page);
++      gpu->setObjectName("kotoriNote");
++      gpu->setWordWrap(true);
++      l->addWidget(gpu);
++      QObject::connect(kotoriLmEnabledCheckBox_, &QCheckBox::toggled,
++                       kotoriLmQualityComboBox_, &QWidget::setEnabled);
++    }
++
++    // 2. 予測
++    {
++      auto *l = card();
++      kotoriLmPredictCheckBox_ =
++          new QCheckBox(QString::fromUtf8("入力中に AI の予測を出す"), page);
++      kotoriLmPredictCheckBox_->setStyleSheet("font-weight: 600;");
++      l->addWidget(kotoriLmPredictCheckBox_);
++      auto *d = new QLabel(QString::fromUtf8(
++          "打っている間に文の続きを考えて、候補の先頭に「AI」と付けて出します。"
++          "Tab で選べます(例: 「よろし」→「よろしくお願いします」)。"), page);
++      d->setObjectName("kotoriNote");
++      d->setWordWrap(true);
++      l->addWidget(d);
++    }
++
++    // 3. 詳細設定
++    {
++      auto *l = card();
++      auto *row = new QHBoxLayout();
++      row->addLayout(heading("AI モデル",
++                             "自動なら、GPU があるときは日本語 LLM も使い、"
++                             "ないときは変換用の小さな AI(zenz)だけを使います。"));
++      row->addStretch();
++      kotoriLmModelComboBox_ = new QComboBox(page);
++      kotoriLmModelComboBox_->addItem(QString::fromUtf8("自動(おすすめ)"));
++      kotoriLmModelComboBox_->addItem(QString::fromUtf8("zenz のみ(軽い)"));
++      kotoriLmModelComboBox_->addItem(QString::fromUtf8("zenz + LLM(高精度)"));
++      kotoriLmModelComboBox_->setMinimumWidth(180);
++      row->addWidget(kotoriLmModelComboBox_, 0, Qt::AlignTop);
++      l->addLayout(row);
++      l->addLayout(heading("LLM のファイル",
++                           "llama.cpp で読める日本語の LLM(GGUF)に差し替えられます。"
++                           "空欄なら同梱の TinySwallow-1.5B を使います。"));
++      auto *path_row = new QHBoxLayout();
++      kotoriLmModelPathEdit_ = new QLineEdit(page);
++      kotoriLmModelPathEdit_->setPlaceholderText(
++          QString::fromUtf8("同梱のモデルを使う"));
++      auto *browse = new QPushButton(QString::fromUtf8("参照..."), page);
++      path_row->addWidget(kotoriLmModelPathEdit_);
++      path_row->addWidget(browse);
++      l->addLayout(path_row);
++      QObject::connect(browse, &QPushButton::clicked, this, [this]() {
++        const QString path = QFileDialog::getOpenFileName(
++            this, QString::fromUtf8("モデルのファイルを選ぶ"),
++            kotoriLmModelPathEdit_->text(),
++            QString::fromUtf8("GGUF (*.gguf);;すべてのファイル (*)"));
++        if (!path.isEmpty()) kotoriLmModelPathEdit_->setText(path);
++      });
++    }
 +    outer->addStretch();
 +    configDialogTabWidget->insertTab(0, page, QString::fromUtf8("AI 変換"));
 +    configDialogTabWidget->setCurrentIndex(0);
@@ -19196,34 +19326,33 @@ index abbf55d68..81d6ee32c 100644
 +    setStyleSheet(QString::fromUtf8(kKotoriFluentStyle));
 +    QObject::connect(kotoriLmEnabledCheckBox_, SIGNAL(stateChanged(int)), this,
 +                     SLOT(EnableApplyButton()));
++    QObject::connect(kotoriLmPredictCheckBox_, SIGNAL(stateChanged(int)), this,
++                     SLOT(EnableApplyButton()));
 +    QObject::connect(kotoriLmModelPathEdit_, SIGNAL(textChanged(QString)), this,
 +                     SLOT(EnableApplyButton()));
 +    QObject::connect(kotoriLmQualityComboBox_, SIGNAL(currentIndexChanged(int)),
 +                     this, SLOT(EnableApplyButton()));
 +    QObject::connect(kotoriLmModelComboBox_, SIGNAL(currentIndexChanged(int)),
 +                     this, SLOT(EnableApplyButton()));
-+    QObject::connect(browse, &QPushButton::clicked, this, [this]() {
-+      const QString path = QFileDialog::getOpenFileName(
-+          this, QString::fromUtf8("モデルのファイルを選ぶ"),
-+          kotoriLmModelPathEdit_->text(),
-+          QString::fromUtf8("GGUF (*.gguf);;すべてのファイル (*)"));
-+      if (!path.isEmpty()) kotoriLmModelPathEdit_->setText(path);
-+    });
 +  }
 +
    keymapSettingComboBox->addItem(tr("Custom keymap"));
    keymapSettingComboBox->addItem(tr("ATOK"));
    keymapSettingComboBox->addItem(tr("MS-IME"));
-@@ -524,6 +645,16 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
+@@ -524,6 +769,20 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
    custom_keymap_table_ = config.custom_keymap_table();
    custom_roman_table_ = config.custom_roman_table();
  
 +  // Kotori
 +  kotoriLmEnabledCheckBox_->setChecked(config.kotori_lm_enabled());
++  // 一度 -1 にして、同じ番号でも変更の知らせ(品質の説明の更新)が出るようにする。
++  kotoriLmQualityComboBox_->setCurrentIndex(-1);
 +  kotoriLmQualityComboBox_->setCurrentIndex(
 +      static_cast<int>(config.kotori_lm_quality()));
 +  kotoriLmModelComboBox_->setCurrentIndex(
 +      static_cast<int>(config.kotori_lm_model()));
++  kotoriLmPredictCheckBox_->setChecked(config.kotori_lm_predict());
++  kotoriLmQualityComboBox_->setEnabled(config.kotori_lm_enabled());
 +  kotoriLmModelPathEdit_->setText(
 +      QString::fromUtf8(config.kotori_lm_model_path().data(),
 +                        static_cast<int>(config.kotori_lm_model_path().size())));
@@ -19231,7 +19360,7 @@ index abbf55d68..81d6ee32c 100644
    // tab2
    SET_COMBOBOX(historyLearningLevelComboBox, HistoryLearningLevel,
                 history_learning_level);
-@@ -612,6 +743,15 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
+@@ -612,6 +871,16 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
      config->set_custom_roman_table(custom_roman_table_);
    }
  
@@ -19241,6 +19370,7 @@ index abbf55d68..81d6ee32c 100644
 +      kotoriLmQualityComboBox_->currentIndex()));
 +  config->set_kotori_lm_model(static_cast<config::Config::KotoriLmModel>(
 +      kotoriLmModelComboBox_->currentIndex()));
++  config->set_kotori_lm_predict(kotoriLmPredictCheckBox_->isChecked());
 +  config->set_kotori_lm_model_path(
 +      kotoriLmModelPathEdit_->text().trimmed().toUtf8().toStdString());
 +
@@ -19248,7 +19378,7 @@ index abbf55d68..81d6ee32c 100644
    GET_COMBOBOX(historyLearningLevelComboBox, HistoryLearningLevel,
                 history_learning_level);
 diff --git a/src/gui/config_dialog/config_dialog.h b/src/gui/config_dialog/config_dialog.h
-index 85e1c0075..e6aad51f1 100644
+index 85e1c0075..be00dc3a7 100644
 --- a/src/gui/config_dialog/config_dialog.h
 +++ b/src/gui/config_dialog/config_dialog.h
 @@ -33,6 +33,10 @@
@@ -19262,7 +19392,7 @@ index 85e1c0075..e6aad51f1 100644
  #include <QTimer>
  #include <map>
  #include <memory>
-@@ -48,6 +52,12 @@ namespace gui {
+@@ -48,6 +52,13 @@ namespace gui {
  class ConfigDialog : public QDialog, private Ui::ConfigDialog {
    Q_OBJECT;
  
@@ -19271,15 +19401,31 @@ index 85e1c0075..e6aad51f1 100644
 +  QLineEdit *kotoriLmModelPathEdit_ = nullptr;
 +  QComboBox *kotoriLmQualityComboBox_ = nullptr;
 +  QComboBox *kotoriLmModelComboBox_ = nullptr;
++  QCheckBox *kotoriLmPredictCheckBox_ = nullptr;
 +
   public:
    ConfigDialog();
  
+diff --git a/src/gui/tool/BUILD.bazel b/src/gui/tool/BUILD.bazel
+index 1c4726b0c..366630008 100644
+--- a/src/gui/tool/BUILD.bazel
++++ b/src/gui/tool/BUILD.bazel
+@@ -115,6 +115,10 @@ mozc_win32_resource_from_template(
+     manifests = [
+         "mozc_tool.exe.manifest",
+     ],
++    # Kotori: アイコンを入力に入れる(入れないと、アイコンを差し替えても前のビルド結果が使われる)。
++    resources = [
++        "//data/images/win:product_icon.ico",
++    ],
+     tags = MOZC_TAGS.WIN_ONLY,
+     target_compatible_with = ["@platforms//os:windows"],
+ )
 diff --git a/src/protocol/config.proto b/src/protocol/config.proto
-index 7d735374e..ebfd5cbfe 100644
+index 7d735374e..3988c7598 100644
 --- a/src/protocol/config.proto
 +++ b/src/protocol/config.proto
-@@ -360,6 +360,27 @@ message Config {
+@@ -360,6 +360,29 @@ message Config {
    // Use mode indicator feature.
    optional bool use_mode_indicator = 120 [default = true];
  
@@ -19303,6 +19449,8 @@ index 7d735374e..ebfd5cbfe 100644
 +    KOTORI_LM_MODEL_LLM = 2;   // TinySwallow-1.5B(汎用の LLM。GPU 向け)
 +  }
 +  optional KotoriLmModel kotori_lm_model = 203 [default = KOTORI_LM_MODEL_AUTO];
++  // 入力中に AI の予測(文の続き)を候補に出す。Tab の予測も含む(docs/adr/0019、0021)。
++  optional bool kotori_lm_predict = 204 [default = true];
 +
    //////////////////////////////////////////////////////////////
    //
@@ -19623,10 +19771,10 @@ index 000000000..9573fd721
 +#endif  // MOZC_REWRITER_LLAMA_RUNTIME_H_
 diff --git a/src/rewriter/lm_rewriter.cc b/src/rewriter/lm_rewriter.cc
 new file mode 100644
-index 000000000..9fe42da36
+index 000000000..fa7fb7e70
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.cc
-@@ -0,0 +1,1280 @@
+@@ -0,0 +1,1281 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/lm_rewriter.h"
@@ -20689,6 +20837,7 @@ index 000000000..9fe42da36
 +bool LmRewriter::RewritePrediction(const ConversionRequest& request,
 +                                   Segments* segments) const {
 +  if (!predict_ || segments->conversion_segments_size() != 1) return false;
++  if (!request.config().kotori_lm_predict()) return false;
 +  Segment& seg = *segments->mutable_conversion_segment(0);
 +  const std::string reading(seg.key());
 +  const size_t len = Util::CharsLen(reading);
@@ -20804,7 +20953,7 @@ index 000000000..9fe42da36
 +                                   Segments* segments) const {
 +  if (!predict_ || segments->conversion_segments_size() != 1) return false;
 +  const config::Config& config = request.config();
-+  if (!config.kotori_lm_enabled()) return false;
++  if (!config.kotori_lm_enabled() || !config.kotori_lm_predict()) return false;
 +  Segment& seg = *segments->mutable_conversion_segment(0);
 +  const std::string reading(seg.key());
 +  const std::vector<std::string> rchars = Chars(reading);
