@@ -616,10 +616,10 @@ index 000000000..4e6122a6d
 +}
 \ No newline at end of file
 diff --git a/src/win32/installer/BUILD.bazel b/src/win32/installer/BUILD.bazel
-index 1c31b5159..75961fa63 100644
+index 1c31b5159..e421c9dbb 100644
 --- a/src/win32/installer/BUILD.bazel
 +++ b/src/win32/installer/BUILD.bazel
-@@ -93,6 +93,17 @@ genrule(
+@@ -93,6 +93,19 @@ genrule(
          "//base:mozc_version_txt",
          "//data/images/win:product_icon.ico",
          "//data/installer:credits_en.html",
@@ -628,6 +628,8 @@ index 1c31b5159..75961fa63 100644
 +        "//data/kotori:NOTICE-tinyswallow.txt",
 +        "//data/kotori:tinyswallow-1.5b-q5_k_m.gguf",
 +        "//data/kotori:license.rtf",
++        "//data/images/win:tools_properties.ico",
++        "//data/images/win:tools_dictionary.ico",
 +        "//data/kotori:banner.bmp",
 +        "//data/kotori:dialog.bmp",
 +        "@llama_cpp//:LICENSE",
@@ -637,7 +639,7 @@ index 1c31b5159..75961fa63 100644
          "@qt_win//:bin/Qt6Core.dll",
          "@wix//:wix.exe",
      ] + select({
-@@ -117,6 +128,16 @@ genrule(
+@@ -117,6 +130,18 @@ genrule(
          "--custom_action=$(location //win32/custom_action)",
          "--icon_path=$(location //data/images/win:product_icon.ico)",
          "--credit_file=$(location //data/installer:credits_en.html)",
@@ -649,16 +651,18 @@ index 1c31b5159..75961fa63 100644
 +        "--llama_license=$(location @llama_cpp//:LICENSE)",
 +        "--ui_ext=$(location @wixui_ext//:wixext5/WixToolset.UI.wixext.dll)",
 +        "--license_rtf=$(location //data/kotori:license.rtf)",
++        "--settings_icon=$(location //data/images/win:tools_properties.ico)",
++        "--dictionary_icon=$(location //data/images/win:tools_dictionary.ico)",
 +        "--banner_bmp=$(location //data/kotori:banner.bmp)",
 +        "--dialog_bmp=$(location //data/kotori:dialog.bmp)",
          "--qt_core_dll=$(location @qt_win//:bin/Qt6Core.dll)",
          "--wxs_path=$(location " + _WXS_FILE + ")",
          "--wix_path=$(location @wix//:wix.exe)",
 diff --git a/src/win32/installer/build_installer.py b/src/win32/installer/build_installer.py
-index c2e71a077..70ffbf4d0 100644
+index c2e71a077..c0e398b0e 100644
 --- a/src/win32/installer/build_installer.py
 +++ b/src/win32/installer/build_installer.py
-@@ -154,6 +154,17 @@ def run_wix4(args) -> None:
+@@ -154,6 +154,19 @@ def run_wix4(args) -> None:
        '-define', f'MozcTIP64Path={mozc_tip64}',
        '-define', f'MozcBroker64Path={mozc_broker}',
        '-define', f'MozcServer64Path={mozc_server}',
@@ -671,25 +675,28 @@ index c2e71a077..70ffbf4d0 100644
 +      '-define', f'KotoriLicenseRtf={pathlib.Path(args.license_rtf).resolve()}',
 +      '-define', f'KotoriBannerBmp={pathlib.Path(args.banner_bmp).resolve()}',
 +      '-define', f'KotoriDialogBmp={pathlib.Path(args.dialog_bmp).resolve()}',
++      '-define', f'KotoriSettingsIcon={pathlib.Path(args.settings_icon).resolve()}',
++      '-define', f'KotoriDictionaryIcon={pathlib.Path(args.dictionary_icon).resolve()}',
 +      '-ext', str(pathlib.Path(args.ui_ext).resolve()),
 +      '-culture', 'ja-JP',
        '-define', f'MozcCacheService64Path={mozc_cache_service}',
        '-define', f'MozcRenderer64Path={mozc_renderer}',
        '-define', f'MozcToolPath={mozc_tool}',
-@@ -192,6 +203,11 @@ def main():
+@@ -192,6 +205,12 @@ def main():
    parser.add_argument('--custom_action', type=str)
    parser.add_argument('--icon_path', type=str)
    parser.add_argument('--credit_file', type=str)
 +  parser.add_argument('--zenz_model', type=str)
 +  parser.add_argument('--zenz_notice', type=str)
 +  for name in ('llm_model', 'llm_notice', 'llama_dll', 'llama_license', 'ui_ext',
-+               'license_rtf', 'banner_bmp', 'dialog_bmp'):
++               'license_rtf', 'banner_bmp', 'dialog_bmp', 'settings_icon',
++               'dictionary_icon'):
 +    parser.add_argument('--' + name, type=str)
    parser.add_argument('--qt_core_dll', type=str)
    parser.add_argument('--wxs_path', type=str)
    parser.add_argument('--wix_path', type=str)
 diff --git a/src/win32/installer/installer_oss_64bit.wxs b/src/win32/installer/installer_oss_64bit.wxs
-index e30c37ad4..382c7014e 100644
+index e30c37ad4..ebcd8d65d 100644
 --- a/src/win32/installer/installer_oss_64bit.wxs
 +++ b/src/win32/installer/installer_oss_64bit.wxs
 @@ -48,7 +48,7 @@
@@ -723,20 +730,22 @@ index e30c37ad4..382c7014e 100644
      <UI>
        <Error Id="4000" Message="新しいバージョンの Kotori が既にインストールされています。" />
      </UI>
-@@ -148,6 +154,12 @@
+@@ -148,6 +154,14 @@
        <?endif?>
        <ComponentRef Id="MozcBroker" />
        <ComponentRef Id="MozcConverter" />
 +      <ComponentRef Id="KotoriZenzModel" />
 +      <ComponentRef Id="KotoriZenzNotice" />
 +      <ComponentRef Id="KotoriLlmModel" />
++      <ComponentRef Id="KotoriDesktopShortcut" />
++      <ComponentRef Id="KotoriStartMenuShortcuts" />
 +      <ComponentRef Id="KotoriLlmNotice" />
 +      <ComponentRef Id="KotoriLlamaLicense" />
 +      <ComponentGroupRef Id="KotoriLlamaRuntime" />
        <ComponentRef Id="MozcCacheService" />
        <ComponentRef Id="MozcRenderer" />
        <ComponentRef Id="MozcTool" />
-@@ -242,6 +254,21 @@
+@@ -242,6 +256,21 @@
  
      <StandardDirectory Id="ProgramFilesFolder">
        <Directory Id="MozcDir" Name="Kotori">
@@ -758,10 +767,36 @@ index e30c37ad4..382c7014e 100644
          <Component Id="MozcConverter">
            <File Id="mozc_server.exe" Name="mozc_server.exe" DiskId="1" Checksum="yes" Source="$(var.MozcServer64Path)" Vital="yes" />
          </Component>
-@@ -381,5 +408,11 @@
+@@ -381,5 +410,37 @@
      <Component Id="PrelaunchProcesses" Directory="TARGETDIR">
        <RegistryValue Id="RunBroker" Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="Kotori Prelauncher" Action="write" Type="string" Value="&quot;[MozcDir]mozc_broker.exe&quot; --mode=prelaunch_processes" />
      </Component>
++    <!-- Kotori: 設定と辞書ツールのショートカット(デスクトップとスタートメニュー)。 -->
++    <Icon Id="KotoriSettingsIcon.ico" SourceFile="$(var.KotoriSettingsIcon)" />
++    <Icon Id="KotoriDictionaryIcon.ico" SourceFile="$(var.KotoriDictionaryIcon)" />
++    <StandardDirectory Id="DesktopFolder">
++      <Component Id="KotoriDesktopShortcut">
++        <Shortcut Id="KotoriDesktopSettings" Name="Kotori の設定" Description="Kotori(AI 日本語入力)の設定"
++                  Target="[MozcDir]mozc_tool.exe" Arguments="--mode=config_dialog" WorkingDirectory="MozcDir"
++                  Icon="KotoriSettingsIcon.ico" />
++        <RegistryValue Root="HKLM" Key="Software\Kotori\Shortcuts" Name="desktop" Type="integer" Value="1" KeyPath="yes" />
++      </Component>
++    </StandardDirectory>
++    <StandardDirectory Id="ProgramMenuFolder">
++      <Directory Id="KotoriProgramMenu" Name="Kotori">
++        <Component Id="KotoriStartMenuShortcuts">
++          <Shortcut Id="KotoriMenuSettings" Name="Kotori の設定" Description="Kotori(AI 日本語入力)の設定"
++                    Target="[MozcDir]mozc_tool.exe" Arguments="--mode=config_dialog" WorkingDirectory="MozcDir"
++                    Icon="KotoriSettingsIcon.ico" />
++          <Shortcut Id="KotoriMenuDictionary" Name="Kotori の辞書ツール" Description="ユーザー辞書の編集"
++                    Target="[MozcDir]mozc_tool.exe" Arguments="--mode=dictionary_tool" WorkingDirectory="MozcDir"
++                    Icon="KotoriDictionaryIcon.ico" />
++          <RemoveFolder Id="RemoveKotoriProgramMenu" On="uninstall" />
++          <RegistryValue Root="HKLM" Key="Software\Kotori\Shortcuts" Name="startmenu" Type="integer" Value="1" KeyPath="yes" />
++        </Component>
++      </Directory>
++    </StandardDirectory>
++
 +    <!-- Kotori: llama.cpp の公式 Windows ビルド(Vulkan 版。GPU がなければ CPU で動く)。 -->
 +    <ComponentGroup Id="KotoriLlamaRuntime" Directory="MozcDir">
 +      <Files Include="$(var.LlamaRuntimeDir)\ggml*.dll" />
