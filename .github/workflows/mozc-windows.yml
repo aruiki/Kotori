@@ -63,7 +63,7 @@ jobs:
           $s = Get-Content $f -Raw
           if ($s -notmatch '(?m)^BUILD = BUILD_OSS$') { throw "$f に BUILD = BUILD_OSS がない" }
           $s = $s -replace '(?m)^BUILD = BUILD_OSS$', 'BUILD = BUILD_OSS + ${{ github.run_number }}'
-          Set-Content -NoNewline $f $s
+          [IO.File]::WriteAllText((Resolve-Path $f), $s)
           Select-String -Path $f -Pattern '^(MAJOR|MINOR|BUILD|REVISION) ='
       # MSI に同梱するモデル(docs/adr/0012、パッチ 0003)。変換の手順が同じなら前に作ったものを使う。
       - id: zenz
