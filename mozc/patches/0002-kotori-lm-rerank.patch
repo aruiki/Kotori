@@ -19055,10 +19055,51 @@ zL@613W7Zf1G&4<#nt(BZ;xoE2_j8mrXY(!KeiIne+sK-zQeq6KNh!`3eBt9B?)?Em
 Ce@$lq
 
 diff --git a/src/gui/base/util.cc b/src/gui/base/util.cc
-index b1af98c8a..5578835eb 100644
+index b1af98c8a..40bbc83be 100644
 --- a/src/gui/base/util.cc
 +++ b/src/gui/base/util.cc
-@@ -131,7 +131,7 @@ QString GuiUtil::ProductName() {
+@@ -46,6 +46,9 @@
+ #include <QGuiApplication>
+ #include <QObject>
+ #include <QStyleFactory>
++#include <QColor>
++#include <QStyleHints>
++#include <QPalette>
+ #include <QtGui>
+ #include <memory>
+ #include <string>
+@@ -100,6 +103,30 @@ std::unique_ptr<QApplication> GuiUtil::InitQt(int &argc, char *argv[]) {
+   app->setFont(QFont("Hiragino Sans"));
+ #endif  // __APPLE__
+ 
++  // Kotori: 画面は明るい配色で作っているので、Windows がダークモードでも明るい配色にする
++  // (ダークモードでは Qt がボタンなどの文字を白にし、白い背景の上で文字が消えた。docs/adr/0024)。
++  app->styleHints()->setColorScheme(Qt::ColorScheme::Light);
++  QPalette light;
++  light.setColor(QPalette::Window, QColor(0xF3, 0xF3, 0xF3));
++  light.setColor(QPalette::WindowText, QColor(0x1A, 0x1A, 0x1A));
++  light.setColor(QPalette::Base, QColor(0xFF, 0xFF, 0xFF));
++  light.setColor(QPalette::AlternateBase, QColor(0xF7, 0xF7, 0xF7));
++  light.setColor(QPalette::Text, QColor(0x1A, 0x1A, 0x1A));
++  light.setColor(QPalette::Button, QColor(0xFF, 0xFF, 0xFF));
++  light.setColor(QPalette::ButtonText, QColor(0x1A, 0x1A, 0x1A));
++  light.setColor(QPalette::ToolTipBase, QColor(0xFF, 0xFF, 0xFF));
++  light.setColor(QPalette::ToolTipText, QColor(0x1A, 0x1A, 0x1A));
++  light.setColor(QPalette::PlaceholderText, QColor(0x8A, 0x8A, 0x8A));
++  light.setColor(QPalette::Highlight, QColor(0x0F, 0x6C, 0xBD));
++  light.setColor(QPalette::HighlightedText, QColor(0xFF, 0xFF, 0xFF));
++  light.setColor(QPalette::Link, QColor(0x0F, 0x6C, 0xBD));
++  light.setColor(QPalette::BrightText, QColor(0xFF, 0xFF, 0xFF));
++  for (QPalette::ColorRole role :
++       {QPalette::WindowText, QPalette::Text, QPalette::ButtonText}) {
++    light.setColor(QPalette::Disabled, role, QColor(0xA0, 0xA0, 0xA0));
++  }
++  app->setPalette(light);
++
+   InstallEventFilter();
+   InstallDefaultTranslator();
+ 
+@@ -131,7 +158,7 @@ QString GuiUtil::ProductName() {
  #ifdef GOOGLE_JAPANESE_INPUT_BUILD
    const QString name = QObject::tr("Google Japanese Input");
  #else   // GOOGLE_JAPANESE_INPUT_BUILD
@@ -19068,7 +19109,7 @@ index b1af98c8a..5578835eb 100644
    return name;
  }
 diff --git a/src/gui/config_dialog/config_dialog.cc b/src/gui/config_dialog/config_dialog.cc
-index abbf55d68..6c05fd8f8 100644
+index abbf55d68..39d6c7f1d 100644
 --- a/src/gui/config_dialog/config_dialog.cc
 +++ b/src/gui/config_dialog/config_dialog.cc
 @@ -30,8 +30,22 @@
@@ -19094,7 +19135,7 @@ index abbf55d68..6c05fd8f8 100644
  #include <cstdint>
  #include <istream>
  #include <map>
-@@ -83,6 +97,84 @@ void Connect(const QList<T *> &objects, const char *signal,
+@@ -83,6 +97,90 @@ void Connect(const QList<T *> &objects, const char *signal,
  
  namespace mozc {
  namespace gui {
@@ -19109,17 +19150,20 @@ index abbf55d68..6c05fd8f8 100644
 +QTabBar::tab:selected { color: #1A1A1A; font-weight: 600; border-bottom: 3px solid #0F6CBD; }
 +QGroupBox { background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 8px; margin-top: 18px; padding: 12px 10px 8px 10px; font-weight: 600; }
 +QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 4px; color: #1A1A1A; }
-+QPushButton { background: #FFFFFF; border: 1px solid #D1D1D1; border-bottom-color: #B3B3B3; border-radius: 4px; padding: 5px 14px; min-height: 20px; }
-+QPushButton:hover { background: #F6F6F6; }
++QPushButton { background: #FFFFFF; color: #1A1A1A; border: 1px solid #D1D1D1; border-bottom-color: #B3B3B3; border-radius: 4px; padding: 5px 14px; min-height: 20px; }
++QPushButton:hover { background: #F6F6F6; color: #1A1A1A; }
 +QPushButton:pressed { background: #EBEBEB; color: #5C5C5C; }
 +QPushButton:default { background: #0F6CBD; color: #FFFFFF; border: 1px solid #115EA3; }
 +QPushButton:default:hover { background: #115EA3; }
 +QPushButton:disabled { background: #F0F0F0; color: #A0A0A0; border-color: #E0E0E0; }
-+QComboBox, QLineEdit, QSpinBox { background: #FFFFFF; border: 1px solid #D1D1D1; border-bottom: 1px solid #8A8A8A; border-radius: 4px; padding: 4px 8px; min-height: 20px; }
++QComboBox, QLineEdit, QSpinBox { background: #FFFFFF; color: #1A1A1A; border: 1px solid #D1D1D1; border-bottom: 1px solid #8A8A8A; border-radius: 4px; padding: 4px 8px; min-height: 20px; }
 +QComboBox:focus, QLineEdit:focus, QSpinBox:focus { border-bottom: 2px solid #0F6CBD; }
 +QComboBox::drop-down { border: none; width: 24px; }
 +QComboBox QAbstractItemView { background: #FFFFFF; border: 1px solid #E5E5E5; selection-background-color: #EBF3FC; selection-color: #1A1A1A; }
-+QCheckBox, QRadioButton { spacing: 8px; }
++QComboBox:disabled, QLineEdit:disabled, QSpinBox:disabled { background: #F5F5F5; color: #A0A0A0; }
++QCheckBox, QRadioButton { spacing: 8px; color: #1A1A1A; }
++QCheckBox:disabled, QRadioButton:disabled, QLabel:disabled { color: #A0A0A0; }
++QLabel { color: #1A1A1A; }
 +QLabel#kotoriNote { color: #5C5C5C; font-size: 9pt; }
 +QFrame#kotoriCard { background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 8px; }
 +)";
@@ -19158,13 +19202,16 @@ index abbf55d68..6c05fd8f8 100644
 +      const double gb = static_cast<double>(best_vram) / (1024.0 * 1024 * 1024);
 +      const QString name = QString::fromWCharArray(best_name.c_str());
 +      QString text;
-+      if (gb >= 2.0) {
++      // AI を載せるのは専用 GPU で VRAM が 3 GB 以上のときだけ(rewriter/llama_runtime.h)。
++      // 内蔵 GPU(専用の VRAM が少ない)では、どの品質を選んでも Low で動く。
++      if (gb >= 3.0) {
 +        text = QString::fromUtf8("この PC の GPU: %1(VRAM %2 GB)。Standard 以上を使えます。")
 +                   .arg(name)
 +                   .arg(gb, 0, 'f', 0);
 +      } else {
 +        text = QString::fromUtf8(
-+                   "この PC の GPU: %1(VRAM %2 GB)。VRAM が少ないので Low がおすすめです。")
++                   "この PC の GPU: %1(VRAM %2 GB)。AI には使わず、どの品質を選んでも "
++                   "Low(CPU)で動きます。")
 +                   .arg(name)
 +                   .arg(gb, 0, 'f', 1);
 +      }
@@ -19172,14 +19219,14 @@ index abbf55d68..6c05fd8f8 100644
 +    }
 +  }
 +#endif  // _WIN32
-+  return "GPU が見つかりません。Low がおすすめです(GPU がなくても動きます)。";
++  return "AI に使える GPU が見つかりません。どの品質を選んでも Low(CPU)で動きます。";
 +}
 +
 +}  // namespace
  
  using ::mozc::config::StatsConfigUtil;
  
-@@ -152,6 +244,159 @@ ConfigDialog::ConfigDialog()
+@@ -152,6 +250,160 @@ ConfigDialog::ConfigDialog()
    symbolsSettingComboBox->addItem(QString::fromUtf8("「」／"));
    symbolsSettingComboBox->addItem(QString::fromUtf8("[]・"));
  
@@ -19235,7 +19282,7 @@ index abbf55d68..6c05fd8f8 100644
 +      row->addLayout(heading("変換の品質", nullptr));
 +      row->addStretch();
 +      kotoriLmQualityComboBox_ = new QComboBox(page);
-+      kotoriLmQualityComboBox_->addItem(QString::fromUtf8("Low(軽い)"));
++      kotoriLmQualityComboBox_->addItem(QString::fromUtf8("Low(GPU のない PC 向け)"));
 +      kotoriLmQualityComboBox_->addItem(QString::fromUtf8("Standard(おすすめ)"));
 +      kotoriLmQualityComboBox_->addItem(QString::fromUtf8("High(高精度)"));
 +      kotoriLmQualityComboBox_->addItem(QString::fromUtf8("Unreal(最高)"));
@@ -19249,11 +19296,12 @@ index abbf55d68..6c05fd8f8 100644
 +      // 選んだ品質の説明(数値は eval/README.md、RTX 3060)。
 +      auto describe = [quality_note](int q) {
 +        static const char *const kText[] = {
-+            "GPU がなくても軽く動きます。変換の正確さ 86.5%(AJIMEE-Bench)。",
-+            "GPU で 1 回 0.07 秒ほど。ほとんどの PC におすすめです。正確さ 91.5%。",
-+            "候補を多く調べます。速い GPU 向け。1 回 0.09 秒ほど、正確さ 92.5%。",
-+            "大きなモデル(zenz-v2.5-medium)をインストール先に置いたときの最高設定。"
-+            "置いていなければ High と同じです。",
++            "ノート PC など GPU のない PC 向け。CPU で動き、打っている間に先に変換しておくので "
++            "Space ですぐ出ます。正確さ 88.0%(AJIMEE-Bench)、日常の文 97.5%。",
++            "GPU で 1 回 0.08 秒ほど。GPU のある PC におすすめです。正確さ 91.5%。",
++            "候補を多く調べます。速い GPU 向け。1 回 0.12 秒ほど、正確さ 92.5%。",
++            "High に大きな変換用 AI(zenz-v2.5-medium)を加えた設定。速い GPU 向け。"
++            "正確さ 92.0%。",
 +        };
 +        if (q < 0) return;
 +        quality_note->setText(QString::fromUtf8(kText[std::min(q, 3)]));
@@ -19291,7 +19339,7 @@ index abbf55d68..6c05fd8f8 100644
 +      auto *row = new QHBoxLayout();
 +      row->addLayout(heading("AI モデル",
 +                             "自動なら、GPU があるときは日本語 LLM も使い、"
-+                             "ないときは変換用の小さな AI(zenz)だけを使います。"));
++                             "ないときは変換用の AI(zenz)だけを CPU で使います。"));
 +      row->addStretch();
 +      kotoriLmModelComboBox_ = new QComboBox(page);
 +      kotoriLmModelComboBox_->addItem(QString::fromUtf8("自動(おすすめ)"));
@@ -19339,7 +19387,7 @@ index abbf55d68..6c05fd8f8 100644
    keymapSettingComboBox->addItem(tr("Custom keymap"));
    keymapSettingComboBox->addItem(tr("ATOK"));
    keymapSettingComboBox->addItem(tr("MS-IME"));
-@@ -524,6 +769,20 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
+@@ -524,6 +776,20 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
    custom_keymap_table_ = config.custom_keymap_table();
    custom_roman_table_ = config.custom_roman_table();
  
@@ -19360,7 +19408,7 @@ index abbf55d68..6c05fd8f8 100644
    // tab2
    SET_COMBOBOX(historyLearningLevelComboBox, HistoryLearningLevel,
                 history_learning_level);
-@@ -612,6 +871,16 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
+@@ -612,6 +878,16 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
      config->set_custom_roman_table(custom_roman_table_);
    }
  
@@ -19518,14 +19566,16 @@ index 4bbcddeca..886ed0552 100644
 +)
 diff --git a/src/rewriter/llama_runtime.cc b/src/rewriter/llama_runtime.cc
 new file mode 100644
-index 000000000..923b856a7
+index 000000000..0c6e2fb2f
 --- /dev/null
 +++ b/src/rewriter/llama_runtime.cc
-@@ -0,0 +1,216 @@
+@@ -0,0 +1,275 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/llama_runtime.h"
 +
++#include <cstdlib>
++#include <cstring>
 +#include <string>
 +
 +#include "llama.h"
@@ -19541,6 +19591,29 @@ index 000000000..923b856a7
 +
 +void QuietLog(ggml_log_level, const char*, void*) {}
 +
++constexpr size_t kMinGpuMemory = size_t{3} << 30;  // 3 GiB
++
++// 機器の一覧から AI を載せる GPU を選ぶ(LlamaGpuDevice)。関数は Windows では DLL から引いた
++// もの、それ以外は静的にリンクしたもの。
++template <typename Count, typename Get, typename Type, typename Memory>
++ggml_backend_dev_t SelectGpu(Count count, Get get, Type type, Memory memory) {
++  const char* env = std::getenv("KOTORI_LM_DEVICE");
++  if (env != nullptr && std::strcmp(env, "cpu") == 0) return nullptr;
++  ggml_backend_dev_t best = nullptr;
++  size_t best_total = 0;
++  for (size_t i = 0; i < count(); ++i) {
++    ggml_backend_dev_t dev = get(i);
++    if (type(dev) != GGML_BACKEND_DEVICE_TYPE_GPU) continue;
++    size_t free = 0, total = 0;
++    memory(dev, &free, &total);
++    if (total >= kMinGpuMemory && total > best_total) {
++      best = dev;
++      best_total = total;
++    }
++  }
++  return best;
++}
++
 +}  // namespace
 +
 +#ifndef _WIN32
@@ -19554,7 +19627,14 @@ index 000000000..923b856a7
 +  return ok;
 +}
 +
-+bool LlamaHasGpu() { return llama_supports_gpu_offload(); }
++ggml_backend_dev_t LlamaGpuDevice() {
++  static ggml_backend_dev_t dev =
++      SelectGpu(ggml_backend_dev_count, ggml_backend_dev_get, ggml_backend_dev_type,
++                ggml_backend_dev_memory);
++  return dev;
++}
++
++bool LlamaHasGpu() { return LlamaGpuDevice() != nullptr; }
 +
 +#else  // _WIN32
 +
@@ -19586,6 +19666,7 @@ index 000000000..923b856a7
 +  X(llama_batch_init)                                                          \
 +  X(llama_batch_free)                                                          \
 +  X(llama_decode)                                                              \
++  X(llama_synchronize)                                                         \
 +  X(llama_get_logits_ith)                                                      \
 +  X(llama_supports_gpu_offload)
 +
@@ -19594,6 +19675,11 @@ index 000000000..923b856a7
 +  KOTORI_LLAMA_FUNCTIONS(KOTORI_DECLARE)
 +#undef KOTORI_DECLARE
 +  decltype(&::ggml_backend_load_all_from_path) load_all = nullptr;
++  // 機器の一覧(ggml.dll)と、機器の種類・メモリ(ggml-base.dll)。
++  decltype(&::ggml_backend_dev_count) dev_count = nullptr;
++  decltype(&::ggml_backend_dev_get) dev_get = nullptr;
++  decltype(&::ggml_backend_dev_type) dev_type = nullptr;
++  decltype(&::ggml_backend_dev_memory) dev_memory = nullptr;
 +};
 +
 +Api g_api;
@@ -19627,6 +19713,21 @@ index 000000000..923b856a7
 +  g_api.load_all = reinterpret_cast<decltype(g_api.load_all)>(
 +      GetProcAddress(ggml, "ggml_backend_load_all_from_path"));
 +  if (g_api.load_all == nullptr) return false;
++  HMODULE base =
++      LoadLibraryExW((wdir + L"\\ggml-base.dll").c_str(), nullptr, kFlags);
++  if (base == nullptr) return false;
++  g_api.dev_count = reinterpret_cast<decltype(g_api.dev_count)>(
++      GetProcAddress(ggml, "ggml_backend_dev_count"));
++  g_api.dev_get = reinterpret_cast<decltype(g_api.dev_get)>(
++      GetProcAddress(ggml, "ggml_backend_dev_get"));
++  g_api.dev_type = reinterpret_cast<decltype(g_api.dev_type)>(
++      GetProcAddress(base, "ggml_backend_dev_type"));
++  g_api.dev_memory = reinterpret_cast<decltype(g_api.dev_memory)>(
++      GetProcAddress(base, "ggml_backend_dev_memory"));
++  if (g_api.dev_count == nullptr || g_api.dev_get == nullptr ||
++      g_api.dev_type == nullptr || g_api.dev_memory == nullptr) {
++    return false;
++  }
 +  g_api.llama_log_set(QuietLog, nullptr);
 +  // GPU(Vulkan)と CPU の DLL のうち、この PC で使えるものを読み込む。
 +  g_api.load_all(dir.c_str());
@@ -19644,9 +19745,14 @@ index 000000000..923b856a7
 +  return ok;
 +}
 +
-+bool LlamaHasGpu() {
-+  return g_loaded && g_api.llama_supports_gpu_offload();
++ggml_backend_dev_t LlamaGpuDevice() {
++  if (!g_loaded) return nullptr;
++  static ggml_backend_dev_t dev = SelectGpu(g_api.dev_count, g_api.dev_get,
++                                            g_api.dev_type, g_api.dev_memory);
++  return dev;
 +}
++
++bool LlamaHasGpu() { return LlamaGpuDevice() != nullptr; }
 +
 +#endif  // _WIN32
 +
@@ -19730,6 +19836,7 @@ index 000000000..923b856a7
 +int32_t llama_decode(llama_context* ctx, llama_batch batch) {
 +  return g_api.llama_decode(ctx, batch);
 +}
++void llama_synchronize(llama_context* ctx) { g_api.llama_synchronize(ctx); }
 +float* llama_get_logits_ith(llama_context* ctx, int32_t i) {
 +  return g_api.llama_get_logits_ith(ctx, i);
 +}
@@ -19740,10 +19847,10 @@ index 000000000..923b856a7
 +#endif  // _WIN32
 diff --git a/src/rewriter/llama_runtime.h b/src/rewriter/llama_runtime.h
 new file mode 100644
-index 000000000..9573fd721
+index 000000000..9d46ce41a
 --- /dev/null
 +++ b/src/rewriter/llama_runtime.h
-@@ -0,0 +1,25 @@
+@@ -0,0 +1,34 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
 +// Kotori: llama.cpp の実行時の準備(docs/adr/0016)。
@@ -19757,13 +19864,22 @@ index 000000000..9573fd721
 +
 +#include <string>
 +
++#include "ggml-backend.h"
++
 +namespace mozc {
 +
 +// llama.cpp を使える状態にする。dir は DLL のあるフォルダ(Windows のみ使う)。
 +// 2 回目以降は前の結果を返す。
 +bool EnsureLlamaRuntime(const std::string& dir);
 +
-+// GPU に載せられるか(Vulkan などの GPU が見つかったか)。EnsureLlamaRuntime の後に呼ぶ。
++// AI を載せる GPU。専用の GPU(内蔵 GPU は除く)のうち VRAM が最も大きいもので、VRAM が
++// 3 GiB 以上のものだけを使う(docs/adr/0024)。内蔵 GPU はメインメモリを共有し、LLM を載せると
++// 変換で固まることがあるため使わない。なければ nullptr(CPU で動かす)。
++// 環境変数 KOTORI_LM_DEVICE=cpu で GPU を使わない(評価用。ノート PC の再現)。
++// EnsureLlamaRuntime の後に呼ぶ。
++ggml_backend_dev_t LlamaGpuDevice();
++
++// LlamaGpuDevice() があるか。
 +bool LlamaHasGpu();
 +
 +}  // namespace mozc
@@ -19771,10 +19887,10 @@ index 000000000..9573fd721
 +#endif  // MOZC_REWRITER_LLAMA_RUNTIME_H_
 diff --git a/src/rewriter/lm_rewriter.cc b/src/rewriter/lm_rewriter.cc
 new file mode 100644
-index 000000000..fa7fb7e70
+index 000000000..9df449b64
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.cc
-@@ -0,0 +1,1281 @@
+@@ -0,0 +1,1516 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/lm_rewriter.h"
@@ -19875,6 +19991,24 @@ index 000000000..fa7fb7e70
 +  return false;
 +}
 +
++// 要求の中で取ったロック(LmRewriter::TryLockForRequest)を、範囲の終わりで外す。
++class ABSL_SCOPED_LOCKABLE HeldLock {
++ public:
++  explicit HeldLock(absl::Mutex& m) ABSL_EXCLUSIVE_LOCK_FUNCTION(m) : m_(m) {}
++  ~HeldLock() ABSL_UNLOCK_FUNCTION() { m_.Unlock(); }
++
++ private:
++  absl::Mutex& m_;
++};
++
++// このスレッドの生成を、範囲の間だけ f が真になったらやめる(ZenzScorer::SetThreadCancel)。
++struct CancelScope {
++  explicit CancelScope(std::function<bool()> f) {
++    ZenzScorer::SetThreadCancel(std::move(f));
++  }
++  ~CancelScope() { ZenzScorer::SetThreadCancel(nullptr); }
++};
++
 +// 変換を待たせないための目印。変換の要求が来ている間、裏の予測は途中でやめる。
 +class Urgent {
 + public:
@@ -19901,7 +20035,9 @@ index 000000000..fa7fb7e70
 +Quality QualityOf(config::Config::KotoriLmQuality q) {
 +  switch (q) {
 +    case config::Config::KOTORI_LM_LOW:
-+      return {4, "zenz-v2.5-xsmall-q8_0.gguf", 2, 0};
++      // GPU のない PC 向け(docs/adr/0024)。LLM を使わず、大きい zenz を CPU で動かす。
++      // 打っている間に裏で生成を済ませておく(先回りの変換)ので、Space では採点だけになる。
++      return {4, "zenz-v2.5-medium-q8_0.gguf", 2, 0};
 +    case config::Config::KOTORI_LM_HIGH:
 +      return {16, kDefaultModelName, 8, 32};
 +    case config::Config::KOTORI_LM_UNREAL:
@@ -20220,6 +20356,12 @@ index 000000000..fa7fb7e70
 +  if (const char* v = Env("KOTORI_LM_LLM_TOP")) {
 +    llm_top_override_ = std::strtoul(v, nullptr, 10);
 +  }
++  if (const char* v = Env("KOTORI_LM_LIGHT_BEAMS")) {
++    std::sscanf(v, "%d,%d,%d", &light_beams_, &light_head_beams_, &light_tokens_);
++  }
++  if (const char* v = Env("KOTORI_LM_LIGHT_RANK")) light_rank_ = *v != '0';
++  if (const char* v = Env("KOTORI_LM_LIGHT_DELAY")) light_delay_ms_ = std::atoi(v);
++  if (const char* v = Env("KOTORI_LM_FULL_DELAY")) full_delay_ms_ = std::atoi(v);
 +  if (const char* v = Env("KOTORI_LM_NSENT")) {
 +    max_sentences_ = std::max(1, std::atoi(v));
 +  }
@@ -20233,20 +20375,37 @@ index 000000000..fa7fb7e70
 +  runtime_dir_ = model_dir_;
 +  if (const char* v = Env("KOTORI_RUNTIME_DIR")) runtime_dir_ = v;
 +  if (const char* v = Env("KOTORI_MODEL_DIR")) model_dir_ = v;
-+  // 入力中のサジェストに出す予測を、裏で先回りして計算するスレッド。
-+  if (predict_) worker_ = std::thread([this] { WorkerLoop(); });
++  if (const char* v = Env("KOTORI_LM_BUDGET")) budget_ms_ = std::atoi(v);
++  if (const char* v = Env("KOTORI_LM_PRECONVERT")) preconvert_ = *v != '0';
++  // モデルの読み込みと、入力中のサジェストに出す予測を裏で行うスレッド。
++  worker_ = std::thread([this] { WorkerLoop(); });
 +  // 今の設定のモデルを裏で読み込んでおく(最初の変換で 1 秒以上待たないため)。
++  // KOTORI_LM_PRELOAD=0(評価)なら、要求の中で読み込む(読み込みを待ってから変換する)。
 +  const char* preload = Env("KOTORI_LM_PRELOAD");
-+  if (preload == nullptr || *preload != '0') {
-+    preload_ = std::thread([this] {
-+      const config::Config config = config::ConfigHandler::GetCopiedConfig();
-+      absl::MutexLock lock(mutex_);
-+      size_t k = 0, llm_top = 0;
-+      int beams = 0;
-+      ZenzScorer* llm = nullptr;
-+      PrepareFor(config, &k, &llm, &beams, &llm_top);
-+    });
++  sync_load_ = preload != nullptr && *preload == '0';
++  if (!sync_load_) RequestLoad(config::ConfigHandler::GetCopiedConfig());
++}
++
++void LmRewriter::RequestLoad(const config::Config& config) const {
++  std::lock_guard<std::mutex> lock(job_mu_);
++  load_job_ = config;
++  job_cv_.notify_one();
++}
++
++bool LmRewriter::TryLockForRequest(int wait_ms) const {
++  // モデルの読み込み中は待たない(ノート PC では数秒かかり、変換が固まる。docs/adr/0024)。
++  if (loading_.load()) return false;
++  // 裏の予測は urgent_ を見て 1 トークンごとにやめるので、少しだけ待つ(同じ読みの先回りの
++  // 変換は、やめずに終わるのを待つ)。
++  const auto deadline =
++      std::chrono::steady_clock::now() + std::chrono::milliseconds(wait_ms);
++  while (!mutex_.TryLock()) {
++    if (loading_.load() || std::chrono::steady_clock::now() > deadline) {
++      return false;
++    }
++    std::this_thread::sleep_for(std::chrono::milliseconds(1));
 +  }
++  return true;
 +}
 +
 +LmRewriter::~LmRewriter() {
@@ -20256,7 +20415,6 @@ index 000000000..fa7fb7e70
 +  }
 +  job_cv_.notify_all();
 +  if (worker_.joinable()) worker_.join();
-+  if (preload_.joinable()) preload_.join();
 +}
 +
 +void LmRewriter::EnsureLoaded(const std::string& path) const {
@@ -20280,15 +20438,21 @@ index 000000000..fa7fb7e70
 +ZenzScorer* LmRewriter::Prepare(const ConversionRequest& request, size_t* k,
 +                                ZenzScorer** llm, int* beams) const {
 +  size_t llm_top = 0;
-+  return PrepareFor(request.config(), k, llm, beams, &llm_top);
++  return PrepareFor(request.config(), k, llm, beams, &llm_top, false,
++                    sync_load_);
 +}
 +
 +ZenzScorer* LmRewriter::PrepareFor(const config::Config& config, size_t* k,
 +                                   ZenzScorer** llm, int* beams,
-+                                   size_t* llm_top, bool for_predict) const {
++                                   size_t* llm_top, bool for_predict,
++                                   bool may_load) const {
 +  *llm = nullptr;
 +  if (!config.kotori_lm_enabled()) return nullptr;
-+  const Quality quality = QualityOf(config.kotori_lm_quality());
++  // GPU のない PC(内蔵 GPU だけの PC を含む)では、品質の設定に関係なく Low にする。LLM は
++  // CPU では遅すぎ、Standard 以上の中身では変換が固まるため(docs/adr/0024)。
++  const bool gpu = HasGpu();
++  const Quality quality =
++      QualityOf(gpu ? config.kotori_lm_quality() : config::Config::KOTORI_LM_LOW);
 +  *k = k_override_.value_or(quality.k);
 +  *beams = beams_override_.value_or(quality.beams);
 +  *llm_top = llm_top_override_.value_or(quality.llm_top);
@@ -20301,17 +20465,17 @@ index 000000000..fa7fb7e70
 +      path = FileUtil::JoinPath(model_dir_, kDefaultModelName);
 +    }
 +  }
++  // まだ読み込んでいなければ、裏のスレッドに頼んで今回は AI なしにする(待たない)。
++  if (!may_load && !(loaded_ && loaded_path_ == path)) {
++    RequestLoad(config);
++    return nullptr;
++  }
 +  EnsureLoaded(path);
 +  // LLM(文全体の採点に加える): AI モデルが LLM か、自動で GPU があるとき(docs/adr/0016)。
 +  // ファイルは設定のパス → KOTORI_LLM_MODEL → 同梱の LLM。
 +  // 変換で LLM を使うのは llm_top が 1 以上のとき(品質 Standard 以上)。Tab の予測(for_predict)
 +  // では品質に関係なく使う。品質 Low では最初の Tab で読み込み、その後は読み込んだままにする。
-+  const config::Config::KotoriLmModel kind = config.kotori_lm_model();
-+  const bool allowed =
-+      kind == config::Config::KOTORI_LM_MODEL_LLM ||
-+      (kind == config::Config::KOTORI_LM_MODEL_AUTO &&
-+       EnsureLlamaRuntime(runtime_dir_) && LlamaHasGpu());
-+  if (!allowed) {
++  if (!UsesLlm(config)) {
 +    EnsureLlmLoaded(std::string());  // 使わない設定なら VRAM を空ける
 +    return scorer_.get();
 +  }
@@ -20319,10 +20483,30 @@ index 000000000..fa7fb7e70
 +    std::string llm_path = config.kotori_lm_model_path();
 +    if (llm_path.empty()) llm_path = env_llm_path_;
 +    if (llm_path.empty()) llm_path = FileUtil::JoinPath(model_dir_, kLlmModelName);
++    if (!may_load && !(llm_loaded_ && llm_path_ == llm_path)) {
++      RequestLoad(config);
++      return scorer_.get();
++    }
 +    EnsureLlmLoaded(llm_path);
 +    *llm = llm_.get();
 +  }
 +  return scorer_.get();
++}
++
++bool LmRewriter::HasGpu() const {
++  return EnsureLlamaRuntime(runtime_dir_) && LlamaHasGpu();
++}
++
++bool LmRewriter::UsesLlm(const config::Config& config) const {
++  // AI モデルが「zenz のみ」でなく、AI を載せられる GPU があるとき(docs/adr/0016、0024)。
++  return config.kotori_lm_model() != config::Config::KOTORI_LM_MODEL_ZENZ &&
++         HasGpu();
++}
++
++int LmRewriter::BudgetMs() const {
++  // 変換で AI に使う時間の上限。GPU がないときは短くする(CPU では生成が遅く、待たせないため)。
++  if (budget_ms_ >= 0) return budget_ms_;
++  return HasGpu() ? 2000 : 600;
 +}
 +
 +std::optional<RewriterInterface::ResizeSegmentsRequest>
@@ -20341,10 +20525,28 @@ index 000000000..fa7fb7e70
 +  }
 +  // 文全体の候補は、区切りが決まっていない最初の変換のときだけある(切り直した後の変換では空)。
 +  if (sentences.empty()) return std::nullopt;
++  const std::string reading = ConversionReading(segments);
++  const std::string context = HistoryContext(request, segments);
++  const std::string key = reading + "\t" + context;
 +  Urgent urgent(urgent_);
-+  absl::MutexLock lock(mutex_);
++  // 同じ読みの先回りの変換が裏で計算中なら、捨てずに終わるのを待つ(上限まで)。
++  int wait_ms = 300;
++  {
++    std::lock_guard<std::mutex> jl(job_mu_);
++    urgent_key_ = key;
++    if (running_convert_ == key) wait_ms = std::max(wait_ms, BudgetMs());
++  }
++  if (!TryLockForRequest(wait_ms)) return std::nullopt;
++  HeldLock lock(mutex_);
 +  best_.reset();
 +  const auto t0 = std::chrono::steady_clock::now();
++  // AI に使う時間の上限(モデルを用意した後から数える)。超えたら生成をやめ、LLM も使わない
++  // (遅い PC で固まらないため)。
++  std::chrono::steady_clock::time_point deadline;
++  int budget_ms = 0;
++  auto over = [&] {
++    return budget_ms > 0 && std::chrono::steady_clock::now() > deadline;
++  };
 +  auto ms = [](auto a, auto b) {
 +    return std::chrono::duration<double, std::milli>(b - a).count();
 +  };
@@ -20352,13 +20554,13 @@ index 000000000..fa7fb7e70
 +  int beams = 0;
 +  size_t llm_top = 0;
 +  ZenzScorer* llm = nullptr;
-+  ZenzScorer* scorer =
-+      PrepareFor(request.config(), &k, &llm, &beams, &llm_top);
++  ZenzScorer* scorer = PrepareFor(request.config(), &k, &llm, &beams, &llm_top,
++                                  false, sync_load_);
 +  if (scorer == nullptr) return std::nullopt;
 +  const auto t_load = std::chrono::steady_clock::now();
++  budget_ms = BudgetMs();
++  deadline = t_load + std::chrono::milliseconds(budget_ms);
 +
-+  const std::string reading = ConversionReading(segments);
-+  const std::string context = HistoryContext(request, segments);
 +  // 候補 = ラティスの文全体の候補(区切り付き)+ zenz が読みから生成した文(区切りなし)。
 +  std::vector<const converter::Candidate*> cands;
 +  std::vector<std::string> values;
@@ -20375,8 +20577,22 @@ index 000000000..fa7fb7e70
 +  // 写しただけとみなして除く(zenz は読みを写した文を高く採点することがある)。
 +  const size_t lattice_kana =
 +      values.empty() ? SIZE_MAX : CountKana(values.front());
++  std::vector<std::string> generated;
 +  if (beams > 0 && Util::CharsLen(reading) <= kMaxGenerateChars) {
-+    for (const std::string& g : scorer->Generate(context, reading, beams)) {
++    if (gen_cache_ && gen_cache_->key == key && gen_cache_->beams == beams &&
++        gen_cache_->model == loaded_path_) {
++      generated = gen_cache_->texts;  // 先回りの変換で作ったもの
++    } else {
++      {
++        CancelScope cancel(over);
++        generated = scorer->Generate(context, reading, beams);
++      }
++      // 裏の先回りの変換が同じ読みを作り直さないように残す(途中でやめたものは残さない)。
++      if (!over()) gen_cache_ = Generated{key, beams, loaded_path_, generated};
++    }
++  }
++  {
++    for (const std::string& g : generated) {
 +      if (std::find(values.begin(), values.end(), g) != values.end()) continue;
 +      if ((lattice_kana != SIZE_MAX && CountKana(g) >= lattice_kana + 4) ||
 +          HasStraySmallKana(g)) {
@@ -20398,7 +20614,8 @@ index 000000000..fa7fb7e70
 +    }
 +  }
 +  const auto t_gen = std::chrono::steady_clock::now();
-+  if (values.size() < 2) return std::nullopt;
++  // 生成で時間の上限を超えたら、採点もせずに Mozc の結果を出す(待たせないため)。
++  if (values.size() < 2 || over()) return std::nullopt;
 +  // 点数 = zenz の log P(文 | 読み、前の文) + LLM の log P(文 | 前の文)(docs/adr/0016)。
 +  // LLM がないときは zenz だけで選ぶ。
 +  const std::optional<std::vector<float>> zlogp =
@@ -20406,8 +20623,9 @@ index 000000000..fa7fb7e70
 +  if (!zlogp) return std::nullopt;
 +  const auto t_zenz = std::chrono::steady_clock::now();
 +  // LLM は zenz の点数の上位 llm_top 件だけを採点する(速さのため)。ほかは選ばない。
++  // 時間の上限を超えていたら使わない。
 +  std::optional<std::vector<float>> llogp;
-+  if (llm != nullptr) {
++  if (llm != nullptr && !over()) {
 +    std::vector<size_t> order(values.size());
 +    std::iota(order.begin(), order.end(), 0);
 +    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
@@ -20535,16 +20753,17 @@ index 000000000..fa7fb7e70
 +  return true;
 +}
 +
-+bool LmRewriter::RewriteEachSegment(const ConversionRequest& request,
-+                                    ZenzScorer* scorer, size_t k,
-+                                    bool keep_top,
-+                                    Segments* segments) const {
++bool LmRewriter::RewriteEachSegment(
++    const ConversionRequest& request, ZenzScorer* scorer, size_t k,
++    bool keep_top, std::chrono::steady_clock::time_point deadline,
++    Segments* segments) const {
 +  std::string context = HistoryContext(request, *segments);
 +  bool changed = false;
 +  const size_t num_segments = segments->conversion_segments_size();
 +  for (size_t s = 0; s < num_segments; ++s) {
 +    Segment& seg = *segments->mutable_conversion_segment(s);
 +    const size_t n = std::min(seg.candidates_size(), k);
++    if (BudgetMs() > 0 && std::chrono::steady_clock::now() > deadline) break;
 +    if (n >= 2 && !seg.key().empty()) {
 +      // 読みと候補の後ろに、残りの文節の読みと第 1 候補をつなぐ。「はが」だけでは
 +      // 葉/歯を決められないが、「はがいたい」なら決められる。
@@ -20622,7 +20841,8 @@ index 000000000..fa7fb7e70
 +  size_t k = 0, llm_top = 0;
 +  int beams = 0;
 +  ZenzScorer* llm = nullptr;
-+  ZenzScorer* scorer = PrepareFor(config, &k, &llm, &beams, &llm_top, true);
++  ZenzScorer* scorer = PrepareFor(config, &k, &llm, &beams, &llm_top, true,
++                                  background || sync_load_);
 +  if (scorer == nullptr || llm == nullptr) return preds;
 +  // 裏で計算しているときは、変換の要求が来たらすぐやめる。light なら打鍵に間に合うよう
 +  // 軽くする(続きは 2 件・6 トークン、辞書の語を試す段は省く)。重い計算(作り直し)は
@@ -20632,28 +20852,45 @@ index 000000000..fa7fb7e70
 +                          (!light && new_job_.load()));
 +  };
 +  // 生成の途中(1 トークンごと)でもやめられるようにする。
-+  struct CancelScope {
-+    explicit CancelScope(std::function<bool()> f) {
-+      ZenzScorer::SetThreadCancel(std::move(f));
-+    }
-+    ~CancelScope() { ZenzScorer::SetThreadCancel(nullptr); }
-+  } cancel_scope(background ? std::function<bool()>(yield)
-+                            : std::function<bool()>());
++  CancelScope cancel_scope(background ? std::function<bool()>(yield)
++                                      : std::function<bool()>());
 +  const int mode = light ? (predict_mode_ & 3) : predict_mode_;
-+  const int n_beams = light ? 2 : predict_beams_;
-+  const int n_tokens = light ? std::min(predict_tokens_, 6) : predict_tokens_;
++  const int n_beams = light ? light_beams_ : predict_beams_;
++  // 打ちかけを除いた変換の続きの数。GPU(Vulkan)は 1 回に 3 トークン以上を渡すと 2 トークンの
++  // 2 倍ほどかかるので、軽い計算では 2 つの続きの合計を小さくする(docs/adr/0024)。
++  const int n_head_beams = light ? light_head_beams_ : predict_beams_ + 1;
++  const int n_tokens =
++      light ? std::min(predict_tokens_, light_tokens_) : predict_tokens_;
 +  const std::vector<std::string> rchars = Chars(reading);
-+  auto convert = [&](const std::string& r) -> std::string {
-+    for (const std::string& g : scorer->Generate(context, r, 2)) {
++  // 変換する読み: 読み全体と、最後の 1〜2 文字を打ちかけとみなして除いた読み(heads)。
++  const size_t max_drop = light ? 1 : 2;
++  std::vector<std::string> heads, rests;
++  for (size_t drop = 1; drop <= max_drop && rchars.size() >= drop + 2; ++drop) {
++    std::string head, rest;
++    for (size_t i = 0; i < rchars.size(); ++i) {
++      (i + drop < rchars.size() ? head : rest) += rchars[i];
++    }
++    heads.push_back(std::move(head));
++    rests.push_back(std::move(rest));
++  }
++  // zenz の変換は、すべての読みを 1 回のビームサーチでまとめて行う(GPU を呼ぶ回数を減らす。
++  // docs/adr/0024)。convs[0] が読み全体、convs[i + 1] が heads[i] の変換。
++  std::vector<std::string> to_convert = {reading};
++  to_convert.insert(to_convert.end(), heads.begin(), heads.end());
++  const auto tt0 = std::chrono::steady_clock::now();
++  const std::vector<std::vector<std::string>> gens =
++      scorer->GenerateMany(context, to_convert, 2);
++  std::vector<std::string> convs(to_convert.size());
++  for (size_t i = 0; i < gens.size() && i < convs.size(); ++i) {
++    for (const std::string& g : gens[i]) {
 +      if (dictionary_ == nullptr ||
-+          MatchesReading(*dictionary_, single_kanji_, g, r)) {
-+        return g;
++          MatchesReading(*dictionary_, single_kanji_, g, to_convert[i])) {
++        convs[i] = g;
++        break;
 +      }
 +    }
-+    return std::string();
-+  };
-+  const auto tt0 = std::chrono::steady_clock::now();
-+  const std::string conv = convert(reading);
++  }
++  const std::string conv = convs[0];
 +  const auto tt1 = std::chrono::steady_clock::now();
 +  if (conv_out != nullptr) *conv_out = conv;
 +  if (conv.empty() || yield()) return preds;
@@ -20666,36 +20903,49 @@ index 000000000..fa7fb7e70
 +    preds.push_back({text, base, covered, std::string()});
 +  };
 +  // 1. 読み全体の変換に、LLM で続きを付ける。
-+  if (mode & 1) {
-+    for (const std::string& c :
-+         llm->Continue(Tail(context) + conv, n_tokens, n_beams)) {
-+      if (NaturalStart(c)) add(conv + c, conv, reading);
++  // 2. 最後の 1〜2 文字が打ちかけの場合(「おせわに」→「お世話」+「になっております」、
++  //    「きょうはいいて」→「今日はいい」+「天気」)。打ちかけを除いた変換に続きを付ける。
++  // 1 と 2 は 1 回のビームサーチでまとめて作る。
++  std::vector<std::pair<std::string, int>> roots;
++  std::vector<int> root_head;  // -1 なら読み全体、i なら heads[i]
++  if ((mode & 1) && n_beams > 0) {
++    roots.push_back({Tail(context) + conv, n_beams});
++    root_head.push_back(-1);
++  }
++  if ((mode & 2) && dictionary_ != nullptr && n_head_beams > 0) {
++    for (size_t i = 0; i < heads.size(); ++i) {
++      if (convs[i + 1].empty()) continue;
++      roots.push_back({Tail(context) + convs[i + 1], n_head_beams});
++      root_head.push_back(static_cast<int>(i));
 +    }
 +  }
-+  // 2. 最後の 1〜2 文字が打ちかけの場合(「おせわに」→「お世話」+「になっております」、
-+  //    「きょうはいいて」→「今日はいい」+「天気」)。
-+  std::vector<std::pair<std::string, std::string>> partial;  // (文, 土台)
-+  std::vector<std::string> partial_covered;
-+  const size_t max_drop = light ? 1 : 2;
-+  for (size_t drop = 1; drop <= max_drop && rchars.size() >= drop + 2; ++drop) {
-+    if (yield()) return preds;
-+    std::string head, rest;
-+    for (size_t i = 0; i < rchars.size(); ++i) {
-+      (i + drop < rchars.size() ? head : rest) += rchars[i];
++  const std::vector<std::vector<std::string>> conts =
++      llm->ContinueMany(roots, n_tokens);
++  for (size_t r = 0; r < conts.size(); ++r) {
++    if (root_head[r] < 0) {
++      for (const std::string& c : conts[r]) {
++        if (NaturalStart(c)) add(conv + c, conv, reading);
++      }
++      continue;
 +    }
-+    const std::string base = convert(head);
-+    if (base.empty() || dictionary_ == nullptr) continue;
-+    if (mode & 2) {
-+      for (const std::string& c : llm->Continue(Tail(context) + base, n_tokens,
-+                                                n_beams + 1)) {
-+        if (NaturalStart(c) &&
-+            (light ||
-+             MatchesReading(*dictionary_, single_kanji_, c, rest, true))) {
-+          add(base + c, base, head);
-+        }
++    const size_t i = root_head[r];
++    const std::string& base = convs[i + 1];
++    for (const std::string& c : conts[r]) {
++      if (NaturalStart(c) &&
++          (light ||
++           MatchesReading(*dictionary_, single_kanji_, c, rests[i], true))) {
++        add(base + c, base, heads[i]);
 +      }
 +    }
-+    if (!(mode & 4)) continue;
++  }
++  std::vector<std::pair<std::string, std::string>> partial;  // (文, 土台)
++  std::vector<std::string> partial_covered;
++  for (size_t i = 0; i < heads.size() && (mode & 4); ++i) {
++    if (yield()) return preds;
++    const std::string& base = convs[i + 1];
++    if (base.empty() || dictionary_ == nullptr) continue;
++    const std::string& head = heads[i];
++    const std::string& rest = rests[i];
 +    // その読みで始まる語を辞書から出やすい順に取り、LLM が文脈に合うものを選ぶ。
 +    PredictiveCollector pc;
 +    dictionary_->LookupPredictive(rest, &pc);
@@ -20742,8 +20992,9 @@ index 000000000..fa7fb7e70
 +      }
 +    }
 +  }
-+  // 3. 前の文のもとでの自然さ(1 トークンあたりの log P)で並べる。
-+  if (preds.size() >= 2 && !yield()) {
++  // 3. 前の文のもとでの自然さ(1 トークンあたりの log P)で並べる。軽い計算では省ける
++  //    (KOTORI_LM_LIGHT_RANK=0。続きのビームサーチの順のまま。docs/adr/0024)。
++  if (preds.size() >= 2 && (!light || light_rank_) && !yield()) {
 +    std::vector<std::string> texts;
 +    for (const Prediction& p : preds) texts.push_back(p.text);
 +    if (auto logp = llm->Score(context, reading, texts)) {
@@ -20856,7 +21107,7 @@ index 000000000..fa7fb7e70
 +  size_t k = 0, llm_top = 0;
 +  int beams = 0;
 +  ZenzScorer* llm = nullptr;
-+  PrepareFor(request.config(), &k, &llm, &beams, &llm_top, true);
++  PrepareFor(request.config(), &k, &llm, &beams, &llm_top, true, sync_load_);
 +  if (llm == nullptr) return false;
 +  // Mozc 自身の予測候補(上位 8 件)と読みの変換も加え、1 トークンあたりの log P で並べる。
 +  std::vector<std::string> pool;
@@ -20951,15 +21202,26 @@ index 000000000..fa7fb7e70
 +
 +bool LmRewriter::RewriteSuggestion(const ConversionRequest& request,
 +                                   Segments* segments) const {
-+  if (!predict_ || segments->conversion_segments_size() != 1) return false;
++  if (segments->conversion_segments_size() != 1) return false;
 +  const config::Config& config = request.config();
-+  if (!config.kotori_lm_enabled() || !config.kotori_lm_predict()) return false;
++  if (!config.kotori_lm_enabled()) return false;
 +  Segment& seg = *segments->mutable_conversion_segment(0);
 +  const std::string reading(seg.key());
 +  const std::vector<std::string> rchars = Chars(reading);
 +  // 打ちかけのローマ字(「おせわn」)が残っているときは使わない。
 +  if (rchars.size() < 2 || rchars.back().size() == 1) return false;
 +  const std::string context = HistoryContext(request, *segments);
++  // LLM の予測を使わない(GPU がない、など)ときは、今の読みの変換を裏で先に済ませておく
++  // (先回りの変換。Space で待たせないため。docs/adr/0024)。
++  if (!(predict_ && config.kotori_lm_predict() && UsesLlm(config))) {
++    if (preconvert_ && rchars.size() <= kMaxGenerateChars) {
++      std::lock_guard<std::mutex> lock(job_mu_);
++      job_ = Job{reading, context, config, true};
++      new_job_ = true;
++      job_cv_.notify_one();
++    }
++    return false;
++  }
 +  // 1. 計算済みの予測のうち、今の読みに合うものを出す(読みの長いものから)。
 +  std::vector<std::string> texts;
 +  for (const Prediction& p : CachedPredictions(reading, context, suggest_count_)) {
@@ -20978,6 +21240,9 @@ index 000000000..fa7fb7e70
 +      job_cv_.notify_one();
 +    }
 +  }
++  if (Env("KOTORI_LM_STATS") != nullptr) {
++    std::fprintf(stderr, "[stats] %s\n", ZenzScorer::Stats().c_str());
++  }
 +  if (Env("KOTORI_LM_DEBUG") != nullptr) {
 +    std::lock_guard<std::mutex> lock(job_mu_);
 +    std::fprintf(stderr, "[suggest] %s cache=%zu shown=%zu\n", reading.c_str(),
@@ -20988,16 +21253,87 @@ index 000000000..fa7fb7e70
 +  return true;
 +}
 +
++void LmRewriter::RunPreconvert(const Job& job) {
++  // 続けて打っている間は計算しない(CPU では 1 回の生成が打鍵の間隔より長い)。
++  {
++    std::unique_lock<std::mutex> lock(job_mu_);
++    if (job_cv_.wait_for(lock, std::chrono::milliseconds(preconvert_delay_ms_),
++                         [&] { return stop_ || job_.has_value(); })) {
++      return;
++    }
++  }
++  const std::string key = job.reading + "\t" + job.context;
++  {
++    std::lock_guard<std::mutex> lock(job_mu_);
++    running_convert_ = key;
++  }
++  // 新しい打鍵・停止、または別の読みの変換の要求が来たらやめる(同じ読みの変換なら続ける)。
++  auto cancelled = [&] {
++    if (stop_.load() || new_job_.load()) return true;
++    if (urgent_.load() == 0) return false;
++    std::lock_guard<std::mutex> lock(job_mu_);
++    return urgent_key_ != key;
++  };
++  {
++    absl::MutexLock lock(mutex_);
++    size_t k = 0, llm_top = 0;
++    int beams = 0;
++    ZenzScorer* llm = nullptr;
++    ZenzScorer* scorer =
++        PrepareFor(job.config, &k, &llm, &beams, &llm_top, false, true);
++    if (scorer != nullptr && beams > 0 &&
++        !(gen_cache_ && gen_cache_->key == key && gen_cache_->beams == beams &&
++          gen_cache_->model == loaded_path_)) {
++      std::vector<std::string> texts;
++      {
++        CancelScope cancel(cancelled);
++        texts = scorer->Generate(job.context, job.reading, beams);
++      }
++      if (!cancelled()) gen_cache_ = Generated{key, beams, loaded_path_, texts};
++    }
++  }
++  {
++    std::lock_guard<std::mutex> lock(job_mu_);
++    running_convert_.clear();
++  }
++}
++
 +void LmRewriter::WorkerLoop() {
 +  while (true) {
 +    Job job;
 +    {
 +      std::unique_lock<std::mutex> lock(job_mu_);
-+      job_cv_.wait(lock, [&] { return stop_ || job_.has_value(); });
++      job_cv_.wait(lock, [&] {
++        return stop_ || job_.has_value() || load_job_.has_value();
++      });
 +      if (stop_) return;
++      if (load_job_) {
++        // モデルの読み込み。読み込み中の変換は待たずに AI なしで出す(TryLockForRequest)。
++        const config::Config config = std::move(*load_job_);
++        load_job_.reset();
++        lock.unlock();
++        loading_ = true;
++        {
++          absl::MutexLock model_lock(mutex_);
++          size_t k = 0, llm_top = 0;
++          int beams = 0;
++          ZenzScorer* llm = nullptr;
++          PrepareFor(config, &k, &llm, &beams, &llm_top, false, true);
++          // 入力中の AI 予測を使うなら、予測の LLM も読み込んでおく。
++          if (predict_ && config.kotori_lm_predict()) {
++            PrepareFor(config, &k, &llm, &beams, &llm_top, true, true);
++          }
++        }
++        loading_ = false;
++        continue;
++      }
 +      job = std::move(*job_);
 +      job_.reset();
 +      new_job_ = false;
++    }
++    if (job.convert) {
++      RunPreconvert(job);
++      continue;
 +    }
 +    // 途中でやめたか(変換の要求・停止、重い計算は次の打鍵も)。やめたときは結果を残さない。
 +    auto interrupted = [&](bool light) {
@@ -21005,7 +21341,18 @@ index 000000000..fa7fb7e70
 +    };
 +    // 1. 軽い計算(次の打鍵に間に合わせる)。2. 手が止まっていれば、Tab と同じ重さで
 +    //    作り直す(Tab を押したときに、待たずに良い予測を出せる)。
++    // ms の間に次の打鍵(新しい仕事)が来なければ true。来たら false(その仕事から始め直す)。
++    auto quiet_for = [&](int ms) {
++      if (ms <= 0) return !new_job_.load() && !stop_.load();
++      std::unique_lock<std::mutex> lock(job_mu_);
++      return !job_cv_.wait_for(lock, std::chrono::milliseconds(ms),
++                               [&] { return stop_ || job_.has_value(); });
++    };
 +    for (const bool light : {true, false}) {
++      // 続けて打っている間は計算しない(打鍵ごとの計算の多くは次の打鍵で要らなくなる)。
++      // 作り直しは、手が止まってから(docs/adr/0024)。
++      const int delay = light ? light_delay_ms_ : full_delay_ms_;
++      if (delay < 0 || !quiet_for(delay)) break;
 +      std::vector<Prediction> preds;
 +      {
 +        absl::MutexLock lock(mutex_);
@@ -21033,7 +21380,8 @@ index 000000000..fa7fb7e70
 +  // サジェストのための変換(1 打鍵ごと)では、AI の変換を動かさない(入力が重くなるため)。
 +  if (request.options().skip_slow_rewriters) return false;
 +  Urgent urgent(urgent_);
-+  absl::MutexLock lock(mutex_);
++  if (!TryLockForRequest(300)) return false;
++  HeldLock lock(mutex_);
 +  if (request.request_type() == ConversionRequest::PREDICTION) {
 +    return RewritePrediction(request, segments);
 +  }
@@ -21051,17 +21399,20 @@ index 000000000..fa7fb7e70
 +  // 文節が多いと、文節ごとの採点(文節ごとに 1 回)で数秒かかる。文全体の選択だけにする。
 +  if (segments->conversion_segments_size() > kMaxSegmentsToRescore) return changed;
 +  // 文節ごとにも見直す。文全体で選んだときは(LLM も見て決めたので)先頭は変えず、
-+  // 2 番目以降の候補だけを並べる。
-+  return RewriteEachSegment(request, scorer, k, matched, segments) || changed;
++  // 2 番目以降の候補だけを並べる。時間の上限を超えたら残りの文節はそのまま。
++  const auto deadline = std::chrono::steady_clock::now() +
++                        std::chrono::milliseconds(BudgetMs());
++  return RewriteEachSegment(request, scorer, k, matched, deadline, segments) ||
++         changed;
 +}
 +
 +}  // namespace mozc
 diff --git a/src/rewriter/lm_rewriter.h b/src/rewriter/lm_rewriter.h
 new file mode 100644
-index 000000000..23a1f2cee
+index 000000000..3b9359a45
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.h
-@@ -0,0 +1,206 @@
+@@ -0,0 +1,256 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
 +// Kotori: AI による変換(docs/adr/0013、0015、0016)。
@@ -21075,6 +21426,7 @@ index 000000000..23a1f2cee
 +#include <string>
 +#include <thread>
 +#include <atomic>
++#include <chrono>
 +#include <condition_variable>
 +#include <deque>
 +#include <mutex>
@@ -21149,10 +21501,17 @@ index 000000000..23a1f2cee
 +                      ZenzScorer** llm, int* beams) const
 +      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 +  // Prepare の本体。*llm_top は LLM で採点する候補の数。
++  // may_load が偽なら、読み込んでいないモデルは裏のスレッドに頼んで nullptr を返す
++  // (要求の中で読み込んで待たせないため)。
 +  ZenzScorer* PrepareFor(const config::Config& config, size_t* k,
 +                         ZenzScorer** llm, int* beams, size_t* llm_top,
-+                         bool for_predict = false) const
++                         bool for_predict, bool may_load) const
 +      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
++  // 裏のスレッドにモデルの読み込みを頼む。
++  void RequestLoad(const config::Config& config) const;
++  // 要求の中で mutex_ を取る。モデルの読み込み中や、しばらく取れないときは false(AI なしにする)。
++  bool TryLockForRequest(int wait_ms) const
++      ABSL_EXCLUSIVE_TRYLOCK_FUNCTION(true, mutex_);
 +  void EnsureLoaded(const std::string& path) const
 +      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 +  void EnsureLlmLoaded(const std::string& path) const
@@ -21177,7 +21536,23 @@ index 000000000..23a1f2cee
 +    std::string reading;
 +    std::string context;
 +    config::Config config;
++    bool convert = false;  // 予測ではなく先回りの変換
 +  };
++  // 先回りの変換で生成した文(読みと前の文ごと)。
++  struct Generated {
++    std::string key;  // 読み + TAB + 前の文
++    int beams;
++    std::string model;  // 生成した zenz のファイル
++    std::vector<std::string> texts;
++  };
++  // 先回りの変換: 打つ手が止まったら、今の読みを zenz で生成しておく(docs/adr/0024)。
++  void RunPreconvert(const Job& job);
++  // AI を載せる GPU があるか。
++  bool HasGpu() const;
++  // この設定で LLM を使うか(GPU があり、AI モデルが zenz のみでない)。
++  bool UsesLlm(const config::Config& config) const;
++  // 変換で AI に使う時間の上限(ms)。
++  int BudgetMs() const;
 +  // 読みの予測を作る(zenz の変換 + LLM の続き、打ちかけの語)。background なら、変換の要求が
 +  // 来たら途中でやめる。*conv_out に読み全体の変換を入れる。
 +  std::vector<Prediction> ComputePredictions(const config::Config& config,
@@ -21207,6 +21582,7 @@ index 000000000..23a1f2cee
 +  void WorkerLoop();
 +  bool RewriteEachSegment(const ConversionRequest& request,
 +                          ZenzScorer* scorer, size_t k, bool keep_top,
++                          std::chrono::steady_clock::time_point deadline,
 +                          Segments* segments) const;
 +  double Combine(float logp, int cost) const {
 +    return lambda_lm_ * logp - lambda_lattice_ * cost / temperature_;
@@ -21231,19 +21607,44 @@ index 000000000..23a1f2cee
 +  int predict_beams_ = 3;
 +  // 予測の作り方(評価用): 1 = 変換+続き、2 = 打ちかけを除いた変換+続き、4 = 打ちかけ+辞書の語。
 +  int predict_mode_ = 7;
-+  // 起動時にモデルを裏で読み込むスレッド(最初の変換で待たないため)。
-+  std::thread preload_;
 +  // 予測を裏で計算するスレッドと、その仕事・結果。
 +  std::thread worker_;
 +  mutable std::mutex job_mu_;
 +  mutable std::condition_variable job_cv_;
 +  mutable std::optional<Job> job_;
++  // モデルを読み込む仕事(起動時と、要求の中で読み込んでいないと分かったとき)。
++  mutable std::optional<config::Config> load_job_;
++  // 裏のスレッドがモデルを読み込んでいる間 true。
++  mutable std::atomic<bool> loading_{false};
++  // 要求の中で読み込む(KOTORI_LM_PRELOAD=0。評価用)。
++  bool sync_load_ = false;
++  // 変換で AI に使う時間の上限(ms、KOTORI_LM_BUDGET。0 なら上限なし、負なら GPU の有無で決める)。
++  int budget_ms_ = -1;
++  // 先回りの変換(KOTORI_LM_PRECONVERT)と、打つ手が止まってから始めるまでの時間。
++  bool preconvert_ = true;
++  int preconvert_delay_ms_ = 120;
++  // 先回りの変換の結果。
++  mutable std::optional<Generated> gen_cache_ ABSL_GUARDED_BY(mutex_);
++  // 裏で計算中の先回りの変換と、変換の要求が来ている読み(読み + TAB + 前の文)。job_mu_ で守る。
++  mutable std::string running_convert_;
++  mutable std::string urgent_key_;
 +  mutable std::deque<Entry> cache_;
 +  std::atomic<bool> stop_{false};
 +  // 裏の予測の仕事が新しく来たか(来たら今の計算をやめる)。
 +  mutable std::atomic<bool> new_job_{false};
 +  // 変換の要求が来ている数(裏の予測はこれが 1 以上なら途中でやめる)。
 +  mutable std::atomic<int> urgent_{0};
++  // 裏の予測を始めるまでに、次の打鍵を待つ時間(ms)。軽い計算と作り直し。負なら計算しない。
++  // KOTORI_LM_LIGHT_DELAY / KOTORI_LM_FULL_DELAY。
++  int light_delay_ms_ = 0;
++  int full_delay_ms_ = 600;
++  // 軽い計算(打鍵ごと)の続きの数(読み全体の変換、打ちかけを除いた変換)とトークン数。
++  // KOTORI_LM_LIGHT_BEAMS="全体,打ちかけ,トークン"。
++  int light_beams_ = 2;
++  int light_head_beams_ = 3;
++  int light_tokens_ = 6;
++  // 軽い計算の最後に LLM で並べ直すか(KOTORI_LM_LIGHT_RANK)。
++  bool light_rank_ = true;
 +  // サジェストに出す AI の予測の数。
 +  int suggest_count_ = 2;
 +  // 文全体の選択に入れる、ラティスの文全体の候補の数(KOTORI_LM_NSENT)。
@@ -21293,15 +21694,17 @@ index d92e814fd..792ecb2c2 100644
  #endif  // MOZC_USER_DICTIONARY_REWRITER
 diff --git a/src/rewriter/zenz_scorer.cc b/src/rewriter/zenz_scorer.cc
 new file mode 100644
-index 000000000..1f908caa7
+index 000000000..59dd0e981
 --- /dev/null
 +++ b/src/rewriter/zenz_scorer.cc
-@@ -0,0 +1,466 @@
+@@ -0,0 +1,728 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/zenz_scorer.h"
 +
 +#include <algorithm>
++#include <atomic>
++#include <chrono>
 +#include <cmath>
 +#include <cstdio>
 +#include <cstdlib>
@@ -21311,6 +21714,7 @@ index 000000000..1f908caa7
 +#include <memory>
 +#include <optional>
 +#include <string>
++#include <tuple>
 +#include <utility>
 +#include <vector>
 +
@@ -21389,12 +21793,31 @@ index 000000000..1f908caa7
 +}
 +
 +// log Σ exp(logits)。対数確率は logits[t] - LogSumExp。
++// 最大値より 20 以上小さい値は足さない(exp(-20) ≈ 2e-9。語彙が 15 万でも誤差は 3e-4 以下)。
++// LLM は語彙が大きく、すべての exp を計算すると CPU の時間の大半になるため。
 +float LogSumExp(const float* logits, int n) {
-+  float max = -std::numeric_limits<float>::infinity();
-+  for (int i = 0; i < n; ++i) max = std::max(max, logits[i]);
++  const float max = *std::max_element(logits, logits + n);
++  static const bool exact = std::getenv("KOTORI_LM_EXACT_LSE") != nullptr;
++  const float cut = exact ? -std::numeric_limits<float>::infinity() : max - 20.f;
 +  float sum = 0;
-+  for (int i = 0; i < n; ++i) sum += std::exp(logits[i] - max);
++  for (int i = 0; i < n; ++i) {
++    if (logits[i] > cut) sum += std::exp(logits[i] - max);
++  }
 +  return max + std::log(sum);
++}
++
++// logits の上位 k 件のトークン(大きい順)。k は小さい(ビームの数)ので、1 回の走査で選ぶ。
++void TopK(const float* logits, int n, int k, std::vector<int>* out) {
++  out->clear();
++  float floor = -std::numeric_limits<float>::infinity();
++  for (int i = 0; i < n; ++i) {
++    if (static_cast<int>(out->size()) == k && logits[i] <= floor) continue;
++    auto it = std::find_if(out->begin(), out->end(),
++                           [&](int j) { return logits[j] < logits[i]; });
++    out->insert(it, i);
++    if (static_cast<int>(out->size()) > k) out->pop_back();
++    if (static_cast<int>(out->size()) == k) floor = logits[out->back()];
++  }
 +}
 +
 +std::vector<float> LogSoftmax(const float* logits, int n) {
@@ -21408,7 +21831,62 @@ index 000000000..1f908caa7
 +  return out;
 +}
 +
++// 計算量の累計(ZenzScorer::Stats)。[0] が zenz、[1] が LLM。
++struct Counters {
++  std::atomic<int64_t> work_us{0}, decode_us{0}, calls{0}, tokens{0};
++};
++Counters g_stats[2];
++
++int64_t NowUs() {
++  return std::chrono::duration_cast<std::chrono::microseconds>(
++             std::chrono::steady_clock::now().time_since_epoch())
++      .count();
++}
++
++// 範囲の時間を work_us に足す。
++class WorkTimer {
++ public:
++  explicit WorkTimer(bool zenz) : c_(g_stats[zenz ? 0 : 1]), t0_(NowUs()) {}
++  ~WorkTimer() { c_.work_us += NowUs() - t0_; }
++
++ private:
++  Counters& c_;
++  int64_t t0_;
++};
++
++int Decode(llama_context* ctx, const llama_batch& b, bool zenz) {
++  Counters& c = g_stats[zenz ? 0 : 1];
++  const int64_t t0 = NowUs();
++  const int rc = llama_decode(ctx, b);
++  // GPU の計算の終わりまで待って数える(結果を読むときにどのみち待つ)。
++  if (rc == 0) llama_synchronize(ctx);
++  c.decode_us += NowUs() - t0;
++  ++c.calls;
++  c.tokens += b.n_tokens;
++  if (std::getenv("KOTORI_LM_TRACE") != nullptr) {
++    std::fprintf(stderr, "[decode] %s n=%d %.1fms\n", zenz ? "zenz" : "llm",
++                 b.n_tokens, (NowUs() - t0) / 1000.0);
++  }
++  return rc;
++}
++
 +}  // namespace
++
++std::string ZenzScorer::Stats() {
++  char buf[256];
++  auto f = [](const Counters& c) {
++    return std::make_tuple(c.work_us.load() / 1000.0, c.decode_us.load() / 1000.0,
++                           static_cast<long long>(c.calls.load()),
++                           static_cast<long long>(c.tokens.load()));
++  };
++  const auto [zw, zd, zc, zt] = f(g_stats[0]);
++  const auto [lw, ld, lc, lt] = f(g_stats[1]);
++  std::snprintf(buf, sizeof(buf),
++                "zenz work=%.0fms decode=%.0fms calls=%lld tokens=%lld | "
++                "llm work=%.0fms decode=%.0fms calls=%lld tokens=%lld",
++                zw, zd, zc, zt, lw, ld, lc, lt);
++  return buf;
++}
 +
 +std::string ZenzScorer::Prompt(absl::string_view left_context,
 +                               absl::string_view reading) {
@@ -21431,10 +21909,13 @@ index 000000000..1f908caa7
 +                                             const std::string& runtime_dir) {
 +  if (!EnsureLlamaRuntime(runtime_dir)) return nullptr;
 +  llama_model_params mp = llama_model_default_params();
-+  // GPU があれば全部の層を載せる(なければ CPU で動く)。
-+  mp.n_gpu_layers = LlamaHasGpu() ? 999 : 0;
++  // 選んだ GPU 1 つだけに全部の層を載せる(なければ CPU で動く)。ほかの GPU(内蔵 GPU など)には
++  // 分けない(docs/adr/0024)。
++  ggml_backend_dev_t devices[2] = {LlamaGpuDevice(), nullptr};
++  mp.devices = devices;
++  mp.n_gpu_layers = devices[0] != nullptr ? 999 : 0;
 +  // GPU に載せるなら、ファイルをメモリに写したまま持たない(RAM を使い続けないため)。
-+  if (LlamaHasGpu()) mp.load_mode = LLAMA_LOAD_MODE_NONE;
++  if (devices[0] != nullptr) mp.load_mode = LLAMA_LOAD_MODE_NONE;
 +  llama_model* model = llama_model_load_from_file(path.c_str(), mp);
 +  if (model == nullptr) return nullptr;
 +  llama_context_params cp = llama_context_default_params();
@@ -21468,6 +21949,7 @@ index 000000000..1f908caa7
 +std::optional<std::vector<float>> ZenzScorer::Score(
 +    absl::string_view left_context, absl::string_view reading,
 +    const std::vector<std::string>& candidates) {
++  WorkTimer timer(zenz_);
 +  if (candidates.empty() ||
 +      candidates.size() > static_cast<size_t>(max_seq_)) {
 +    return std::nullopt;
@@ -21489,7 +21971,6 @@ index 000000000..1f908caa7
 +  }
 +  if (prefix.empty()) return std::nullopt;
 +  std::vector<std::vector<llama_token>> cands;
-+  size_t total = prefix.size();
 +  for (const std::string& c : candidates) {
 +    if (zenz_) {
 +      cands.push_back(Tokenize(vocab, Normalize(c)));
@@ -21498,197 +21979,354 @@ index 000000000..1f908caa7
 +      cands.push_back(Tokenize(vocab, c));
 +    }
 +    if (cands.back().empty()) return std::nullopt;
-+    total += cands.back().size();
 +  }
-+  (void)total;
-+  // 候補を、前置きと合わせて 1 回の計算(kBatch トークン)に収まる組に分けて評価する。
-+  // 前置きのトークンは組の中のすべての候補のシーケンス(1..n)に属させ、最後の位置のロジットだけを受け取る。
++  // 前置きの最後の 1 トークンより前は、前回の計算(シーケンス 0)を使い回す(UsePrefix)。
++  // 候補は木(トライ)にまとめ、共通の先頭は 1 回だけ計算する(docs/adr/0024)。トークンは、
++  // そこを通る候補のシーケンス(1..n)すべてに属させる。前置きの最後のトークンも各組で計算し、
++  // 最初のトークンの分布を得る。候補が 1 回の計算(kBatch トークン)に収まらなければ組に分ける。
++  if (!UsePrefix(prefix)) return std::nullopt;
++  const int last_pos = static_cast<int>(prefix.size()) - 1;
 +  std::vector<float> scores(cands.size(), 0.f);
 +  llama_memory_t mem = llama_get_memory(ctx_);
++  struct Node {
++    llama_token token;
++    int parent;  // -1 なら前置きの最後
++    int depth;   // 候補の中の位置(0 から)
++    std::vector<int> seqs;
++    bool has_child = false;
++  };
 +  size_t start = 0;
 +  while (start < cands.size()) {
++    // この組の木を作る。
++    std::vector<Node> nodes;
++    std::vector<std::vector<int>> path;  // 候補ごとの節の番号
 +    size_t end_c = start;
-+    size_t n_tok = prefix.size();
-+    while (end_c < cands.size() &&
-+           n_tok + cands[end_c].size() <= static_cast<size_t>(kBatch)) {
-+      n_tok += cands[end_c].size();
++    while (end_c < cands.size() && end_c - start < static_cast<size_t>(max_seq_)) {
++      std::vector<Node> trial = nodes;
++      std::vector<int> p;
++      int parent = -1;
++      const int seq = static_cast<int>(end_c - start) + 1;
++      for (size_t j = 0; j < cands[end_c].size(); ++j) {
++        int found = -1;
++        for (size_t n = 0; n < trial.size(); ++n) {
++          if (trial[n].parent == parent && trial[n].token == cands[end_c][j]) {
++            found = static_cast<int>(n);
++            break;
++          }
++        }
++        if (found < 0) {
++          trial.push_back({cands[end_c][j], parent, static_cast<int>(j), {}, false});
++          found = static_cast<int>(trial.size()) - 1;
++          if (parent >= 0) trial[parent].has_child = true;
++        }
++        trial[found].seqs.push_back(seq);
++        p.push_back(found);
++        parent = found;
++      }
++      if (trial.size() + 1 > static_cast<size_t>(kBatch)) break;
++      nodes = std::move(trial);
++      path.push_back(std::move(p));
 +      ++end_c;
 +    }
-+    if (end_c == start) return std::nullopt;  // 1 つの候補も収まらない
-+    llama_memory_clear(mem, true);
-+    const int n_seq = static_cast<int>(end_c - start);
-+    llama_batch b = llama_batch_init(n_tok, 0, n_seq);
-+    for (size_t i = 0; i < prefix.size(); ++i) {
-+      b.token[i] = prefix[i];
-+      b.pos[i] = i;
-+      b.n_seq_id[i] = n_seq;
-+      for (int q = 0; q < n_seq; ++q) b.seq_id[i][q] = q + 1;
-+      b.logits[i] = i + 1 == prefix.size();
-+    }
-+    std::vector<std::vector<int>> index(n_seq);
-+    int at = static_cast<int>(prefix.size());
-+    for (int q = 0; q < n_seq; ++q) {
-+      const auto& c = cands[start + q];
-+      for (size_t j = 0; j < c.size(); ++j, ++at) {
-+        b.token[at] = c[j];
-+        b.pos[at] = prefix.size() + j;
-+        b.n_seq_id[at] = 1;
-+        b.seq_id[at][0] = q + 1;
-+        b.logits[at] = j + 1 < c.size();
-+        index[q].push_back(at);
-+      }
-+    }
-+    b.n_tokens = n_tok;
-+    const int rc = llama_decode(ctx_, b);
-+    llama_batch_free(b);
-+    if (rc != 0) {
-+      llama_memory_clear(mem, true);
++    if (end_c == start) {  // 1 つの候補も収まらない
++      ResetMemory();
 +      return std::nullopt;
 +    }
-+    const float* first = llama_get_logits_ith(ctx_, prefix.size() - 1);
-+    const float first_lse = LogSumExp(first, n_vocab);
++    const int n_seq = static_cast<int>(end_c - start);
++    for (int q = 1; q <= n_seq; ++q) {
++      llama_memory_seq_rm(mem, q, -1, -1);
++      llama_memory_seq_cp(mem, 0, q, -1, -1);
++    }
++    llama_batch b = llama_batch_init(nodes.size() + 1, 0, n_seq);
++    b.token[0] = prefix.back();
++    b.pos[0] = last_pos;
++    b.n_seq_id[0] = n_seq;
++    for (int q = 0; q < n_seq; ++q) b.seq_id[0][q] = q + 1;
++    b.logits[0] = 1;
++    for (size_t n = 0; n < nodes.size(); ++n) {
++      const Node& node = nodes[n];
++      b.token[n + 1] = node.token;
++      b.pos[n + 1] = last_pos + 1 + node.depth;
++      b.n_seq_id[n + 1] = static_cast<int>(node.seqs.size());
++      for (size_t q = 0; q < node.seqs.size(); ++q) {
++        b.seq_id[n + 1][q] = node.seqs[q];
++      }
++      b.logits[n + 1] = node.has_child;
++    }
++    b.n_tokens = static_cast<int>(nodes.size()) + 1;
++    const int rc = Decode(ctx_, b, zenz_);
++    llama_batch_free(b);
++    if (rc != 0) {
++      ResetMemory();
++      return std::nullopt;
++    }
++    // 節ごとの log Σ exp は 1 回だけ計算する。
++    std::vector<float> lse(nodes.size() + 1, std::nanf(""));
++    auto logp_at = [&](int batch_index, llama_token t) {
++      const float* l = llama_get_logits_ith(ctx_, batch_index);
++      if (std::isnan(lse[batch_index])) lse[batch_index] = LogSumExp(l, n_vocab);
++      return l[t] - lse[batch_index];
++    };
 +    for (int q = 0; q < n_seq; ++q) {
-+      const auto& c = cands[start + q];
 +      float logp = 0;
-+      for (size_t j = 0; j < c.size(); ++j) {
-+        if (j == 0) {
-+          logp += first[c[j]] - first_lse;
-+        } else {
-+          const float* l = llama_get_logits_ith(ctx_, index[q][j - 1]);
-+          logp += l[c[j]] - LogSumExp(l, n_vocab);
-+        }
++      for (int n : path[q]) {
++        const int parent = nodes[n].parent;
++        logp += logp_at(parent < 0 ? 0 : parent + 1, nodes[n].token);
 +      }
 +      scores[start + q] = logp;
 +    }
 +    start = end_c;
 +  }
-+  llama_memory_clear(mem, true);
++  KeepPrefix(prefix);
 +  return scores;
 +}
 +
++bool ZenzScorer::UsePrefix(const std::vector<llama_token>& prefix) {
++  // シーケンス 0 に prefix の最後の 1 トークンより前を置く。前回と同じ所は計算し直さない。
++  llama_memory_t mem = llama_get_memory(ctx_);
++  const size_t want = prefix.size() - 1;
++  size_t keep = 0;
++  while (keep < cached_.size() && keep < want && cached_[keep] == prefix[keep]) {
++    ++keep;
++  }
++  for (int q = 1; q <= max_seq_; ++q) llama_memory_seq_rm(mem, q, -1, -1);
++  llama_memory_seq_rm(mem, 0, static_cast<llama_pos>(keep), -1);
++  cached_.resize(keep);
++  for (size_t at = keep; at < want;) {
++    const size_t n = std::min(want - at, static_cast<size_t>(kBatch));
++    llama_batch b = llama_batch_init(n, 0, 1);
++    for (size_t i = 0; i < n; ++i) {
++      b.token[i] = prefix[at + i];
++      b.pos[i] = static_cast<llama_pos>(at + i);
++      b.n_seq_id[i] = 1;
++      b.seq_id[i][0] = 0;
++      b.logits[i] = 0;
++    }
++    b.n_tokens = n;
++    const int rc = Decode(ctx_, b, zenz_);
++    llama_batch_free(b);
++    if (rc != 0) {
++      ResetMemory();
++      return false;
++    }
++    at += n;
++  }
++  cached_.assign(prefix.begin(), prefix.begin() + want);
++  return true;
++}
++
++void ZenzScorer::KeepPrefix(const std::vector<llama_token>& prefix) {
++  // 次の呼び出しのために、シーケンス 0 の prefix の最後の 1 トークンより前だけを残す。
++  llama_memory_t mem = llama_get_memory(ctx_);
++  for (int q = 1; q <= max_seq_; ++q) llama_memory_seq_rm(mem, q, -1, -1);
++  const size_t want = prefix.empty() ? 0 : prefix.size() - 1;
++  llama_memory_seq_rm(mem, 0, static_cast<llama_pos>(want), -1);
++  cached_.assign(prefix.begin(), prefix.begin() + want);
++}
++
++void ZenzScorer::ResetMemory() {
++  llama_memory_clear(llama_get_memory(ctx_), true);
++  cached_.clear();
++}
 +
 +void ZenzScorer::SetThreadCancel(std::function<bool()> cancel) {
 +  tl_cancel = std::move(cancel);
 +}
 +
-+std::vector<std::vector<llama_token>> ZenzScorer::BeamSearch(
-+    const std::vector<llama_token>& prefix, int max_len, int beams,
++std::vector<std::vector<std::vector<llama_token>>> ZenzScorer::BeamSearch(
++    const std::vector<Root>& roots,
 +    const std::function<bool(llama_token)>& is_end, bool finish_at_max) {
-+  std::vector<std::vector<llama_token>> result;
-+  if (beams < 1 || 2 * beams + 1 > max_seq_ || prefix.empty() ||
-+      prefix.size() + max_len + 1 > kNumContext ||
-+      prefix.size() > static_cast<size_t>(kBatch)) {
++  WorkTimer timer(zenz_);
++  const int n_roots = static_cast<int>(roots.size());
++  std::vector<std::vector<std::vector<llama_token>>> result(n_roots);
++  // シーケンス: 前置きは 0..n_roots-1。ビームは 2 組(交互に使う)で、根ごとに beams 個ずつ。
++  int total_beams = 0;
++  size_t prefix_tokens = 0;
++  for (const Root& r : roots) {
++    if (r.beams < 1 || r.prefix.empty() ||
++        r.prefix.size() + r.max_len + 1 > kNumContext) {
++      return result;
++    }
++    total_beams += r.beams;
++    prefix_tokens += r.prefix.size();
++  }
++  if (n_roots == 0 || n_roots + 2 * total_beams > max_seq_ + 1 ||
++      prefix_tokens > static_cast<size_t>(kBatch)) {
 +    return result;
 +  }
 +  const llama_vocab* vocab = llama_model_get_vocab(model_);
 +  const int n_vocab = llama_vocab_n_tokens(vocab);
 +  llama_memory_t mem = llama_get_memory(ctx_);
-+  llama_memory_clear(mem, true);
-+  {
-+    llama_batch b = llama_batch_init(prefix.size(), 0, 1);
-+    for (size_t i = 0; i < prefix.size(); ++i) {
-+      b.token[i] = prefix[i];
-+      b.pos[i] = i;
-+      b.n_seq_id[i] = 1;
-+      b.seq_id[i][0] = 0;
-+      b.logits[i] = i + 1 == prefix.size();
-+    }
-+    b.n_tokens = prefix.size();
-+    const int rc = llama_decode(ctx_, b);
-+    llama_batch_free(b);
-+    if (rc != 0) {
-+      llama_memory_clear(mem, true);
-+      return result;
-+    }
++  // 根が 1 つなら、前置きの最後の 1 トークンより前は前回の計算を使い回す(UsePrefix)。
++  // 根が複数なら作り直す。
++  const bool reuse = n_roots == 1;
++  if (reuse) {
++    if (!UsePrefix(roots[0].prefix)) return result;
++  } else {
++    ResetMemory();
 +  }
 +
-+  // シーケンス 1..beams と beams+1..2*beams を交互に使い、親の KV を写してから
-+  // 次のトークンを評価する。logits は各ビームの直前のトークンの位置のもの。
 +  struct Beam {
 +    std::vector<llama_token> tokens;
 +    float logp = 0;
 +    int seq = 0;
 +    int logit_index = 0;  // 直前の decode での位置(最初は前置きの最後)
 +  };
-+  std::vector<Beam> live = {{{}, 0.f, 0, static_cast<int>(prefix.size()) - 1}};
-+  std::vector<std::pair<float, std::vector<llama_token>>> done;
-+  int base = 1;
-+  std::vector<int> idx(n_vocab);
-+  for (int step = 0; step < max_len && !live.empty(); ++step) {
-+    if (tl_cancel && tl_cancel()) return {};
-+    struct Next {
-+      float logp;
-+      size_t parent;
-+      llama_token token;
-+    };
-+    std::vector<Next> next;
-+    for (size_t p = 0; p < live.size(); ++p) {
-+      const float* l = llama_get_logits_ith(ctx_, live[p].logit_index);
-+      const float lse = LogSumExp(l, n_vocab);
-+      for (int i = 0; i < n_vocab; ++i) idx[i] = i;
-+      std::partial_sort(idx.begin(), idx.begin() + beams, idx.end(),
-+                        [&](int a, int b) { return l[a] > l[b]; });
-+      for (int j = 0; j < beams; ++j) {
-+        next.push_back({live[p].logp + l[idx[j]] - lse, p, idx[j]});
++  struct State {
++    std::vector<Beam> live;
++    std::vector<std::pair<float, std::vector<llama_token>>> done;
++    int bank_start[2] = {0, 0};  // 2 組のビームのシーケンスの先頭
++    int bank = 0;
++    bool finished = false;
++  };
++  std::vector<State> st(n_roots);
++  {
++    // すべての根の前置きを 1 回の計算で評価する(使い回した所は除く)。
++    llama_batch b = llama_batch_init(prefix_tokens, 0, 1);
++    int at = 0;
++    int seq_next = n_roots;
++    for (int r = 0; r < n_roots; ++r) {
++      const auto& prefix = roots[r].prefix;
++      for (size_t i = reuse ? prefix.size() - 1 : 0; i < prefix.size();
++           ++i, ++at) {
++        b.token[at] = prefix[i];
++        b.pos[at] = i;
++        b.n_seq_id[at] = 1;
++        b.seq_id[at][0] = r;
++        b.logits[at] = i + 1 == prefix.size();
 +      }
++      st[r].live.push_back({{}, 0.f, r, at - 1});
++      st[r].bank_start[0] = seq_next;
++      st[r].bank_start[1] = seq_next + roots[r].beams;
++      seq_next += 2 * roots[r].beams;
 +    }
-+    std::sort(next.begin(), next.end(),
-+              [](const Next& a, const Next& b) { return a.logp > b.logp; });
-+    std::vector<Beam> grown;
-+    std::vector<int> parents;
-+    for (const Next& n : next) {
-+      if (static_cast<int>(grown.size()) + static_cast<int>(done.size()) >=
-+          beams) {
-+        break;
-+      }
-+      std::vector<llama_token> t = live[n.parent].tokens;
-+      if (is_end(n.token)) {
-+        if (!t.empty()) done.push_back({n.logp / (t.size() + 1), t});
++    b.n_tokens = at;
++    const int rc = Decode(ctx_, b, zenz_);
++    llama_batch_free(b);
++    if (rc != 0) {
++      ResetMemory();
++      return result;
++    }
++  }
++
++  // 1 ステップごとに、すべての根の伸びたビームを 1 つのバッチで評価する。親の KV を新しい
++  // シーケンスに写してから次のトークンを評価する。logits は各ビームの直前のトークンの位置のもの。
++  std::vector<int> idx;
++  for (int step = 0;; ++step) {
++    if (tl_cancel && tl_cancel()) {
++      ResetMemory();
++      return std::vector<std::vector<std::vector<llama_token>>>(n_roots);
++    }
++    struct Grown {
++      int root;
++      int parent_seq;
++      Beam beam;
++    };
++    std::vector<Grown> batch;
++    for (int r = 0; r < n_roots; ++r) {
++      State& s = st[r];
++      if (s.finished) continue;
++      const int beams = roots[r].beams;
++      if (step >= roots[r].max_len || s.live.empty()) {
++        s.finished = true;
 +        continue;
 +      }
-+      t.push_back(n.token);
-+      grown.push_back({std::move(t), n.logp, 0, 0});
-+      parents.push_back(live[n.parent].seq);
-+    }
-+    if (grown.empty()) break;
-+    if (step + 1 == max_len) {
-+      // 長さの上限に達したビームは、そこで終わりにする(続きの生成で使う)。
-+      if (finish_at_max) {
-+        for (const Beam& g : grown) {
-+          done.push_back({g.logp / g.tokens.size(), g.tokens});
++      struct Next {
++        float logp;
++        size_t parent;
++        llama_token token;
++      };
++      std::vector<Next> next;
++      for (size_t p = 0; p < s.live.size(); ++p) {
++        const float* l = llama_get_logits_ith(ctx_, s.live[p].logit_index);
++        const float lse = LogSumExp(l, n_vocab);
++        TopK(l, n_vocab, beams, &idx);
++        for (int j = 0; j < static_cast<int>(idx.size()); ++j) {
++          next.push_back({s.live[p].logp + l[idx[j]] - lse, p, idx[j]});
 +        }
 +      }
-+      break;
++      std::sort(next.begin(), next.end(),
++                [](const Next& a, const Next& b) { return a.logp > b.logp; });
++      std::vector<Beam> grown;
++      std::vector<int> parents;
++      for (const Next& n : next) {
++        if (static_cast<int>(grown.size()) + static_cast<int>(s.done.size()) >=
++            beams) {
++          break;
++        }
++        std::vector<llama_token> t = s.live[n.parent].tokens;
++        if (is_end(n.token)) {
++          if (!t.empty()) s.done.push_back({n.logp / (t.size() + 1), t});
++          continue;
++        }
++        t.push_back(n.token);
++        grown.push_back({std::move(t), n.logp, 0, 0});
++        parents.push_back(s.live[n.parent].seq);
++      }
++      if (grown.empty()) {
++        s.finished = true;
++        s.live.clear();
++        continue;
++      }
++      if (step + 1 == roots[r].max_len) {
++        // 長さの上限に達したビームは、そこで終わりにする(続きの生成で使う)。
++        if (finish_at_max) {
++          for (const Beam& g : grown) {
++            s.done.push_back({g.logp / g.tokens.size(), g.tokens});
++          }
++        }
++        s.finished = true;
++        s.live.clear();
++        continue;
++      }
++      for (size_t i = 0; i < grown.size(); ++i) {
++        batch.push_back({r, parents[i], std::move(grown[i])});
++      }
 +    }
-+    // 親の KV を新しいシーケンスに写し、新しいトークンを 1 つのバッチで評価する。
-+    llama_batch b = llama_batch_init(grown.size(), 0, 1);
-+    for (size_t i = 0; i < grown.size(); ++i) {
-+      const int seq = base + static_cast<int>(i);
++    if (batch.empty()) break;
++    llama_batch b = llama_batch_init(batch.size(), 0, 1);
++    std::vector<int> used(n_roots, 0);
++    for (size_t i = 0; i < batch.size(); ++i) {
++      Grown& g = batch[i];
++      State& s = st[g.root];
++      const int seq = s.bank_start[s.bank] + used[g.root]++;
 +      llama_memory_seq_rm(mem, seq, -1, -1);
-+      llama_memory_seq_cp(mem, parents[i], seq, -1, -1);
-+      grown[i].seq = seq;
-+      grown[i].logit_index = static_cast<int>(i);
-+      b.token[i] = grown[i].tokens.back();
-+      b.pos[i] = prefix.size() + grown[i].tokens.size() - 1;
++      llama_memory_seq_cp(mem, g.parent_seq, seq, -1, -1);
++      g.beam.seq = seq;
++      g.beam.logit_index = static_cast<int>(i);
++      b.token[i] = g.beam.tokens.back();
++      b.pos[i] = roots[g.root].prefix.size() + g.beam.tokens.size() - 1;
 +      b.n_seq_id[i] = 1;
 +      b.seq_id[i][0] = seq;
 +      b.logits[i] = 1;
 +    }
-+    b.n_tokens = grown.size();
-+    const int rc = llama_decode(ctx_, b);
++    b.n_tokens = batch.size();
++    const int rc = Decode(ctx_, b, zenz_);
 +    llama_batch_free(b);
 +    if (rc != 0) break;
-+    // 使い終わった親のシーケンスを消す(前置きのシーケンス 0 は残す)。
-+    for (const Beam& lb : live) {
-+      if (lb.seq != 0) llama_memory_seq_rm(mem, lb.seq, -1, -1);
++    // 使い終わった親のシーケンスを消し(前置きのシーケンスは残す)、ビームを入れ替える。
++    for (int r = 0; r < n_roots; ++r) {
++      if (used[r] == 0) continue;
++      for (const Beam& lb : st[r].live) {
++        if (lb.seq >= n_roots) llama_memory_seq_rm(mem, lb.seq, -1, -1);
++      }
++      st[r].live.clear();
++      st[r].bank ^= 1;
 +    }
-+    live = std::move(grown);
-+    base = base == 1 ? beams + 1 : 1;
++    for (Grown& g : batch) st[g.root].live.push_back(std::move(g.beam));
 +  }
-+  llama_memory_clear(mem, true);
-+  std::sort(done.begin(), done.end(),
-+            [](const auto& a, const auto& b) { return a.first > b.first; });
-+  for (auto& d : done) result.push_back(std::move(d.second));
++  if (reuse) {
++    KeepPrefix(roots[0].prefix);
++  } else {
++    ResetMemory();
++  }
++  for (int r = 0; r < n_roots; ++r) {
++    auto& done = st[r].done;
++    std::stable_sort(done.begin(), done.end(), [](const auto& a, const auto& b) {
++      return a.first > b.first;
++    });
++    for (auto& d : done) result[r].push_back(std::move(d.second));
++  }
 +  return result;
 +}
 +
@@ -21710,22 +22348,34 @@ index 000000000..1f908caa7
 +std::vector<std::string> ZenzScorer::Generate(absl::string_view left_context,
 +                                              absl::string_view reading,
 +                                              int beams) {
-+  std::vector<std::string> out;
-+  if (!zenz_) return out;
++  return GenerateMany(left_context, {std::string(reading)}, beams)[0];
++}
++
++std::vector<std::vector<std::string>> ZenzScorer::GenerateMany(
++    absl::string_view left_context, const std::vector<std::string>& readings,
++    int beams) {
++  std::vector<std::vector<std::string>> out(readings.size());
++  if (!zenz_ || readings.empty()) return out;
 +  const llama_vocab* vocab = llama_model_get_vocab(model_);
 +  const llama_token eos = llama_vocab_eos(vocab);
-+  const int max_len = static_cast<int>(SplitChars(reading).size()) + 8;
-+  for (const auto& tokens :
-+       BeamSearch(Tokenize(vocab, Prompt(left_context, reading)), max_len,
-+                  beams, [eos](llama_token t) { return t == eos; }, false)) {
-+    std::string text = Detokenize(tokens);
-+    // zenz は空白を全角空白で学習している。候補の表記は元の空白に戻す。
-+    for (size_t pos; (pos = text.find("\xE3\x80\x80")) != std::string::npos;) {
-+      text.replace(pos, 3, " ");
-+    }
-+    if (!text.empty() &&
-+        std::find(out.begin(), out.end(), text) == out.end()) {
-+      out.push_back(text);
++  std::vector<Root> roots;
++  for (const std::string& reading : readings) {
++    roots.push_back({Tokenize(vocab, Prompt(left_context, reading)),
++                     static_cast<int>(SplitChars(reading).size()) + 8, beams});
++  }
++  const auto found = BeamSearch(
++      roots, [eos](llama_token t) { return t == eos; }, false);
++  for (size_t r = 0; r < found.size(); ++r) {
++    for (const auto& tokens : found[r]) {
++      std::string text = Detokenize(tokens);
++      // zenz は空白を全角空白で学習している。候補の表記は元の空白に戻す。
++      for (size_t pos; (pos = text.find("\xE3\x80\x80")) != std::string::npos;) {
++        text.replace(pos, 3, " ");
++      }
++      if (!text.empty() &&
++          std::find(out[r].begin(), out[r].end(), text) == out[r].end()) {
++        out[r].push_back(text);
++      }
 +    }
 +  }
 +  return out;
@@ -21733,14 +22383,23 @@ index 000000000..1f908caa7
 +
 +std::vector<std::string> ZenzScorer::Continue(absl::string_view text,
 +                                              int max_tokens, int beams) {
-+  std::vector<std::string> out;
-+  if (zenz_) return out;
++  return ContinueMany({{std::string(text), beams}}, max_tokens)[0];
++}
++
++std::vector<std::vector<std::string>> ZenzScorer::ContinueMany(
++    const std::vector<std::pair<std::string, int>>& texts, int max_tokens) {
++  std::vector<std::vector<std::string>> out(texts.size());
++  if (zenz_ || texts.empty()) return out;
 +  const llama_vocab* vocab = llama_model_get_vocab(model_);
-+  std::vector<llama_token> prefix;
 +  const llama_token bos = llama_vocab_bos(vocab);
-+  if (bos >= 0 && llama_vocab_get_add_bos(vocab)) prefix.push_back(bos);
-+  const std::vector<llama_token> t = Tokenize(vocab, std::string(text));
-+  prefix.insert(prefix.end(), t.begin(), t.end());
++  std::vector<Root> roots;
++  for (const auto& [text, beams] : texts) {
++    std::vector<llama_token> prefix;
++    if (bos >= 0 && llama_vocab_get_add_bos(vocab)) prefix.push_back(bos);
++    const std::vector<llama_token> t = Tokenize(vocab, text);
++    prefix.insert(prefix.end(), t.begin(), t.end());
++    roots.push_back({std::move(prefix), max_tokens, beams});
++  }
 +  const llama_token eos = llama_vocab_eos(vocab);
 +  // 句読点・閉じ括弧・改行・文の終わりで止める(予測は文の切れ目まで)。
 +  auto is_end = [&](llama_token tok) {
@@ -21753,10 +22412,14 @@ index 000000000..1f908caa7
 +    }
 +    return false;
 +  };
-+  for (const auto& tokens : BeamSearch(prefix, max_tokens, beams, is_end, true)) {
-+    std::string s = Detokenize(tokens);
-+    if (!s.empty() && std::find(out.begin(), out.end(), s) == out.end()) {
-+      out.push_back(s);
++  const auto found = BeamSearch(roots, is_end, true);
++  for (size_t r = 0; r < found.size(); ++r) {
++    for (const auto& tokens : found[r]) {
++      std::string s = Detokenize(tokens);
++      if (!s.empty() &&
++          std::find(out[r].begin(), out[r].end(), s) == out[r].end()) {
++        out[r].push_back(s);
++      }
 +    }
 +  }
 +  return out;
@@ -21765,10 +22428,10 @@ index 000000000..1f908caa7
 +}  // namespace mozc
 diff --git a/src/rewriter/zenz_scorer.h b/src/rewriter/zenz_scorer.h
 new file mode 100644
-index 000000000..385155214
+index 000000000..d23013bc6
 --- /dev/null
 +++ b/src/rewriter/zenz_scorer.h
-@@ -0,0 +1,89 @@
+@@ -0,0 +1,120 @@
 +// Copyright 2026, Kotori IME contributors
 +// All rights reserved.
 +//
@@ -21798,6 +22461,7 @@ index 000000000..385155214
 +#include <memory>
 +#include <optional>
 +#include <string>
++#include <utility>
 +#include <vector>
 +
 +#include "absl/strings/string_view.h"
@@ -21826,15 +22490,29 @@ index 000000000..385155214
 +  std::vector<std::string> Generate(absl::string_view left_context,
 +                                    absl::string_view reading, int beams);
 +
++  // 複数の読みを 1 回のビームサーチでまとめて生成する(GPU を呼ぶ回数を減らすため)。
++  // 結果は読みごと。
++  std::vector<std::vector<std::string>> GenerateMany(
++      absl::string_view left_context, const std::vector<std::string>& readings,
++      int beams);
++
 +  // 汎用の LLM で text の続きを生成する(ビームサーチ、句読点や改行の手前まで)。
 +  // よい順に最大 beams 件。zenz なら空。
 +  std::vector<std::string> Continue(absl::string_view text, int max_tokens,
 +                                    int beams);
 +
++  // 複数の text(と、それぞれのビームの数)の続きを 1 回のビームサーチでまとめて作る。
++  std::vector<std::vector<std::string>> ContinueMany(
++      const std::vector<std::pair<std::string, int>>& texts, int max_tokens);
++
 +  // text のトークン数。
 +  size_t CountTokens(absl::string_view text);
 +
 +  bool is_zenz() const { return zenz_; }
++
++  // 計算量の累計(評価用、KOTORI_LM_STATS)。zenz と LLM ごとの、Score・生成の時間、
++  // その中の llama_decode の時間、decode の回数と評価したトークン数。
++  static std::string Stats();
 +
 +  // zenz のプロンプト。U+EE00 読み(カタカナ) U+EE02 左文脈 U+EE01。
 +  static std::string Prompt(absl::string_view left_context,
@@ -21842,17 +22520,33 @@ index 000000000..385155214
 +
 + private:
 +  ZenzScorer() = default;
-+  // prefix に続くトークン列をビームサーチで作る。is_end が真のトークンで終わる(そのトークンは
-+  // 含めない)。finish_at_max なら長さの上限に達したものも結果に入れる。
-+  std::vector<std::vector<llama_token>> BeamSearch(
-+      const std::vector<llama_token>& prefix, int max_len, int beams,
++  // ビームサーチの根。prefix に続くトークン列を、最大 max_len トークン、beams 本で作る。
++  struct Root {
++    std::vector<llama_token> prefix;
++    int max_len;
++    int beams;
++  };
++  // 根ごとに、prefix に続くトークン列をビームサーチで作る(すべての根を 1 ステップごとに
++  // 1 つのバッチで評価する)。is_end が真のトークンで終わる(そのトークンは含めない)。
++  // finish_at_max なら長さの上限に達したものも結果に入れる。
++  std::vector<std::vector<std::vector<llama_token>>> BeamSearch(
++      const std::vector<Root>& roots,
 +      const std::function<bool(llama_token)>& is_end, bool finish_at_max);
++  // シーケンス 0 に prefix の最後の 1 トークンより前を置き、ほかのシーケンスを空にする。
++  // 前回と同じ先頭は計算し直さない(同じ前の文・読みでの採点や生成が続くため)。
++  bool UsePrefix(const std::vector<llama_token>& prefix);
++  // 計算の後、シーケンス 0 の prefix の最後の 1 トークンより前だけを残す。
++  void KeepPrefix(const std::vector<llama_token>& prefix);
++  // KV をすべて消す。
++  void ResetMemory();
 +  std::string Detokenize(const std::vector<llama_token>& tokens);
 +  llama_model* model_ = nullptr;
 +  llama_context* ctx_ = nullptr;
 +  int max_seq_ = 0;
 +  // zenz(読みを入れたプロンプト)か、汎用の LLM(左の文脈だけ)か。
 +  bool zenz_ = true;
++  // シーケンス 0 に残っている前置きのトークン(UsePrefix)。
++  std::vector<llama_token> cached_;
 +};
 +
 +}  // namespace mozc

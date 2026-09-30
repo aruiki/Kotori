@@ -15,6 +15,11 @@ beta.1〜3 を実機で使ったメンテナの報告(IME のオン/オフ・候
 `mozc/README.md` と `.github/workflows/mozc-windows.yml` を見る。下の Rust のエンジンと TIP は、
 段階 3 まで評価の基準と参考実装として残す。SPEC の改訂は別の PR でメンテナの承認を得る。
 
+**2026-09-30 からの方針**: 精度は十分(Standard で AJIMEE 91.5%)なので、精度 90% 以上を保ったまま負荷を
+下げる。ハイエンド(GPU)向けの Standard / High / Unreal の中身は残し、GPU のない PC は新しい Low(CPU、
+zenz-medium、先回りの変換)で動かす(docs/adr/0024)。負荷は `mozc/tools/cost_bench.py`、ノート PC の
+再現は `KOTORI_LM_DEVICE=cpu` と `mozc/tools/space_latency.py` で測る。
+
 ## 1. 全体の進み具合
 
 ### 現在の製品(Mozc 版、Windows の MSI)
@@ -26,8 +31,8 @@ beta.1〜3 を実機で使ったメンテナの報告(IME のオン/オフ・候
 | 段階 4(評価と配布) | ベータ版を GitHub Releases で配布中(`mozc/VERSION` の beta の番号)。MSI の版はリリースごとに上がる(カード 22) |
 | 実機での確認 | メンテナに頼んでいる(上書きインストール、ノート PC、ダークモードの設定画面など) |
 
-精度(前の文あり): AJIMEE-Bench は Mozc 単体 51.0%、Low 86.5%、Standard 91.5%、High 92.5%。日常の文 81 問は
-Standard / High 97.5%(`eval/README.md`、docs/adr/0023)。改善の候補と優先順位は `docs/IMPROVEMENT_PROPOSALS.md`。
+精度(前の文あり): AJIMEE-Bench は Mozc 単体 51.0%、Low 88.0%(GPU なし、docs/adr/0024)、Standard 91.5%、High 92.5%。
+日常の文 81 問は Low / Standard / High 97.5%(`eval/README.md`、docs/adr/0023)。改善の候補と優先順位は `docs/IMPROVEMENT_PROPOSALS.md`。
 
 ### 旧 Rust 版(履歴。段階 3 までの評価の基準と参考実装)
 

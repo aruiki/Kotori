@@ -17,13 +17,17 @@ for d in $SETS; do
   KOTORI_RUNTIME_DIR="$OUT/empty" KOTORI_MODEL_DIR="$OUT/empty" \
     python mozc/eval_baseline.py --context --data "$d" --out "$OUT/m_$n.json" "$M" | tail -1
 done
-# 品質ごとの設定は rewriter/lm_rewriter.cc の QualityOf と同じ(生成の数、LLM で採点する数)。
+# 品質ごとの設定は rewriter/lm_rewriter.cc の QualityOf と同じ(生成の数、LLM で採点する数、zenz)。
+# Low の zenz(medium)は、パスに空白があってもよいように別に渡す(区切りは / にする)。
+LOW_ZENZ="$(printf '%s' "$I" | tr '\\\\' /)/zenz-v2.5-medium-q8_0.gguf"
 for q in "Low KOTORI_LM_BEAMS=2 KOTORI_LM_LLM_TOP=0" "Standard KOTORI_LM_BEAMS=4 KOTORI_LM_LLM_TOP=4" \
          "High KOTORI_LM_BEAMS=8 KOTORI_LM_LLM_TOP=32"; do
   set -- $q; name=$1; shift
+  zenz=()
+  [ "$name" = Low ] && zenz=("KOTORI_ZENZ_MODEL=$LOW_ZENZ")
   for d in $SETS; do
     n=$(basename "$d" .json)
-    r=$(env KOTORI_RUNTIME_DIR="$I" KOTORI_MODEL_DIR="$I" "$@" \
+    r=$(env KOTORI_RUNTIME_DIR="$I" KOTORI_MODEL_DIR="$I" "$@" "${zenz[@]}" \
           python mozc/eval_baseline.py --context --data "$d" --out "$OUT/k_$n.json" "$M" | tail -1)
     echo "$name $n: $r"
     python - "$OUT/m_$n.json" "$OUT/k_$n.json" <<'EOF'

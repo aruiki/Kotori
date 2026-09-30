@@ -21,6 +21,7 @@
 | Qt 6 | LGPL-3.0 | Mozc のビルド手順(`build_qt.py`) | 動的リンク(Qt6*.dll)。差し替えられる |
 | llama.cpp / ggml | MIT | 公式の Windows ビルド b11259(Vulkan、SHA-256 で検証) | 実行時に読み込む DLL |
 | zenz-v2.5-small | CC BY-SA 4.0(Keita Miwa。元は ku-nlp/gpt2-small-japanese-char) | `training/zenz/fetch.sh`(版と SHA-256 を固定) | q8_0 に量子化して同梱。`NOTICE-zenz.txt` |
+| zenz-v2.5-medium | CC BY-SA 4.0(Keita Miwa。元は ku-nlp/gpt2-medium-japanese-char) | 同上 | q8_0 に量子化して同梱。GPU のない PC の Low と Unreal で使う(docs/adr/0024) |
 | TinySwallow-1.5B | Apache-2.0(Sakana AI) | `training/llm/make.sh`(版を固定) | Q5_K_M に量子化して同梱。`NOTICE-tinyswallow.txt` |
 | Microsoft Visual C++ ランタイム | Visual Studio のライセンス | MSVC | 再配布が認められたもの |
 

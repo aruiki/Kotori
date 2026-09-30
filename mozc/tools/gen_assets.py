@@ -80,6 +80,7 @@ Kotori日本語入力(以下 Kotori)は Mozc(Copyright 2010-2026 Google Inc.、B
 ・Qt 6: LGPL-3.0(動的リンク)
 ・llama.cpp / ggml: MIT(Copyright The ggml authors)
 ・zenz-v2.5-small: CC BY-SA 4.0(© Keita Miwa。元は ku-nlp/gpt2-small-japanese-char)。8 bit に量子化して同梱
+・zenz-v2.5-medium: CC BY-SA 4.0(© Keita Miwa。元は ku-nlp/gpt2-medium-japanese-char)。8 bit に量子化して同梱
 ・TinySwallow-1.5B: Apache-2.0(Sakana AI)。5 bit に量子化して同梱
 ・Microsoft Visual C++ ランタイム: Microsoft のライセンス
 
