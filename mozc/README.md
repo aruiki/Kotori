@@ -41,8 +41,29 @@ Linux での評価: `bazel build //converter:converter_main -c opt` のあと、
 パッチを変えたときだけに絞る。変換の中身(LM リランクなど)は Linux でビルド・評価して詰め、
 まとめてから Windows で作る。
 
-パッチの作り方: `google/mozc` を `MOZC_COMMIT` で取得して直し、リポジトリの最上位で
-`git diff > mozc/patches/NNNN-<題>.patch` とする。当たるかは `git apply --check` で確かめる。
+パッチの作り方: `google/mozc` を `MOZC_COMMIT` で取得して 0001〜0003 を当て、直したあと
+`mozc/tools/make_patches.sh <作業ツリー> <素の Mozc の clone>`(bash)で 0002・0003 を作り直す。
+素のコミットに 0001〜0003 が順に当たるかまで確かめる。
+
+Windows で手元でビルドする: 作業ツリーの `src` で
+`bazelisk build package --config release_build`(MSI、`bazel-bin/win32/installer/Mozc64.msi`)、
+変換だけなら `bazelisk build //converter:converter_main --config release_build`。
+
+## 試験と道具(`mozc/tools/`)
+
+| ファイル | 何をするか |
+| --- | --- |
+| `eval_all.sh` | 品質 3 段階 × 評価セット 4 つ(AJIMEE・慣用句・ニュアンス・日常)の Acc@1 と、Mozc 単体より悪くなった問題 |
+| `stress_test.py` | 負荷試験。いろいろな読み(1〜300 文字、記号・絵文字)で候補・変換・Tab を交互に送り、落ちないか・遅れないか |
+| `typing_test.py` | 打鍵の再現。1 文字ずつ入力中の候補を出し、AI の予測と応答時間を見る |
+| `../eval_predict.py --warm 秒` | Tab の予測の当たりと応答時間(実際の入力のように候補を出してから Tab) |
+| `capture_window.py` | 設定画面などのウィンドウだけを PNG に撮る(MSI を `msiexec /a` で展開した exe で) |
+| `dump_icons.py` | exe / dll に入っているアイコンを並べて見る |
+| `gen_icons.py`・`gen_assets.py`・`kotori_mark.py` | アイコン、インストーラの画像と使用許諾を作る |
+| `make_patches.sh` | 作業ツリーからパッチを作り直す |
+
+`converter_main` の場所は `KOTORI_CONVERTER_MAIN`、モデルと llama.cpp の DLL の場所は `KOTORI_INSTALL_DIR`
+(既定はインストール先)で変えられる。
 
 段階: 1. 素の Mozc をビルドする → 2. 名前と識別子を Kotori に変える → 3. LM リランクを
 組み込む → 4. 評価して配布する。詳しくは docs/adr/0012。
