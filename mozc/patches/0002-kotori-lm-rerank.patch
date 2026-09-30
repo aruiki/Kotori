@@ -20003,10 +20003,10 @@ index 000000000..cf2c801ea
 +#endif  // MOZC_REWRITER_LLAMA_RUNTIME_H_
 diff --git a/src/rewriter/lm_rewriter.cc b/src/rewriter/lm_rewriter.cc
 new file mode 100644
-index 000000000..7f7aa33f2
+index 000000000..a616011d1
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.cc
-@@ -0,0 +1,1738 @@
+@@ -0,0 +1,1782 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/lm_rewriter.h"
@@ -20574,6 +20574,7 @@ index 000000000..7f7aa33f2
 +  if (const char* v = Env("KOTORI_LM_PRECONVERT")) preconvert_ = *v != '0';
 +  if (const char* v = Env("KOTORI_LM_TAB_BUDGET")) tab_budget_ms_ = std::atoi(v);
 +  if (const char* v = Env("KOTORI_LM_SPLIT")) split_generated_ = *v != '0';
++  if (const char* v = Env("KOTORI_LM_FILTER_JUNK")) filter_junk_ = *v != '0';
 +  // モデルの読み込みと、入力中のサジェストに出す予測を裏で行うスレッド。
 +  worker_ = std::thread([this] { WorkerLoop(); });
 +  // 今の設定のモデルを裏で読み込んでおく(最初の変換で 1 秒以上待たないため)。
@@ -21112,6 +21113,37 @@ index 000000000..7f7aa33f2
 +  return !c.empty();
 +}
 +
++// 予測に出さない候補(入力の邪魔になるだけのもの。docs/adr/0030)。
++// - 続き(continuation)に開き括弧・引用符がある(「日本語教育 のように別の文へ脱線したもの)。
++// - 読みにひらがながあるのに、全部カタカナ(読みを写しただけ)。
++bool IsJunkPrediction(absl::string_view text, absl::string_view continuation,
++                      absl::string_view reading) {
++  static constexpr absl::string_view kOpen[] = {
++      "\xE3\x80\x8C", "\xE3\x80\x8E", "\xEF\xBC\x88", "\xE3\x80\x90",
++      "\xE3\x80\x88", "\xE3\x80\x8A", "(", "[", "\""};  // 「『(【〈《
++  for (absl::string_view o : kOpen) {
++    if (absl::StrContains(continuation, o)) return true;
++  }
++  auto kind = [](const std::string& c) {
++    if (c.size() != 3 || static_cast<unsigned char>(c[0]) != 0xE3) return 0;
++    const uint32_t cp =
++        ((c[0] & 0x0F) << 12) | ((c[1] & 0x3F) << 6) | (c[2] & 0x3F);
++    if (cp >= 0x3041 && cp <= 0x309F) return 1;  // ひらがな
++    if (cp >= 0x30A1 && cp <= 0x30FA) return 2;  // カタカナ
++    return 0;
++  };
++  bool reading_hira = false;
++  for (const std::string& c : Chars(reading)) reading_hira |= kind(c) == 1;
++  bool all_kata = true;
++  for (const std::string& c : Chars(text)) {
++    if (kind(c) != 2 && c != "\xE3\x83\xBC") {  // 長音はカタカナとみなす
++      all_kata = false;
++      break;
++    }
++  }
++  return reading_hira && all_kata;
++}
++
 +bool HasDigit(absl::string_view v) {
 +  for (const std::string& ch : Chars(v)) {
 +    if ((ch.size() == 1 && std::isdigit(static_cast<unsigned char>(ch[0]))) ||
@@ -21191,6 +21223,12 @@ index 000000000..7f7aa33f2
 +  auto add = [&](const std::string& text, const std::string& base,
 +                 const std::string& covered) {
 +    if (text == conv || HasDigit(text)) return;
++    if (filter_junk_ &&
++        IsJunkPrediction(text, absl::string_view(text).substr(
++                                   std::min(base.size(), text.size())),
++                         reading)) {
++      return;
++    }
 +    for (const Prediction& p : preds) {
 +      if (p.text == text) return;
 +    }
@@ -21438,6 +21476,12 @@ index 000000000..7f7aa33f2
 +    std::vector<double> avg(pool.size());
 +    for (size_t i = 0; i < pool.size(); ++i) {
 +      if (HasDigit(pool[i]) && !HasDigit(reading)) continue;
++      // 先頭に並べる枠には、ゴミ(IsJunkPrediction)と、読みのまま変換されていないものを入れない。
++      // Mozc の候補なら、先頭に出さないだけで、Mozc の候補の一覧には元の位置で残る。
++      if (filter_junk_ &&
++          (pool[i] == reading || IsJunkPrediction(pool[i], "", reading))) {
++        continue;
++      }
 +      avg[i] = (*logp)[i] / std::max<size_t>(1, llm->CountTokens(pool[i]));
 +      order.push_back(i);
 +    }
@@ -21747,10 +21791,10 @@ index 000000000..7f7aa33f2
 +}  // namespace mozc
 diff --git a/src/rewriter/lm_rewriter.h b/src/rewriter/lm_rewriter.h
 new file mode 100644
-index 000000000..4a2c6cdcc
+index 000000000..581253b71
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.h
-@@ -0,0 +1,285 @@
+@@ -0,0 +1,287 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
 +// Kotori: AI による変換(docs/adr/0013、0015、0016)。
@@ -21986,6 +22030,8 @@ index 000000000..4a2c6cdcc
 +  int tab_budget_ms_ = 700;
 +  // 生成した文を文節に分けるか(KOTORI_LM_SPLIT。docs/adr/0027)。
 +  bool split_generated_ = true;
++  // 入力の邪魔になるだけの予測を出さないか(KOTORI_LM_FILTER_JUNK。docs/adr/0030)。
++  bool filter_junk_ = true;
 +  // 先回りの変換の結果。
 +  mutable std::optional<Generated> gen_cache_ ABSL_GUARDED_BY(mutex_);
 +  // 裏で計算中の先回りの変換と、変換の要求が来ている読み(読み + TAB + 前の文)。job_mu_ で守る。
