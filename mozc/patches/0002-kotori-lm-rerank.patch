@@ -20003,10 +20003,10 @@ index 000000000..cf2c801ea
 +#endif  // MOZC_REWRITER_LLAMA_RUNTIME_H_
 diff --git a/src/rewriter/lm_rewriter.cc b/src/rewriter/lm_rewriter.cc
 new file mode 100644
-index 000000000..423484bf3
+index 000000000..a433d9ac1
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.cc
-@@ -0,0 +1,1688 @@
+@@ -0,0 +1,1731 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/lm_rewriter.h"
@@ -20058,6 +20058,9 @@ index 000000000..423484bf3
 +constexpr size_t kMaxPredictChars = 40;
 +// これより文節が多いときは、文節ごとの見直しをしない(1 文節ごとに採点するので遅い)。
 +constexpr size_t kMaxSegmentsToRescore = 16;
++// GPU のないとき、AI を使う読みの長さの上限(文字)。CPU の zenz-medium では、これより長い文の生成・採点が
++// 時間の上限に収まらず、採点の 1 回の計算は途中で止められないため(docs/adr/0029)。
++constexpr size_t kMaxCpuChars = 60;
 +
 +// UTF-8 の文字を 1 つずつ(コードポイントで)返す。
 +std::vector<uint32_t> CodePoints(absl::string_view text) {
@@ -20130,11 +20133,19 @@ index 000000000..423484bf3
 +// 変換を待たせないための目印。変換の要求が来ている間、裏の予測は途中でやめる。
 +class Urgent {
 + public:
-+  explicit Urgent(std::atomic<int>& n) : n_(n) { ++n_; }
-+  ~Urgent() { --n_; }
++  Urgent(std::atomic<int>& n, std::atomic<int64_t>& last) : n_(n), last_(last) {
++    ++n_;
++  }
++  ~Urgent() {
++    last_ = std::chrono::duration_cast<std::chrono::microseconds>(
++                std::chrono::steady_clock::now().time_since_epoch())
++                .count();
++    --n_;
++  }
 +
 + private:
 +  std::atomic<int>& n_;
++  std::atomic<int64_t>& last_;
 +};
 +
 +constexpr char kDefaultModelName[] = "zenz-v2.5-small-q8_0.gguf";
@@ -20766,12 +20777,15 @@ index 000000000..423484bf3
 +  const std::string reading = ConversionReading(segments);
 +  const std::string context = HistoryContext(request, segments);
 +  const std::string key = reading + "\t" + context;
-+  Urgent urgent(urgent_);
++  if (!HasGpu() && Util::CharsLen(reading) > kMaxCpuChars) return std::nullopt;
++  const auto t_request = std::chrono::steady_clock::now();
++  Urgent urgent(urgent_, last_request_us_);
 +  // 同じ読みの先回りの変換が裏で計算中なら、捨てずに終わるのを待つ(上限まで)。
 +  int wait_ms = 300;
 +  {
 +    std::lock_guard<std::mutex> jl(job_mu_);
 +    urgent_key_ = key;
++    last_converted_key_ = key;
 +    if (running_convert_ == key) wait_ms = std::max(wait_ms, BudgetMs());
 +  }
 +  if (!TryLockForRequest(wait_ms)) return std::nullopt;
@@ -20797,7 +20811,10 @@ index 000000000..423484bf3
 +  if (scorer == nullptr) return std::nullopt;
 +  const auto t_load = std::chrono::steady_clock::now();
 +  budget_ms = BudgetMs();
-+  deadline = t_load + std::chrono::milliseconds(budget_ms);
++  // 上限は要求が来た時点から数える(ロックを待った時間も含める)。この要求の中でモデルを読み込んだ
++  // とき(評価)は、読み込みの後から数える。
++  deadline = (t_load - t0 > std::chrono::milliseconds(50) ? t_load : t_request) +
++             std::chrono::milliseconds(budget_ms);
 +
 +  // 候補 = ラティスの文全体の候補(区切り付き)+ zenz が読みから生成した文(区切りなし)。
 +  std::vector<const converter::Candidate*> cands;
@@ -21499,11 +21516,14 @@ index 000000000..423484bf3
 +  // (先回りの変換。Space で待たせないため。docs/adr/0024)。
 +  if (!(predict_ && config.kotori_lm_predict() && UsesLlm(config))) {
 +    ClearPredictions();
-+    if (preconvert_ && rchars.size() <= kMaxGenerateChars) {
++    if (preconvert_ && rchars.size() <= kMaxGenerateChars &&
++        (HasGpu() || rchars.size() <= kMaxCpuChars)) {
 +      std::lock_guard<std::mutex> lock(job_mu_);
 +      job_ = Job{reading, context, config, true};
 +      new_job_ = true;
 +      job_cv_.notify_one();
++    } else {
++      new_job_ = true;  // 前の読みの先回りの変換をやめる
 +    }
 +    return false;
 +  }
@@ -21549,8 +21569,19 @@ index 000000000..423484bf3
 +    }
 +  }
 +  const std::string key = job.reading + "\t" + job.context;
++  // 要求(変換・Tab)の最中と、終わってから 150 ms はロックを取らない(続けて来る要求を待たせない)。
++  auto now_us = [] {
++    return std::chrono::duration_cast<std::chrono::microseconds>(
++               std::chrono::steady_clock::now().time_since_epoch())
++        .count();
++  };
++  while (urgent_.load() > 0 || now_us() - last_request_us_.load() < 150000) {
++    if (stop_.load() || new_job_.load()) return;
++    std::this_thread::sleep_for(std::chrono::milliseconds(5));
++  }
 +  {
 +    std::lock_guard<std::mutex> lock(job_mu_);
++    if (last_converted_key_ == key) return;  // もう変換した読み
 +    running_convert_ = key;
 +  }
 +  // 新しい打鍵・停止、または別の読みの変換の要求が来たらやめる(同じ読みの変換なら続ける)。
@@ -21667,7 +21698,16 @@ index 000000000..423484bf3
 +  }
 +  // サジェストのための変換(1 打鍵ごと)では、AI の変換を動かさない(入力が重くなるため)。
 +  if (request.options().skip_slow_rewriters) return false;
-+  Urgent urgent(urgent_);
++  // LLM がないときの Tab、GPU がなく長い読みでは AI を使わないので、ロックを待たない。
++  if (request.request_type() == ConversionRequest::PREDICTION &&
++      !(predict_ && request.config().kotori_lm_predict() &&
++        UsesLlm(request.config()))) {
++    return false;
++  }
++  if (!HasGpu() && Util::CharsLen(ConversionReading(*segments)) > kMaxCpuChars) {
++    return false;
++  }
++  Urgent urgent(urgent_, last_request_us_);
 +  if (!TryLockForRequest(300)) return false;
 +  HeldLock lock(mutex_);
 +  if (request.request_type() == ConversionRequest::PREDICTION) {
@@ -21686,6 +21726,9 @@ index 000000000..423484bf3
 +  if (matched && !post_segment_) return changed;
 +  // 文節が多いと、文節ごとの採点(文節ごとに 1 回)で数秒かかる。文全体の選択だけにする。
 +  if (segments->conversion_segments_size() > kMaxSegmentsToRescore) return changed;
++  // GPU がなければ文節ごとの採点(文節ごとに 1 回、右の文脈を含む)はしない。CPU では時間の上限に
++  // 収まらないため(docs/adr/0029)。
++  if (!HasGpu()) return changed;
 +  // 文節ごとにも見直す。文全体で選んだときは(LLM も見て決めたので)先頭は変えず、
 +  // 2 番目以降の候補だけを並べる。時間の上限を超えたら残りの文節はそのまま。
 +  const auto deadline = std::chrono::steady_clock::now() +
@@ -21697,10 +21740,10 @@ index 000000000..423484bf3
 +}  // namespace mozc
 diff --git a/src/rewriter/lm_rewriter.h b/src/rewriter/lm_rewriter.h
 new file mode 100644
-index 000000000..3c921cc76
+index 000000000..0489495ba
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.h
-@@ -0,0 +1,284 @@
+@@ -0,0 +1,288 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
 +// Kotori: AI による変換(docs/adr/0013、0015、0016)。
@@ -21943,6 +21986,10 @@ index 000000000..3c921cc76
 +  mutable std::optional<Generated> gen_cache_ ABSL_GUARDED_BY(mutex_);
 +  // 裏で計算中の先回りの変換と、変換の要求が来ている読み(読み + TAB + 前の文)。job_mu_ で守る。
 +  mutable std::string running_convert_;
++  // 最後に変換した読み(読み + TAB + 前の文)。先回りの変換でやり直さない。job_mu_ で守る。
++  mutable std::string last_converted_key_;
++  // 最後に要求(変換・Tab)が終わった時刻(steady_clock、マイクロ秒)。
++  mutable std::atomic<int64_t> last_request_us_{0};
 +  mutable std::string urgent_key_;
 +  mutable std::deque<Entry> cache_;
 +  std::atomic<bool> stop_{false};
@@ -22069,10 +22116,10 @@ index d92e814fd..792ecb2c2 100644
  #endif  // MOZC_USER_DICTIONARY_REWRITER
 diff --git a/src/rewriter/zenz_scorer.cc b/src/rewriter/zenz_scorer.cc
 new file mode 100644
-index 000000000..59dd0e981
+index 000000000..f2deb4b31
 --- /dev/null
 +++ b/src/rewriter/zenz_scorer.cc
-@@ -0,0 +1,728 @@
+@@ -0,0 +1,735 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/zenz_scorer.h"
@@ -22467,8 +22514,15 @@ index 000000000..59dd0e981
 +  for (int q = 1; q <= max_seq_; ++q) llama_memory_seq_rm(mem, q, -1, -1);
 +  llama_memory_seq_rm(mem, 0, static_cast<llama_pos>(keep), -1);
 +  cached_.resize(keep);
++  // やめる関数があるときは 32 トークンずつ計算し、その間にやめられるようにする(CPU では前置きの
++  // 計算が長い)。ないときは 1 回で計算する(GPU では呼ぶ回数が効くため)。
++  const size_t kPrefixChunk = tl_cancel ? 32 : static_cast<size_t>(kBatch);
 +  for (size_t at = keep; at < want;) {
-+    const size_t n = std::min(want - at, static_cast<size_t>(kBatch));
++    if (at > keep && tl_cancel && tl_cancel()) {
++      ResetMemory();
++      return false;
++    }
++    const size_t n = std::min(want - at, kPrefixChunk);
 +    llama_batch b = llama_batch_init(n, 0, 1);
 +    for (size_t i = 0; i < n; ++i) {
 +      b.token[i] = prefix[at + i];
