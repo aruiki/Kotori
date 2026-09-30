@@ -1,5 +1,6 @@
 # Windows 版のリリース(docs/SPEC.md 16.2 の「未署名バイナリ」)。
-# Actions の画面から手で実行するか、v で始まるタグを push すると動く。手で実行するときに
+# 以前の Rust 版の配布。Actions の画面から手で実行したときだけ動く(タグでは動かさない。いまの配布は
+# Mozc ベースの MSI で、mozc-windows.yml が作る。docs/adr/0012)。手で実行するときに
 # バージョンを省くと、ワークスペースの版(0.x.y-beta)の beta の番号を既にあるタグの次にする。
 # サーバー・x64 と x86 の TIP・辞書・ライセンスを zip にまとめ、最新のリリース(Latest)として
 # 公開する。リリースの名前は日本時間の日時と版(例 2026.929.151234 (v0.1.0-beta.2))にする。
@@ -12,8 +13,6 @@ on:
       version:
         description: バージョン(例 0.1.0-beta.2。先頭の v は付けない。空なら beta の番号を1つ進める)
         required: false
-  push:
-    tags: ['v*']
   pull_request:
     paths:
       - .github/workflows/release.yml
