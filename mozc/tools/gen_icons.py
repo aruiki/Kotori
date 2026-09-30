@@ -1,115 +1,129 @@
-"""Kotori のアイコン(.ico)を作る(docs/adr/0018)。Fluent 2 の配色で、ブランド色の角丸の四角に白い絵柄。
-使い方: python mozc/tools/gen_icons.py <Mozc の src/data/images/win>
-Mozc の同じ名前のアイコンを置き換える。タスクバーが明るくても暗くても読めるよう、入力モードも青地に白。
+"""Kotori日本語入力のアイコン(.ico)を作る(docs/adr/0019)。マークは kotori_mark.py。
+
+入力モード(あ・カ・A など)はタスクバーの明暗どちらでも読めるよう、
+Windows の IME と同じく白い字に濃い縁取り。
+
+使い方: python mozc/tools/gen_icons.py <Mozc の src/data/images/win> [見本の PNG の出力先]
 """
 import sys
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+import skia
+from PIL import Image
+
+from kotori_mark import (SANS, SANS_BOLD, SERIF, SHU, U, WHITE, glyph_path, paint, product,
+                         render, tile, with_dot)
 
 out = Path(sys.argv[1])
-FONTS = Path("C:/Windows/Fonts")
-BRAND = (15, 108, 189, 255)
-BRAND_DARK = (12, 59, 94, 255)
-WHITE = (255, 255, 255, 255)
+preview = Path(sys.argv[2]) if len(sys.argv) > 2 else None
 SIZES = [16, 20, 24, 32, 48, 64, 128, 256]
-S = 256  # 大きく描いて縮める
+OUTLINE = skia.Color(0x1A, 0x1A, 0x1A)
+GRAY = skia.Color(0x9A, 0x9A, 0x9A)
 
 
-def base(color_top=BRAND, color_bottom=BRAND_DARK, radius=0.22):
-    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    grad = Image.new("RGBA", (S, S))
-    for y in range(S):
-        t = y / S
-        c = tuple(int(color_top[i] + (color_bottom[i] - color_top[i]) * t * 0.8) for i in range(3)) + (255,)
-        ImageDraw.Draw(grad).line([(0, y), (S, y)], fill=c)
-    mask = Image.new("L", (S, S), 0)
-    ImageDraw.Draw(mask).rounded_rectangle([8, 8, S - 8, S - 8], radius=int(S * radius), fill=255)
-    img.paste(grad, (0, 0), mask)
-    return img
+def dictionary(c, small):
+    tile(c, small)
+    if small:
+        with_dot(c, glyph_path(SANS, "辞", 600), 70, 96, shift=0)
+    else:
+        with_dot(c, glyph_path(SERIF, "辞", 520), 42, 48, shift=0)
 
 
-def bird(d, cx, cy, s, fill=WHITE):
-    d.ellipse([cx - 1.0 * s, cy - 0.62 * s, cx + 0.62 * s, cy + 0.72 * s], fill=fill)
-    d.ellipse([cx + 0.05 * s, cy - 1.05 * s, cx + 0.95 * s, cy - 0.15 * s], fill=fill)
-    d.polygon([(cx + 0.88 * s, cy - 0.72 * s), (cx + 1.32 * s, cy - 0.56 * s), (cx + 0.88 * s, cy - 0.42 * s)],
-              fill=(255, 196, 64, 255))
-    d.polygon([(cx - 0.85 * s, cy - 0.05 * s), (cx - 1.55 * s, cy - 0.55 * s), (cx - 1.35 * s, cy + 0.15 * s)], fill=fill)
-    d.ellipse([cx + 0.52 * s, cy - 0.78 * s, cx + 0.66 * s, cy - 0.64 * s], fill=BRAND_DARK)
+def gear_path(cx, cy, r_out, r_in, r_hole, teeth=8):
+    g = skia.Path()
+    g.addCircle(cx, cy, r_in)
+    tw = r_out * 0.46
+    for k in range(teeth):
+        t = skia.Path()
+        t.addRoundRect(skia.Rect.MakeLTRB(cx - tw / 2, cy - r_out, cx + tw / 2, cy), tw * 0.22, tw * 0.22)
+        t.transform(skia.Matrix.RotateDeg(360 / teeth * k, (cx, cy)))
+        g = skia.Op(g, t, skia.PathOp.kUnion_PathOp)
+    hole = skia.Path()
+    hole.addCircle(cx, cy, r_hole)
+    return skia.Op(g, hole, skia.PathOp.kDifference_PathOp)
 
 
-def badge(img, kind):
-    """右下の小さな印(設定は歯車、辞書は本)。"""
-    d = ImageDraw.Draw(img)
-    cx, cy, r = 192, 192, 54
-    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=WHITE)
-    if kind == "gear":
-        import math
-        for k in range(8):
-            a = k * math.pi / 4
-            x, y = cx + math.cos(a) * 34, cy + math.sin(a) * 34
-            d.ellipse([x - 10, y - 10, x + 10, y + 10], fill=BRAND)
-        d.ellipse([cx - 30, cy - 30, cx + 30, cy + 30], fill=BRAND)
-        d.ellipse([cx - 13, cy - 13, cx + 13, cy + 13], fill=WHITE)
-    elif kind == "book":
-        d.rounded_rectangle([cx - 32, cy - 26, cx - 2, cy + 28], radius=4, fill=BRAND)
-        d.rounded_rectangle([cx + 2, cy - 26, cx + 32, cy + 28], radius=4, fill=BRAND)
-        for y in (cy - 12, cy, cy + 12):
-            d.line([(cx - 26, y), (cx - 8, y)], fill=WHITE, width=4)
-            d.line([(cx + 8, y), (cx + 26, y)], fill=WHITE, width=4)
-    return img
+def properties(c, small):
+    tile(c, small)
+    s = 1.18 if small else 1.0
+    c.drawPath(gear_path(U / 2, U / 2, 300 * s, 236 * s, 110 * s), paint(WHITE))
+    c.drawCircle(U / 2, U / 2, 58 * s, paint(SHU))
 
 
-def product():
-    img = base()
-    bird(ImageDraw.Draw(img), 120, 146, 62)
-    return img
+def mode(text, underline=False, disabled=False):
+    """タスクバーの入力モード。白い字に濃い縁取り(明るい所でも暗い所でも読める)。"""
+    def draw(c, small):
+        p = glyph_path(SANS_BOLD, text, 820 if small else 760)
+        b = p.computeTightBounds()
+        # 下線を引くものは、字を小さめにして下に線の場所を空ける
+        box_w = U * (0.92 if small else 0.86)
+        box_h = U * (0.66 if underline else (0.92 if small else 0.86))
+        scale = min(box_w / b.width(), box_h / b.height())
+        p.transform(skia.Matrix.Scale(scale, scale))
+        b = p.computeTightBounds()
+        dy = -125 if underline else 0
+        p.offset(U / 2 - (b.left() + b.right()) / 2, U / 2 - (b.top() + b.bottom()) / 2 + dy)
+        edge = 96 if small else 64
+        fill = GRAY if disabled else WHITE
+        for q, col in ((p, OUTLINE),):
+            sp = skia.Paint(AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=edge,
+                            StrokeJoin=skia.Paint.kRound_Join, Color=col)
+            c.drawPath(q, sp)
+        if underline:
+            b = p.computeTightBounds()
+            bar = skia.Rect.MakeLTRB(b.left(), b.bottom() + 100, b.right(), b.bottom() + 190)
+            c.drawRoundRect(bar.makeOutset(edge / 2, edge / 2), 40 + edge / 2, 40 + edge / 2, paint(OUTLINE))
+            c.drawRoundRect(bar, 40, 40, paint(fill))
+        c.drawPath(p, paint(fill))
+    return draw
 
 
-def glyph(text, font_name, size, underline=False, disabled=False):
-    img = base(radius=0.26) if not disabled else base((120, 120, 120, 255), (80, 80, 80, 255), 0.26)
-    d = ImageDraw.Draw(img)
-    f = ImageFont.truetype(str(FONTS / font_name), size)
-    y = S / 2 - (14 if underline else 0)
-    d.text((S / 2, y), text, font=f, fill=WHITE, anchor="mm")
-    if underline:
-        d.rounded_rectangle([56, 200, S - 56, 216], radius=6, fill=WHITE)
-    return img
-
-
-def save(img, name):
-    img.save(out / name, format="ICO", sizes=[(n, n) for n in SIZES])
+def save(draw, name):
+    imgs = [render(draw, n) for n in SIZES]
+    # 古い Windows SDK の rc.exe は PNG 入りの .ico を受け付けない(RC2176)ので、BMP で入れる。
+    imgs[-1].save(out / name, format="ICO", sizes=[(n, n) for n in SIZES],
+                  append_images=imgs[:-1], bitmap_format="bmp")
+    return imgs
 
 
 icons = {
-    "product_icon.ico": product(),
-    "product_icon_langbar.ico": product(),
-    "tools_icon.ico": product(),
-    "tools_icon_a.ico": product(),
-    "tools_properties.ico": badge(product(), "gear"),
-    "tools_properties_a.ico": badge(product(), "gear"),
-    "tools_dictionary.ico": badge(product(), "book"),
-    "tools_dictionary_a.ico": badge(product(), "book"),
+    "product_icon.ico": product,
+    "product_icon_langbar.ico": product,
+    "tools_icon.ico": product,
+    "tools_icon_a.ico": product,
+    "tools_properties.ico": properties,
+    "tools_properties_a.ico": properties,
+    "tools_dictionary.ico": dictionary,
+    "tools_dictionary_a.ico": dictionary,
 }
 modes = {
-    "ms_hiragana": ("あ", "YuGothB.ttc", 176, False),
-    "ms_katakana": ("カ", "YuGothB.ttc", 176, False),
-    "ms_katakana_half": ("ｶ", "YuGothB.ttc", 176, True),
-    "ms_alpha": ("Ａ", "YuGothB.ttc", 176, False),
-    "ms_alpha_half": ("A", "SegUIVar.ttf", 176, True),
-    "ms_direct_input": ("A", "SegUIVar.ttf", 176, False),
+    "ms_hiragana": mode("あ"),
+    "ms_katakana": mode("カ"),
+    "ms_katakana_half": mode("ｶ", underline=True),
+    "ms_alpha": mode("Ａ"),
+    "ms_alpha_half": mode("A", underline=True),
+    "ms_direct_input": mode("A"),
+    "ms_disabled": mode("×", disabled=True),
 }
-for name, (t, f, sz, ul) in modes.items():
+for name, draw in modes.items():
     for suffix in ("", "_a"):
-        icons[f"{name}{suffix}.ico"] = glyph(t, f, sz, ul)
-for suffix in ("", "_a"):
-    icons[f"ms_disabled{suffix}.ico"] = glyph("×", "SegUIVar.ttf", 170, disabled=True)
+        icons[f"{name}{suffix}.ico"] = draw
 
-for name, img in icons.items():
-    save(img, name)
-# 見本(確認用)
-sheet = Image.new("RGBA", (64 * len(icons), 64), (243, 243, 243, 255))
-for i, img in enumerate(icons.values()):
-    sheet.paste(img.resize((56, 56), Image.LANCZOS), (i * 64 + 4, 4), img.resize((56, 56), Image.LANCZOS))
-sheet.save(out / "_kotori_icons_preview.png")
+rendered = {name: save(draw, name) for name, draw in icons.items()}
+
+if preview:
+    # 見本: 明るい背景と暗い背景に、256・32・24・16 を並べる
+    names = list(dict.fromkeys(n.replace("_a.ico", ".ico") for n in rendered))
+    cell = 150
+    sheet = Image.new("RGBA", (cell * len(names), 2 * cell), (0, 0, 0, 0))
+    for j, bg in enumerate([(243, 243, 243, 255), (32, 32, 32, 255)]):
+        sheet.paste(Image.new("RGBA", (cell * len(names), cell), bg), (0, j * cell))
+        for i, n in enumerate(names):
+            imgs = rendered[n]
+            sheet.alpha_composite(imgs[-1].resize((88, 88), Image.LANCZOS), (i * cell + 8, j * cell + 8))
+            x = i * cell + 8
+            for k in (3, 2, 0):
+                sheet.alpha_composite(imgs[k], (x, j * cell + 108))
+                x += SIZES[k] + 8
+    sheet.save(preview)
 print("ok", len(icons))
