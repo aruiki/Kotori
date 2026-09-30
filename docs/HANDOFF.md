@@ -31,8 +31,8 @@ zenz-medium、先回りの変換)で動かす(docs/adr/0024)。負荷は `mozc/t
 | 段階 4(評価と配布) | ベータ版を GitHub Releases で配布中(`mozc/VERSION` の beta の番号)。MSI の版はリリースごとに上がる(カード 22) |
 | 実機での確認 | メンテナに頼んでいる(上書きインストール、ノート PC、ダークモードの設定画面など) |
 
-精度(前の文あり): AJIMEE-Bench は Mozc 単体 51.0%、Low 86.5%、Standard 91.5%、High 92.5%。日常の文 81 問は
-Standard / High 97.5%(`eval/README.md`、docs/adr/0023)。改善の候補と優先順位は `docs/IMPROVEMENT_PROPOSALS.md`。
+精度(前の文あり): AJIMEE-Bench は Mozc 単体 51.0%、Low 88.0%(GPU なし、docs/adr/0024)、Standard 91.5%、High 92.5%。
+日常の文 81 問は Low / Standard / High 97.5%(`eval/README.md`、docs/adr/0023)。改善の候補と優先順位は `docs/IMPROVEMENT_PROPOSALS.md`。
 
 ### 旧 Rust 版(履歴。段階 3 までの評価の基準と参考実装)
 
