@@ -19055,10 +19055,17 @@ zL@613W7Zf1G&4<#nt(BZ;xoE2_j8mrXY(!KeiIne+sK-zQeq6KNh!`3eBt9B?)?Em
 Ce@$lq
 
 diff --git a/src/gui/base/util.cc b/src/gui/base/util.cc
-index b1af98c8a..40bbc83be 100644
+index b1af98c8a..ba118cd62 100644
 --- a/src/gui/base/util.cc
 +++ b/src/gui/base/util.cc
-@@ -46,6 +46,9 @@
+@@ -42,10 +42,16 @@
+ 
+ #include <QAbstractButton>
+ #include <QApplication>
++#ifdef _WIN32
++#include <windows.h>
++#endif  // _WIN32
+ #include <QFont>
  #include <QGuiApplication>
  #include <QObject>
  #include <QStyleFactory>
@@ -19068,38 +19075,59 @@ index b1af98c8a..40bbc83be 100644
  #include <QtGui>
  #include <memory>
  #include <string>
-@@ -100,6 +103,30 @@ std::unique_ptr<QApplication> GuiUtil::InitQt(int &argc, char *argv[]) {
+@@ -90,6 +96,18 @@ void InstallDefaultTranslator() {
+ }
+ }  // namespace
+ 
++#ifdef _WIN32
++// Kotori: Windows のハイコントラストが有効か。有効なら Kotori の配色とスタイルを当てず、Windows の
++// 配色に従う(docs/adr/0028、改善案 14)。
++static bool KotoriHighContrast() {
++  HIGHCONTRASTW hc = {sizeof(hc)};
++  return ::SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(hc), &hc, 0) &&
++         (hc.dwFlags & HCF_HIGHCONTRASTON);
++}
++#else
++static bool KotoriHighContrast() { return false; }
++#endif  // _WIN32
++
+ // static
+ std::unique_ptr<QApplication> GuiUtil::InitQt(int &argc, char *argv[]) {
+   QApplication::setStyle(QStyleFactory::create(QLatin1String("fusion")));
+@@ -100,6 +118,32 @@ std::unique_ptr<QApplication> GuiUtil::InitQt(int &argc, char *argv[]) {
    app->setFont(QFont("Hiragino Sans"));
  #endif  // __APPLE__
  
 +  // Kotori: 画面は明るい配色で作っているので、Windows がダークモードでも明るい配色にする
 +  // (ダークモードでは Qt がボタンなどの文字を白にし、白い背景の上で文字が消えた。docs/adr/0024)。
-+  app->styleHints()->setColorScheme(Qt::ColorScheme::Light);
-+  QPalette light;
-+  light.setColor(QPalette::Window, QColor(0xF3, 0xF3, 0xF3));
-+  light.setColor(QPalette::WindowText, QColor(0x1A, 0x1A, 0x1A));
-+  light.setColor(QPalette::Base, QColor(0xFF, 0xFF, 0xFF));
-+  light.setColor(QPalette::AlternateBase, QColor(0xF7, 0xF7, 0xF7));
-+  light.setColor(QPalette::Text, QColor(0x1A, 0x1A, 0x1A));
-+  light.setColor(QPalette::Button, QColor(0xFF, 0xFF, 0xFF));
-+  light.setColor(QPalette::ButtonText, QColor(0x1A, 0x1A, 0x1A));
-+  light.setColor(QPalette::ToolTipBase, QColor(0xFF, 0xFF, 0xFF));
-+  light.setColor(QPalette::ToolTipText, QColor(0x1A, 0x1A, 0x1A));
-+  light.setColor(QPalette::PlaceholderText, QColor(0x8A, 0x8A, 0x8A));
-+  light.setColor(QPalette::Highlight, QColor(0x0F, 0x6C, 0xBD));
-+  light.setColor(QPalette::HighlightedText, QColor(0xFF, 0xFF, 0xFF));
-+  light.setColor(QPalette::Link, QColor(0x0F, 0x6C, 0xBD));
-+  light.setColor(QPalette::BrightText, QColor(0xFF, 0xFF, 0xFF));
-+  for (QPalette::ColorRole role :
-+       {QPalette::WindowText, QPalette::Text, QPalette::ButtonText}) {
-+    light.setColor(QPalette::Disabled, role, QColor(0xA0, 0xA0, 0xA0));
++  if (!KotoriHighContrast()) {
++    app->styleHints()->setColorScheme(Qt::ColorScheme::Light);
++    QPalette light;
++    light.setColor(QPalette::Window, QColor(0xF3, 0xF3, 0xF3));
++    light.setColor(QPalette::WindowText, QColor(0x1A, 0x1A, 0x1A));
++    light.setColor(QPalette::Base, QColor(0xFF, 0xFF, 0xFF));
++    light.setColor(QPalette::AlternateBase, QColor(0xF7, 0xF7, 0xF7));
++    light.setColor(QPalette::Text, QColor(0x1A, 0x1A, 0x1A));
++    light.setColor(QPalette::Button, QColor(0xFF, 0xFF, 0xFF));
++    light.setColor(QPalette::ButtonText, QColor(0x1A, 0x1A, 0x1A));
++    light.setColor(QPalette::ToolTipBase, QColor(0xFF, 0xFF, 0xFF));
++    light.setColor(QPalette::ToolTipText, QColor(0x1A, 0x1A, 0x1A));
++    light.setColor(QPalette::PlaceholderText, QColor(0x8A, 0x8A, 0x8A));
++    light.setColor(QPalette::Highlight, QColor(0x0F, 0x6C, 0xBD));
++    light.setColor(QPalette::HighlightedText, QColor(0xFF, 0xFF, 0xFF));
++    light.setColor(QPalette::Link, QColor(0x0F, 0x6C, 0xBD));
++    light.setColor(QPalette::BrightText, QColor(0xFF, 0xFF, 0xFF));
++    for (QPalette::ColorRole role :
++         {QPalette::WindowText, QPalette::Text, QPalette::ButtonText}) {
++      light.setColor(QPalette::Disabled, role, QColor(0xA0, 0xA0, 0xA0));
++    }
++    app->setPalette(light);
 +  }
-+  app->setPalette(light);
 +
    InstallEventFilter();
    InstallDefaultTranslator();
  
-@@ -131,7 +158,7 @@ QString GuiUtil::ProductName() {
+@@ -131,7 +175,7 @@ QString GuiUtil::ProductName() {
  #ifdef GOOGLE_JAPANESE_INPUT_BUILD
    const QString name = QObject::tr("Google Japanese Input");
  #else   // GOOGLE_JAPANESE_INPUT_BUILD
@@ -19109,10 +19137,10 @@ index b1af98c8a..40bbc83be 100644
    return name;
  }
 diff --git a/src/gui/config_dialog/config_dialog.cc b/src/gui/config_dialog/config_dialog.cc
-index abbf55d68..39d6c7f1d 100644
+index abbf55d68..c42f413d9 100644
 --- a/src/gui/config_dialog/config_dialog.cc
 +++ b/src/gui/config_dialog/config_dialog.cc
-@@ -30,8 +30,22 @@
+@@ -30,9 +30,24 @@
  // Qt component of configure dialog for Mozc
  #include "gui/config_dialog/config_dialog.h"
  
@@ -19133,9 +19161,20 @@ index abbf55d68..39d6c7f1d 100644
 +#include <dxgi.h>
 +#endif  // _WIN32
  #include <cstdint>
++#include <fstream>
  #include <istream>
  #include <map>
-@@ -83,6 +97,90 @@ void Connect(const QList<T *> &objects, const char *signal,
+ #include <memory>
+@@ -43,6 +58,8 @@
+ #include "absl/log/log.h"
+ #include "absl/strings/string_view.h"
+ #include "base/config_file_stream.h"
++#include "base/file_util.h"
++#include "base/system_util.h"
+ #include "client/client.h"
+ #include "config/config_handler.h"
+ #include "config/stats_config_util.h"
+@@ -83,6 +100,136 @@ void Connect(const QList<T *> &objects, const char *signal,
  
  namespace mozc {
  namespace gui {
@@ -19156,6 +19195,10 @@ index abbf55d68..39d6c7f1d 100644
 +QPushButton:default { background: #0F6CBD; color: #FFFFFF; border: 1px solid #115EA3; }
 +QPushButton:default:hover { background: #115EA3; }
 +QPushButton:disabled { background: #F0F0F0; color: #A0A0A0; border-color: #E0E0E0; }
++QPushButton:focus { border: 2px solid #0F6CBD; }
++QPushButton:default:focus { border: 2px solid #1A1A1A; }
++QCheckBox:focus, QRadioButton:focus { background: #EBF3FC; border-radius: 4px; }
++QTabBar::tab:focus { border: 1px solid #0F6CBD; border-radius: 4px; }
 +QComboBox, QLineEdit, QSpinBox { background: #FFFFFF; color: #1A1A1A; border: 1px solid #D1D1D1; border-bottom: 1px solid #8A8A8A; border-radius: 4px; padding: 4px 8px; min-height: 20px; }
 +QComboBox:focus, QLineEdit:focus, QSpinBox:focus { border-bottom: 2px solid #0F6CBD; }
 +QComboBox::drop-down { border: none; width: 24px; }
@@ -19167,6 +19210,18 @@ index abbf55d68..39d6c7f1d 100644
 +QLabel#kotoriNote { color: #5C5C5C; font-size: 9pt; }
 +QFrame#kotoriCard { background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 8px; }
 +)";
++
++#ifdef _WIN32
++// Kotori: Windows のハイコントラストが有効か。有効なら Kotori の配色とスタイルを当てず、Windows の
++// 配色に従う(docs/adr/0028、改善案 14)。
++bool KotoriHighContrast() {
++  HIGHCONTRASTW hc = {sizeof(hc)};
++  return ::SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(hc), &hc, 0) &&
++         (hc.dwFlags & HCF_HIGHCONTRASTON);
++}
++#else
++bool KotoriHighContrast() { return false; }
++#endif  // _WIN32
 +
 +// Kotori: この PC の GPU の名前と VRAM を 1 行で(設定画面に出す)。DXGI で調べ、
 +// ソフトウェアの描画(Microsoft Basic Render Driver)は除く。
@@ -19222,11 +19277,41 @@ index abbf55d68..39d6c7f1d 100644
 +  return "AI に使える GPU が見つかりません。どの品質を選んでも Low(CPU)で動きます。";
 +}
 +
++// Kotori: 実際に動いている AI の状態(変換サーバーがユーザーのプロファイルの
++// kotori_ai_status.txt に書く。rewriter/lm_rewriter.cc の WriteStatus、docs/adr/0026)。
++std::string KotoriAiStatus() {
++  std::ifstream in(FileUtil::JoinPath(SystemUtil::GetUserProfileDirectory(),
++                                      "kotori_ai_status.txt"),
++                   std::ios::binary);
++  std::map<std::string, std::string> kv;
++  for (std::string line; std::getline(in, line);) {
++    if (!line.empty() && line.back() == '\r') line.pop_back();
++    const size_t eq = line.find('=');
++    if (eq != std::string::npos) kv[line.substr(0, eq)] = line.substr(eq + 1);
++  }
++  const std::string& state = kv["state"];
++  const std::string& device = kv["device"];
++  const std::string where = device == "CPU" ? "CPU で動作" : "GPU: " + device;
++  if (state == "llm") {
++    return "AI の状態: 動いています(変換用の AI と日本語 LLM、" + where + ")。";
++  } else if (state == "zenz") {
++    return "AI の状態: 動いています(変換用の AI " + kv["zenz"] + "、" + where + ")。";
++  } else if (state == "loading") {
++    return "AI の状態: モデルを読み込んでいます。";
++  } else if (state == "error") {
++    return "AI の状態: 動いていません(" + kv["message"] +
++           " を読み込めません)。入れ直すと直ることがあります。";
++  } else if (state == "off") {
++    return "AI の状態: AI 変換は切れています。";
++  }
++  return "AI の状態: まだ分かりません(日本語を一度入力すると表示されます)。";
++}
++
 +}  // namespace
  
  using ::mozc::config::StatsConfigUtil;
  
-@@ -152,6 +250,160 @@ ConfigDialog::ConfigDialog()
+@@ -152,6 +299,164 @@ ConfigDialog::ConfigDialog()
    symbolsSettingComboBox->addItem(QString::fromUtf8("「」／"));
    symbolsSettingComboBox->addItem(QString::fromUtf8("[]・"));
  
@@ -19314,6 +19399,10 @@ index abbf55d68..39d6c7f1d 100644
 +      gpu->setObjectName("kotoriNote");
 +      gpu->setWordWrap(true);
 +      l->addWidget(gpu);
++      auto *status = new QLabel(QString::fromUtf8(KotoriAiStatus().c_str()), page);
++      status->setObjectName("kotoriNote");
++      status->setWordWrap(true);
++      l->addWidget(status);
 +      QObject::connect(kotoriLmEnabledCheckBox_, &QCheckBox::toggled,
 +                       kotoriLmQualityComboBox_, &QWidget::setEnabled);
 +    }
@@ -19371,7 +19460,7 @@ index abbf55d68..39d6c7f1d 100644
 +    configDialogTabWidget->insertTab(0, page, QString::fromUtf8("AI 変換"));
 +    configDialogTabWidget->setCurrentIndex(0);
 +    // Kotori: Fluent 2 風の見た目(Windows 11 の設定アプリに合わせる。docs/adr/0017)。
-+    setStyleSheet(QString::fromUtf8(kKotoriFluentStyle));
++    if (!KotoriHighContrast()) setStyleSheet(QString::fromUtf8(kKotoriFluentStyle));
 +    QObject::connect(kotoriLmEnabledCheckBox_, SIGNAL(stateChanged(int)), this,
 +                     SLOT(EnableApplyButton()));
 +    QObject::connect(kotoriLmPredictCheckBox_, SIGNAL(stateChanged(int)), this,
@@ -19387,7 +19476,7 @@ index abbf55d68..39d6c7f1d 100644
    keymapSettingComboBox->addItem(tr("Custom keymap"));
    keymapSettingComboBox->addItem(tr("ATOK"));
    keymapSettingComboBox->addItem(tr("MS-IME"));
-@@ -524,6 +776,20 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
+@@ -524,6 +829,20 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
    custom_keymap_table_ = config.custom_keymap_table();
    custom_roman_table_ = config.custom_roman_table();
  
@@ -19408,7 +19497,7 @@ index abbf55d68..39d6c7f1d 100644
    // tab2
    SET_COMBOBOX(historyLearningLevelComboBox, HistoryLearningLevel,
                 history_learning_level);
-@@ -612,6 +878,16 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
+@@ -612,6 +931,16 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
      config->set_custom_roman_table(custom_roman_table_);
    }
  
@@ -19504,7 +19593,7 @@ index 7d735374e..3988c7598 100644
    //
    // Cloud (300-319)
 diff --git a/src/rewriter/BUILD.bazel b/src/rewriter/BUILD.bazel
-index 4bbcddeca..886ed0552 100644
+index 4bbcddeca..dcc3dcc69 100644
 --- a/src/rewriter/BUILD.bazel
 +++ b/src/rewriter/BUILD.bazel
 @@ -1536,6 +1536,7 @@ mozc_cc_library(
@@ -19515,7 +19604,7 @@ index 4bbcddeca..886ed0552 100644
          ":merger_rewriter",
          ":number_rewriter",
          ":remove_redundant_candidate_rewriter",
-@@ -1743,3 +1744,48 @@ mozc_cc_test(
+@@ -1743,3 +1744,58 @@ mozc_cc_test(
          "//testing:gunit_main",
      ],
  )
@@ -19536,6 +19625,16 @@ index 4bbcddeca..886ed0552 100644
 +        ":llama_runtime",
 +        "@com_google_absl//absl/strings",
 +        "@llama_cpp//:llama",
++    ],
++)
++
++mozc_cc_test(
++    name = "lm_rewriter_test",
++    size = "small",
++    srcs = ["lm_rewriter_test.cc"],
++    deps = [
++        ":lm_rewriter",
++        "//testing:gunit_main",
 +    ],
 +)
 +
@@ -19566,10 +19665,10 @@ index 4bbcddeca..886ed0552 100644
 +)
 diff --git a/src/rewriter/llama_runtime.cc b/src/rewriter/llama_runtime.cc
 new file mode 100644
-index 000000000..0c6e2fb2f
+index 000000000..b7fd9ece6
 --- /dev/null
 +++ b/src/rewriter/llama_runtime.cc
-@@ -0,0 +1,275 @@
+@@ -0,0 +1,289 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/llama_runtime.h"
@@ -19636,6 +19735,11 @@ index 000000000..0c6e2fb2f
 +
 +bool LlamaHasGpu() { return LlamaGpuDevice() != nullptr; }
 +
++std::string LlamaGpuName() {
++  ggml_backend_dev_t dev = LlamaGpuDevice();
++  return dev != nullptr ? ggml_backend_dev_description(dev) : std::string();
++}
++
 +#else  // _WIN32
 +
 +// llama.dll と ggml.dll の関数を実行時に引く。インポートライブラリを使わないので、
@@ -19680,6 +19784,7 @@ index 000000000..0c6e2fb2f
 +  decltype(&::ggml_backend_dev_get) dev_get = nullptr;
 +  decltype(&::ggml_backend_dev_type) dev_type = nullptr;
 +  decltype(&::ggml_backend_dev_memory) dev_memory = nullptr;
++  decltype(&::ggml_backend_dev_description) dev_description = nullptr;
 +};
 +
 +Api g_api;
@@ -19724,8 +19829,11 @@ index 000000000..0c6e2fb2f
 +      GetProcAddress(base, "ggml_backend_dev_type"));
 +  g_api.dev_memory = reinterpret_cast<decltype(g_api.dev_memory)>(
 +      GetProcAddress(base, "ggml_backend_dev_memory"));
++  g_api.dev_description = reinterpret_cast<decltype(g_api.dev_description)>(
++      GetProcAddress(base, "ggml_backend_dev_description"));
 +  if (g_api.dev_count == nullptr || g_api.dev_get == nullptr ||
-+      g_api.dev_type == nullptr || g_api.dev_memory == nullptr) {
++      g_api.dev_type == nullptr || g_api.dev_memory == nullptr ||
++      g_api.dev_description == nullptr) {
 +    return false;
 +  }
 +  g_api.llama_log_set(QuietLog, nullptr);
@@ -19753,6 +19861,11 @@ index 000000000..0c6e2fb2f
 +}
 +
 +bool LlamaHasGpu() { return LlamaGpuDevice() != nullptr; }
++
++std::string LlamaGpuName() {
++  ggml_backend_dev_t dev = LlamaGpuDevice();
++  return dev != nullptr ? g_api.dev_description(dev) : std::string();
++}
 +
 +#endif  // _WIN32
 +
@@ -19847,10 +19960,10 @@ index 000000000..0c6e2fb2f
 +#endif  // _WIN32
 diff --git a/src/rewriter/llama_runtime.h b/src/rewriter/llama_runtime.h
 new file mode 100644
-index 000000000..9d46ce41a
+index 000000000..cf2c801ea
 --- /dev/null
 +++ b/src/rewriter/llama_runtime.h
-@@ -0,0 +1,34 @@
+@@ -0,0 +1,37 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
 +// Kotori: llama.cpp の実行時の準備(docs/adr/0016)。
@@ -19882,15 +19995,18 @@ index 000000000..9d46ce41a
 +// LlamaGpuDevice() があるか。
 +bool LlamaHasGpu();
 +
++// LlamaGpuDevice() の名前(設定画面の AI の状態に出す)。なければ空。
++std::string LlamaGpuName();
++
 +}  // namespace mozc
 +
 +#endif  // MOZC_REWRITER_LLAMA_RUNTIME_H_
 diff --git a/src/rewriter/lm_rewriter.cc b/src/rewriter/lm_rewriter.cc
 new file mode 100644
-index 000000000..9df449b64
+index 000000000..7f7aa33f2
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.cc
-@@ -0,0 +1,1516 @@
+@@ -0,0 +1,1738 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/lm_rewriter.h"
@@ -19917,6 +20033,8 @@ index 000000000..9df449b64
 +
 +#include "absl/container/flat_hash_map.h"
 +#include "absl/strings/match.h"
++#include "absl/strings/str_cat.h"
++#include "absl/strings/str_join.h"
 +#include "absl/synchronization/mutex.h"
 +#include "base/file_util.h"
 +#include "base/system_util.h"
@@ -19940,6 +20058,9 @@ index 000000000..9df449b64
 +constexpr size_t kMaxPredictChars = 40;
 +// これより文節が多いときは、文節ごとの見直しをしない(1 文節ごとに採点するので遅い)。
 +constexpr size_t kMaxSegmentsToRescore = 16;
++// GPU のないとき、AI を使う読みの長さの上限(文字)。CPU の zenz-medium では、これより長い文の生成・採点が
++// 時間の上限に収まらず、採点の 1 回の計算は途中で止められないため(docs/adr/0029)。
++constexpr size_t kMaxCpuChars = 60;
 +
 +// UTF-8 の文字を 1 つずつ(コードポイントで)返す。
 +std::vector<uint32_t> CodePoints(absl::string_view text) {
@@ -20012,11 +20133,19 @@ index 000000000..9df449b64
 +// 変換を待たせないための目印。変換の要求が来ている間、裏の予測は途中でやめる。
 +class Urgent {
 + public:
-+  explicit Urgent(std::atomic<int>& n) : n_(n) { ++n_; }
-+  ~Urgent() { --n_; }
++  Urgent(std::atomic<int>& n, std::atomic<int64_t>& last) : n_(n), last_(last) {
++    ++n_;
++  }
++  ~Urgent() {
++    last_ = std::chrono::duration_cast<std::chrono::microseconds>(
++                std::chrono::steady_clock::now().time_since_epoch())
++                .count();
++    --n_;
++  }
 +
 + private:
 +  std::atomic<int>& n_;
++  std::atomic<int64_t>& last_;
 +};
 +
 +constexpr char kDefaultModelName[] = "zenz-v2.5-small-q8_0.gguf";
@@ -20149,10 +20278,12 @@ index 000000000..9df449b64
 +// (1 文字で読み 1〜6 文字)をたどり、両方の終わりに着けば合う。
 +// prefix_only なら、text の先頭部分で reading を使い切れば合うとする(予測の候補用。
 +// 「今日はいい天気」は読み「きょうはいいて」で始まる)。
-+bool MatchesReading(const dictionary::DictionaryInterface& dic,
-+                    const dictionary::SingleKanjiDictionary* single_kanji,
-+                    absl::string_view text, absl::string_view reading,
-+                    bool prefix_only = false) {
++// units を渡すと、合ったときの表記と読みの対応(辞書の語・かな・数字などの単位ごと)を入れる。
++bool MatchesReading(
++    const dictionary::DictionaryInterface& dic,
++    const dictionary::SingleKanjiDictionary* single_kanji,
++    absl::string_view text, absl::string_view reading, bool prefix_only = false,
++    std::vector<std::pair<std::string, std::string>>* units = nullptr) {
 +  const std::vector<std::string> t = Chars(text);
 +  const std::vector<std::string> r = Chars(reading);
 +  std::vector<size_t> r_off(r.size() + 1, 0);
@@ -20161,21 +20292,46 @@ index 000000000..9df449b64
 +  for (size_t i = t.size(); i-- > 0;) t_prefix[i] = t[i] + t_prefix[i + 1];
 +  std::vector<std::vector<bool>> seen(t.size() + 1,
 +                                      std::vector<bool>(r.size() + 1, false));
++  // 状態 (i, j) に来る前の状態(対応を取り出すため)。
++  std::vector<std::vector<std::pair<int, int>>> from(
++      t.size() + 1, std::vector<std::pair<int, int>>(r.size() + 1, {-1, -1}));
 +  std::vector<std::optional<PrefixCollector>> lookups(r.size());
 +  std::vector<std::optional<PrefixCollector>> reverse(t.size() + 1);
 +  absl::flat_hash_map<std::string, std::vector<std::string>> kanji_cache;
 +  std::vector<std::pair<size_t, size_t>> stack = {{0, 0}};
 +  seen[0][0] = true;
++  size_t ci = 0, cj = 0;  // 今たどっている状態(push が from に書く)
 +  auto push = [&](size_t i, size_t j) {
 +    if (i <= t.size() && j <= r.size() && !seen[i][j]) {
 +      seen[i][j] = true;
++      from[i][j] = {static_cast<int>(ci), static_cast<int>(cj)};
 +      stack.emplace_back(i, j);
 +    }
 +  };
 +  while (!stack.empty()) {
 +    const auto [i, j] = stack.back();
 +    stack.pop_back();
-+    if (i == t.size() && j == r.size()) return true;
++    ci = i;
++    cj = j;
++    if (i == t.size() && j == r.size()) {
++      if (units != nullptr) {
++        // 終わりから前の状態をたどり、単位ごとの表記と読みを取り出す。
++        units->clear();
++        size_t a = i, b = j;
++        while (a > 0 || b > 0) {
++          const auto [pa, pb] = from[a][b];
++          if (pa < 0) break;
++          std::string ut, ur;
++          for (size_t x = pa; x < a; ++x) ut += t[x];
++          for (size_t y = pb; y < b; ++y) ur += r[y];
++          units->emplace_back(std::move(ut), std::move(ur));
++          a = pa;
++          b = pb;
++        }
++        std::reverse(units->begin(), units->end());
++      }
++      return true;
++    }
 +    if (prefix_only && j == r.size()) return true;
 +    // 読みの残り(3 文字まで)が語の途中で終わる場合(「て」→「天気」)。text の続きの語を
 +    // 逆引きし(表記 → 読み)、その読みが残りの読みで始まれば合う。
@@ -20236,6 +20392,35 @@ index 000000000..9df449b64
 +    }
 +  }
 +  return false;
++}
++
++// 生成した文を、表記と読みの対応(MatchesReading の units)で文節に分ける(docs/adr/0027)。
++// ひらがなで終わる単位の後に、ひらがな以外(漢字・カタカナ・数字など)で始まる単位が来たら区切る
++// (「明日の|会議は|10時からです」)。文節は最大 max 個で、超えた分は最後の文節につなぐ。
++void SplitIntoSegmentsImpl(
++    const std::vector<std::pair<std::string, std::string>>& units, size_t max,
++    std::vector<std::string>* keys, std::vector<std::string>* values) {
++  auto is_hiragana = [](absl::string_view c) {
++    if (c.size() != 3 || static_cast<unsigned char>(c[0]) != 0xE3) return false;
++    const uint32_t cp =
++        ((c[0] & 0x0F) << 12) | ((c[1] & 0x3F) << 6) | (c[2] & 0x3F);
++    return cp >= 0x3041 && cp <= 0x309F;
++  };
++  keys->clear();
++  values->clear();
++  bool prev_hiragana = false;
++  for (const auto& [text, yomi] : units) {
++    const std::vector<std::string> chars = Chars(text);
++    if (chars.empty()) continue;
++    const bool starts_content = !is_hiragana(chars.front());
++    if (keys->empty() || (prev_hiragana && starts_content && keys->size() < max)) {
++      keys->emplace_back();
++      values->emplace_back();
++    }
++    keys->back() += yomi;
++    values->back() += text;
++    prev_hiragana = is_hiragana(chars.back());
++  }
 +}
 +
 +// 評価用: KOTORI_LM_CONTEXT_MAP に「読み<TAB>前の文」の行を書いたファイル(UTF-8)を渡すと、
@@ -20322,6 +20507,16 @@ index 000000000..9df449b64
 +
 +}  // namespace
 +
++namespace kotori_internal {
++
++void SplitIntoSegments(
++    const std::vector<std::pair<std::string, std::string>>& units, size_t max,
++    std::vector<std::string>* keys, std::vector<std::string>* values) {
++  SplitIntoSegmentsImpl(units, max, keys, values);
++}
++
++}  // namespace kotori_internal
++
 +LmRewriter::LmRewriter(const dictionary::DictionaryInterface* dictionary,
 +                       const dictionary::SingleKanjiDictionary* single_kanji)
 +    : dictionary_(dictionary), single_kanji_(single_kanji) {
@@ -20377,6 +20572,8 @@ index 000000000..9df449b64
 +  if (const char* v = Env("KOTORI_MODEL_DIR")) model_dir_ = v;
 +  if (const char* v = Env("KOTORI_LM_BUDGET")) budget_ms_ = std::atoi(v);
 +  if (const char* v = Env("KOTORI_LM_PRECONVERT")) preconvert_ = *v != '0';
++  if (const char* v = Env("KOTORI_LM_TAB_BUDGET")) tab_budget_ms_ = std::atoi(v);
++  if (const char* v = Env("KOTORI_LM_SPLIT")) split_generated_ = *v != '0';
 +  // モデルの読み込みと、入力中のサジェストに出す予測を裏で行うスレッド。
 +  worker_ = std::thread([this] { WorkerLoop(); });
 +  // 今の設定のモデルを裏で読み込んでおく(最初の変換で 1 秒以上待たないため)。
@@ -20384,6 +20581,43 @@ index 000000000..9df449b64
 +  const char* preload = Env("KOTORI_LM_PRELOAD");
 +  sync_load_ = preload != nullptr && *preload == '0';
 +  if (!sync_load_) RequestLoad(config::ConfigHandler::GetCopiedConfig());
++}
++
++void LmRewriter::WriteStatus(const config::Config& config,
++                             const char* state) const {
++  if (sync_load_) return;  // 評価では書かない
++  // 1 行に 1 項目(キー=値)。入力した文字は書かない。
++  std::string text;
++  auto line = [&](absl::string_view key, absl::string_view value) {
++    absl::StrAppend(&text, key, "=", value, "\n");
++  };
++  auto base = [](const std::string& path) {
++    const size_t p = path.find_last_of("/\\");
++    return p == std::string::npos ? path : path.substr(p + 1);
++  };
++  const bool runtime = EnsureLlamaRuntime(runtime_dir_);
++  const std::string gpu = runtime ? LlamaGpuName() : std::string();
++  if (!config.kotori_lm_enabled()) {
++    line("state", "off");
++  } else if (std::string(state) == "loading") {
++    line("state", "loading");
++  } else if (!runtime) {
++    line("state", "error");
++    line("message", "llama.dll");
++  } else if (scorer_ == nullptr) {
++    line("state", "error");
++    line("message", base(loaded_path_));
++  } else {
++    line("state", llm_ != nullptr ? "llm" : "zenz");
++  }
++  line("device", gpu.empty() ? "CPU" : gpu);
++  if (scorer_ != nullptr) line("zenz", base(loaded_path_));
++  if (llm_ != nullptr) line("llm", base(llm_path_));
++  const std::string path =
++      FileUtil::JoinPath(SystemUtil::GetUserProfileDirectory(),
++                         "kotori_ai_status.txt");
++  std::ofstream out(path, std::ios::binary | std::ios::trunc);
++  out << text;
 +}
 +
 +void LmRewriter::RequestLoad(const config::Config& config) const {
@@ -20493,6 +20727,21 @@ index 000000000..9df449b64
 +  return scorer_.get();
 +}
 +
++std::string LmRewriter::CacheKey(const config::Config& config,
++                                 const std::string& context) const {
++  // 予測の結果を変える設定(品質、AI モデル、LLM のファイル)。違う設定で作った予測は使わない
++  // (docs/IMPROVEMENT_PROPOSALS.md の案 04)。
++  return absl::StrCat(static_cast<int>(config.kotori_lm_quality()), ",",
++                      static_cast<int>(config.kotori_lm_model()), ",",
++                      config.kotori_lm_model_path(), "\x1f", context);
++}
++
++void LmRewriter::ClearPredictions() const {
++  std::lock_guard<std::mutex> lock(job_mu_);
++  cache_.clear();
++  if (job_ && !job_->convert) job_.reset();
++}
++
 +bool LmRewriter::HasGpu() const {
 +  return EnsureLlamaRuntime(runtime_dir_) && LlamaHasGpu();
 +}
@@ -20528,12 +20777,15 @@ index 000000000..9df449b64
 +  const std::string reading = ConversionReading(segments);
 +  const std::string context = HistoryContext(request, segments);
 +  const std::string key = reading + "\t" + context;
-+  Urgent urgent(urgent_);
++  if (!HasGpu() && Util::CharsLen(reading) > kMaxCpuChars) return std::nullopt;
++  const auto t_request = std::chrono::steady_clock::now();
++  Urgent urgent(urgent_, last_request_us_);
 +  // 同じ読みの先回りの変換が裏で計算中なら、捨てずに終わるのを待つ(上限まで)。
 +  int wait_ms = 300;
 +  {
 +    std::lock_guard<std::mutex> jl(job_mu_);
 +    urgent_key_ = key;
++    last_converted_key_ = key;
 +    if (running_convert_ == key) wait_ms = std::max(wait_ms, BudgetMs());
 +  }
 +  if (!TryLockForRequest(wait_ms)) return std::nullopt;
@@ -20542,10 +20794,15 @@ index 000000000..9df449b64
 +  const auto t0 = std::chrono::steady_clock::now();
 +  // AI に使う時間の上限(モデルを用意した後から数える)。超えたら生成をやめ、LLM も使わない
 +  // (遅い PC で固まらないため)。
-+  std::chrono::steady_clock::time_point deadline;
++  std::chrono::steady_clock::time_point deadline, gen_deadline;
 +  int budget_ms = 0;
 +  auto over = [&] {
 +    return budget_ms > 0 && std::chrono::steady_clock::now() > deadline;
++  };
++  // 生成は上限の 6 割までにし、残りを採点に残す(採点の 1 回の計算は途中でやめられないため。
++  // docs/adr/0029)。
++  auto gen_over = [&] {
++    return budget_ms > 0 && std::chrono::steady_clock::now() > gen_deadline;
 +  };
 +  auto ms = [](auto a, auto b) {
 +    return std::chrono::duration<double, std::milli>(b - a).count();
@@ -20559,7 +20816,12 @@ index 000000000..9df449b64
 +  if (scorer == nullptr) return std::nullopt;
 +  const auto t_load = std::chrono::steady_clock::now();
 +  budget_ms = BudgetMs();
-+  deadline = t_load + std::chrono::milliseconds(budget_ms);
++  // 上限は要求が来た時点から数える(ロックを待った時間も含める)。この要求の中でモデルを読み込んだ
++  // とき(評価)は、読み込みの後から数える。
++  const auto t_budget =
++      t_load - t0 > std::chrono::milliseconds(50) ? t_load : t_request;
++  deadline = t_budget + std::chrono::milliseconds(budget_ms);
++  gen_deadline = t_budget + std::chrono::milliseconds(budget_ms * 6 / 10);
 +
 +  // 候補 = ラティスの文全体の候補(区切り付き)+ zenz が読みから生成した文(区切りなし)。
 +  std::vector<const converter::Candidate*> cands;
@@ -20573,6 +20835,12 @@ index 000000000..9df449b64
 +    values.push_back(c.value);
 +    if (cands.size() >= max_sentences_) break;
 +  }
++  // ユーザー辞書の語を含む文が Mozc の 1 位なら、利用者が登録した表記を AI で変えない
++  // (docs/adr/0027、改善案 07)。
++  if (!cands.empty() && cands.front() != nullptr &&
++      (cands.front()->attributes & converter::Attribute::USER_DICTIONARY)) {
++    return std::nullopt;
++  }
 +  // ラティスの 1 位のひらがなの数。生成した文がこれより 4 文字以上多ければ、読みを漢字に変えずに
 +  // 写しただけとみなして除く(zenz は読みを写した文を高く採点することがある)。
 +  const size_t lattice_kana =
@@ -20584,11 +20852,11 @@ index 000000000..9df449b64
 +      generated = gen_cache_->texts;  // 先回りの変換で作ったもの
 +    } else {
 +      {
-+        CancelScope cancel(over);
++        CancelScope cancel(gen_over);
 +        generated = scorer->Generate(context, reading, beams);
 +      }
 +      // 裏の先回りの変換が同じ読みを作り直さないように残す(途中でやめたものは残さない)。
-+      if (!over()) gen_cache_ = Generated{key, beams, loaded_path_, generated};
++      if (!gen_over()) gen_cache_ = Generated{key, beams, loaded_path_, generated};
 +    }
 +  }
 +  {
@@ -20614,8 +20882,8 @@ index 000000000..9df449b64
 +    }
 +  }
 +  const auto t_gen = std::chrono::steady_clock::now();
-+  // 生成で時間の上限を超えたら、採点もせずに Mozc の結果を出す(待たせないため)。
-+  if (values.size() < 2 || over()) return std::nullopt;
++  // 生成で時間を使い切ったら、採点もせずに Mozc の結果を出す(待たせないため)。
++  if (values.size() < 2 || gen_over()) return std::nullopt;
 +  // 点数 = zenz の log P(文 | 読み、前の文) + LLM の log P(文 | 前の文)(docs/adr/0016)。
 +  // LLM がないときは zenz だけで選ぶ。
 +  const std::optional<std::vector<float>> zlogp =
@@ -20675,9 +20943,25 @@ index 000000000..9df449b64
 +
 +  Best best{reading, context, {}, {}};
 +  if (cands[top] == nullptr) {
-+    // 生成した文は区切りを持たないので、全体を 1 つの文節にする。
-+    best.keys.push_back(reading);
-+    best.values.push_back(values[top]);
++    // 生成した文は区切りを持たないので、表記と読みの対応で文節に分ける(一語だけ直しやすく
++    // するため)。対応が取れないときや分割を切ったときは、全体を 1 つの文節にする。
++    std::vector<std::pair<std::string, std::string>> units;
++    if (split_generated_ && dictionary_ != nullptr &&
++        MatchesReading(*dictionary_, single_kanji_, values[top], reading, false,
++                       &units)) {
++      SplitIntoSegmentsImpl(units, ResizeSegmentsRequest().segment_sizes.size(),
++                            &best.keys, &best.values);
++      if (Env("KOTORI_LM_DEBUG") != nullptr) {
++        for (const auto& [ut, ur] : units) {
++          std::fprintf(stderr, "[kotori] unit %s/%s\n", ut.c_str(), ur.c_str());
++        }
++      }
++    }
++    if (best.keys.empty() || absl::StrJoin(best.keys, "") != reading ||
++        absl::StrJoin(best.values, "") != values[top]) {
++      best.keys = {reading};
++      best.values = {values[top]};
++    }
 +  } else {
 +    for (const auto& inner : cands[top]->inner_segments()) {
 +      best.keys.emplace_back(inner.GetKey());
@@ -20729,6 +21013,10 @@ index 000000000..9df449b64
 +    if (seg.candidates_size() == 0 || seg.candidate(0).value == value) {
 +      continue;
 +    }
++    // ユーザー辞書の語は置き換えない。
++    if (seg.candidate(0).attributes & converter::Attribute::USER_DICTIONARY) {
++      continue;
++    }
 +    int found = -1;
 +    for (size_t j = 1; j < seg.candidates_size(); ++j) {
 +      if (seg.candidate(j).value == value) {
@@ -20764,7 +21052,11 @@ index 000000000..9df449b64
 +    Segment& seg = *segments->mutable_conversion_segment(s);
 +    const size_t n = std::min(seg.candidates_size(), k);
 +    if (BudgetMs() > 0 && std::chrono::steady_clock::now() > deadline) break;
-+    if (n >= 2 && !seg.key().empty()) {
++    // ユーザー辞書の語が 1 位の文節は並べ替えない。
++    const bool user_top =
++        seg.candidates_size() > 0 &&
++        (seg.candidate(0).attributes & converter::Attribute::USER_DICTIONARY);
++    if (n >= 2 && !seg.key().empty() && !user_top) {
 +      // 読みと候補の後ろに、残りの文節の読みと第 1 候補をつなぐ。「はが」だけでは
 +      // 葉/歯を決められないが、「はがいたい」なら決められる。
 +      std::string reading(seg.key());
@@ -20836,7 +21128,7 @@ index 000000000..9df449b64
 +std::vector<LmRewriter::Prediction> LmRewriter::ComputePredictions(
 +    const config::Config& config, const std::string& reading,
 +    const std::string& context, std::string* conv_out, bool background,
-+    bool light) const {
++    bool light, std::chrono::steady_clock::time_point deadline) const {
 +  std::vector<Prediction> preds;
 +  size_t k = 0, llm_top = 0;
 +  int beams = 0;
@@ -20847,13 +21139,15 @@ index 000000000..9df449b64
 +  // 裏で計算しているときは、変換の要求が来たらすぐやめる。light なら打鍵に間に合うよう
 +  // 軽くする(続きは 2 件・6 トークン、辞書の語を試す段は省く)。重い計算(作り直し)は
 +  // 次の打鍵が来てもやめる。軽い計算は最後までして、次の打鍵の候補に使う。
++  const bool timed = deadline != std::chrono::steady_clock::time_point::max();
 +  auto yield = [&] {
++    if (timed && std::chrono::steady_clock::now() > deadline) return true;
 +    return background && (urgent_.load() > 0 || stop_.load() ||
 +                          (!light && new_job_.load()));
 +  };
 +  // 生成の途中(1 トークンごと)でもやめられるようにする。
-+  CancelScope cancel_scope(background ? std::function<bool()>(yield)
-+                                      : std::function<bool()>());
++  CancelScope cancel_scope(background || timed ? std::function<bool()>(yield)
++                                               : std::function<bool()>());
 +  const int mode = light ? (predict_mode_ & 3) : predict_mode_;
 +  const int n_beams = light ? light_beams_ : predict_beams_;
 +  // 打ちかけを除いた変換の続きの数。GPU(Vulkan)は 1 回に 3 トークン以上を渡すと 2 トークンの
@@ -21089,20 +21383,30 @@ index 000000000..9df449b64
 +                                   Segments* segments) const {
 +  if (!predict_ || segments->conversion_segments_size() != 1) return false;
 +  if (!request.config().kotori_lm_predict()) return false;
++  // シークレットモードでは AI の予測を作らず、覚えておいた予測も使わない。
++  if (request.incognito_mode()) return false;
 +  Segment& seg = *segments->mutable_conversion_segment(0);
 +  const std::string reading(seg.key());
 +  const size_t len = Util::CharsLen(reading);
 +  if (len < 2 || len > kMaxPredictChars) return false;
 +  const auto t0 = std::chrono::steady_clock::now();
 +  const std::string context = HistoryContext(request, *segments);
++  const std::string key = CacheKey(request.config(), context);
 +  std::string conv;
 +  // 入力中の候補のために裏で計算した予測があれば使う(Tab を待たせない)。なければ計算する。
-+  std::vector<Prediction> preds = CachedPredictions(reading, context, 6);
++  // その場の計算には時間の上限を設け、超えたら Mozc の予測だけを出す(案 03)。
++  std::vector<Prediction> preds = CachedPredictions(reading, key, 6);
 +  const bool from_cache = !preds.empty();
 +  if (!from_cache) {
++    const auto deadline = tab_budget_ms_ > 0
++                              ? t0 + std::chrono::milliseconds(tab_budget_ms_)
++                              : std::chrono::steady_clock::time_point::max();
 +    preds = ComputePredictions(request.config(), reading, context, &conv, false,
-+                               false);
-+    StorePredictions(reading, context, preds);
++                               false, deadline);
++    if (tab_budget_ms_ > 0 && std::chrono::steady_clock::now() > deadline) {
++      return false;  // 途中でやめた予測は出さず、覚えない
++    }
++    StorePredictions(reading, key, preds);
 +  }
 +  size_t k = 0, llm_top = 0;
 +  int beams = 0;
@@ -21204,7 +21508,11 @@ index 000000000..9df449b64
 +                                   Segments* segments) const {
 +  if (segments->conversion_segments_size() != 1) return false;
 +  const config::Config& config = request.config();
-+  if (!config.kotori_lm_enabled()) return false;
++  // AI を切ったとき・シークレットモードでは、覚えておいた予測を捨て、新しく作らない(案 04)。
++  if (!config.kotori_lm_enabled() || request.incognito_mode()) {
++    ClearPredictions();
++    return false;
++  }
 +  Segment& seg = *segments->mutable_conversion_segment(0);
 +  const std::string reading(seg.key());
 +  const std::vector<std::string> rchars = Chars(reading);
@@ -21214,17 +21522,22 @@ index 000000000..9df449b64
 +  // LLM の予測を使わない(GPU がない、など)ときは、今の読みの変換を裏で先に済ませておく
 +  // (先回りの変換。Space で待たせないため。docs/adr/0024)。
 +  if (!(predict_ && config.kotori_lm_predict() && UsesLlm(config))) {
-+    if (preconvert_ && rchars.size() <= kMaxGenerateChars) {
++    ClearPredictions();
++    if (preconvert_ && rchars.size() <= kMaxGenerateChars &&
++        (HasGpu() || rchars.size() <= kMaxCpuChars)) {
 +      std::lock_guard<std::mutex> lock(job_mu_);
 +      job_ = Job{reading, context, config, true};
 +      new_job_ = true;
 +      job_cv_.notify_one();
++    } else {
++      new_job_ = true;  // 前の読みの先回りの変換をやめる
 +    }
 +    return false;
 +  }
 +  // 1. 計算済みの予測のうち、今の読みに合うものを出す(読みの長いものから)。
++  const std::string key = CacheKey(config, context);
 +  std::vector<std::string> texts;
-+  for (const Prediction& p : CachedPredictions(reading, context, suggest_count_)) {
++  for (const Prediction& p : CachedPredictions(reading, key, suggest_count_)) {
 +    texts.push_back(p.text);
 +  }
 +  // 2. 今の読みの予測を裏で計算させる(待たない)。長い読みは計算しない。
@@ -21232,7 +21545,7 @@ index 000000000..9df449b64
 +    std::lock_guard<std::mutex> lock(job_mu_);
 +    bool cached = false;
 +    for (const Entry& e : cache_) {
-+      cached = cached || (e.reading == reading && e.context == context);
++      cached = cached || (e.reading == reading && e.context == key);
 +    }
 +    if (!cached) {
 +      job_ = Job{reading, context, config};
@@ -21263,8 +21576,19 @@ index 000000000..9df449b64
 +    }
 +  }
 +  const std::string key = job.reading + "\t" + job.context;
++  // 要求(変換・Tab)の最中と、終わってから 150 ms はロックを取らない(続けて来る要求を待たせない)。
++  auto now_us = [] {
++    return std::chrono::duration_cast<std::chrono::microseconds>(
++               std::chrono::steady_clock::now().time_since_epoch())
++        .count();
++  };
++  while (urgent_.load() > 0 || now_us() - last_request_us_.load() < 150000) {
++    if (stop_.load() || new_job_.load()) return;
++    std::this_thread::sleep_for(std::chrono::milliseconds(5));
++  }
 +  {
 +    std::lock_guard<std::mutex> lock(job_mu_);
++    if (last_converted_key_ == key) return;  // もう変換した読み
 +    running_convert_ = key;
 +  }
 +  // 新しい打鍵・停止、または別の読みの変換の要求が来たらやめる(同じ読みの変換なら続ける)。
@@ -21315,6 +21639,7 @@ index 000000000..9df449b64
 +        loading_ = true;
 +        {
 +          absl::MutexLock model_lock(mutex_);
++          WriteStatus(config, "loading");
 +          size_t k = 0, llm_top = 0;
 +          int beams = 0;
 +          ZenzScorer* llm = nullptr;
@@ -21323,6 +21648,7 @@ index 000000000..9df449b64
 +          if (predict_ && config.kotori_lm_predict()) {
 +            PrepareFor(config, &k, &llm, &beams, &llm_top, true, true);
 +          }
++          WriteStatus(config, "ready");
 +        }
 +        loading_ = false;
 +        continue;
@@ -21367,7 +21693,7 @@ index 000000000..9df449b64
 +                     interrupted(light) ? " (interrupted)" : "");
 +      }
 +      if (interrupted(light)) break;
-+      StorePredictions(job.reading, job.context, preds);
++      StorePredictions(job.reading, CacheKey(job.config, job.context), preds);
 +    }
 +  }
 +}
@@ -21379,7 +21705,16 @@ index 000000000..9df449b64
 +  }
 +  // サジェストのための変換(1 打鍵ごと)では、AI の変換を動かさない(入力が重くなるため)。
 +  if (request.options().skip_slow_rewriters) return false;
-+  Urgent urgent(urgent_);
++  // LLM がないときの Tab、GPU がなく長い読みでは AI を使わないので、ロックを待たない。
++  if (request.request_type() == ConversionRequest::PREDICTION &&
++      !(predict_ && request.config().kotori_lm_predict() &&
++        UsesLlm(request.config()))) {
++    return false;
++  }
++  if (!HasGpu() && Util::CharsLen(ConversionReading(*segments)) > kMaxCpuChars) {
++    return false;
++  }
++  Urgent urgent(urgent_, last_request_us_);
 +  if (!TryLockForRequest(300)) return false;
 +  HeldLock lock(mutex_);
 +  if (request.request_type() == ConversionRequest::PREDICTION) {
@@ -21398,6 +21733,9 @@ index 000000000..9df449b64
 +  if (matched && !post_segment_) return changed;
 +  // 文節が多いと、文節ごとの採点(文節ごとに 1 回)で数秒かかる。文全体の選択だけにする。
 +  if (segments->conversion_segments_size() > kMaxSegmentsToRescore) return changed;
++  // GPU がなければ文節ごとの採点(文節ごとに 1 回、右の文脈を含む)はしない。CPU では時間の上限に
++  // 収まらないため(docs/adr/0029)。
++  if (!HasGpu()) return changed;
 +  // 文節ごとにも見直す。文全体で選んだときは(LLM も見て決めたので)先頭は変えず、
 +  // 2 番目以降の候補だけを並べる。時間の上限を超えたら残りの文節はそのまま。
 +  const auto deadline = std::chrono::steady_clock::now() +
@@ -21409,10 +21747,10 @@ index 000000000..9df449b64
 +}  // namespace mozc
 diff --git a/src/rewriter/lm_rewriter.h b/src/rewriter/lm_rewriter.h
 new file mode 100644
-index 000000000..3b9359a45
+index 000000000..4a2c6cdcc
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.h
-@@ -0,0 +1,256 @@
+@@ -0,0 +1,285 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
 +// Kotori: AI による変換(docs/adr/0013、0015、0016)。
@@ -21430,6 +21768,7 @@ index 000000000..3b9359a45
 +#include <condition_variable>
 +#include <deque>
 +#include <mutex>
++#include <utility>
 +#include <vector>
 +
 +#include "absl/base/thread_annotations.h"
@@ -21444,6 +21783,17 @@ index 000000000..3b9359a45
 +
 +namespace mozc {
 +
++namespace kotori_internal {
++
++// 生成した文を、表記と読みの対応(単位ごと)で文節に分ける(docs/adr/0027)。ひらがなで終わる単位の
++// 後に、ひらがな以外で始まる単位が来たら区切る。文節は最大 max 個で、超えた分は最後の文節につなぐ。
++// テストのために公開している。
++void SplitIntoSegments(
++    const std::vector<std::pair<std::string, std::string>>& units, size_t max,
++    std::vector<std::string>* keys, std::vector<std::string>* values);
++
++}  // namespace kotori_internal
++
 +// 2 段で変換を選ぶ。
 +//
 +// 1. 文全体: ImmutableConverter が Segments::kotori_sentences() に入れた文全体の候補
@@ -21457,16 +21807,12 @@ index 000000000..3b9359a45
 +// zenz-v2.5-small-q8_0.gguf、LLM は設定のパス → KOTORI_LLM_MODEL → 同梱の
 +// tinyswallow-1.5b-q5_k_m.gguf(mozc_server と同じフォルダ)。
 +//
-+// 環境変数(評価と調整用):
++// 環境変数(評価と調整用)の一覧は Kotori のリポジトリの mozc/README.md にある。主なもの:
 +//   KOTORI_ZENZ_MODEL / KOTORI_LLM_MODEL  モデルのパス
 +//   KOTORI_MODEL_DIR / KOTORI_RUNTIME_DIR  モデルと llama.cpp の DLL のフォルダ
-+//   KOTORI_LM_K          文節ごとに並べ替える候補の数(0 で無効)
-+//   KOTORI_LM_BEAMS      zenz で生成する文の数(0 で生成しない)
-+//   KOTORI_LM_SENTENCE   0 で文全体の選択を切る
-+//   KOTORI_LM_WEIGHTS    "λ_zenz,λ_lattice,T"(既定 "1,1,1000")
-+//   KOTORI_LM_LLM_WEIGHT LLM の重み(既定 1)
-+//   KOTORI_LM_THREADS    推論のスレッド数(既定 4)
-+//   KOTORI_LM_PRECEDING / KOTORI_LM_CONTEXT_MAP  左の文脈を差し替える(評価用)
++//   KOTORI_LM_BEAMS / KOTORI_LM_LLM_TOP / KOTORI_LM_K  品質の中身(生成の数、LLM で採点する数、並べ替える数)
++//   KOTORI_LM_DEVICE=cpu  GPU を使わない(ノート PC の再現)
++//   KOTORI_LM_PRELOAD=0   要求の中でモデルを読み込む(評価)
 +class LmRewriter : public RewriterInterface {
 + public:
 +  // dictionary は生成した文が読みに合うかを確かめるのに使う(nullptr なら確かめない)。
@@ -21474,8 +21820,9 @@ index 000000000..3b9359a45
 +             const dictionary::SingleKanjiDictionary* single_kanji);
 +  ~LmRewriter() override;
 +
-+  // 変換(スペース)と、Tab などで明示的に出す予測(PREDICTION)。入力中に毎回出る
-+  // サジェスト(SUGGESTION)では動かない(入力を重くしないため)。
++  // 変換(スペース)、Tab などで明示的に出す予測(PREDICTION)、入力中の候補(SUGGESTION)。
++  // SUGGESTION では計算せず、裏で作った予測を出し、今の読みの計算を裏のスレッドに頼むだけ
++  // (docs/adr/0019、0024)。
 +  int capability(const ConversionRequest& request) const override {
 +    return CONVERSION | PREDICTION | SUGGESTION;
 +  }
@@ -21507,6 +21854,10 @@ index 000000000..3b9359a45
 +                         ZenzScorer** llm, int* beams, size_t* llm_top,
 +                         bool for_predict, bool may_load) const
 +      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
++  // 実際に動いている AI の状態を、ユーザーのプロファイルの kotori_ai_status.txt に書く
++  // (設定画面が読んで表示する。docs/adr/0026)。state は loading / ready。
++  void WriteStatus(const config::Config& config, const char* state) const
++      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 +  // 裏のスレッドにモデルの読み込みを頼む。
 +  void RequestLoad(const config::Config& config) const;
 +  // 要求の中で mutex_ を取る。モデルの読み込み中や、しばらく取れないときは false(AI なしにする)。
@@ -21529,7 +21880,7 @@ index 000000000..3b9359a45
 +  };
 +  struct Entry {
 +    std::string reading;
-+    std::string context;
++    std::string context;  // CacheKey(設定の署名 + 前の文)
 +    std::vector<Prediction> preds;
 +  };
 +  struct Job {
@@ -21547,6 +21898,11 @@ index 000000000..3b9359a45
 +  };
 +  // 先回りの変換: 打つ手が止まったら、今の読みを zenz で生成しておく(docs/adr/0024)。
 +  void RunPreconvert(const Job& job);
++  // 予測のキャッシュのキー(予測を変える設定の署名 + 前の文)。
++  std::string CacheKey(const config::Config& config,
++                       const std::string& context) const;
++  // 覚えておいた予測と、まだ始めていない予測の仕事を捨てる。
++  void ClearPredictions() const;
 +  // AI を載せる GPU があるか。
 +  bool HasGpu() const;
 +  // この設定で LLM を使うか(GPU があり、AI モデルが zenz のみでない)。
@@ -21559,7 +21915,10 @@ index 000000000..3b9359a45
 +                                             const std::string& reading,
 +                                             const std::string& context,
 +                                             std::string* conv_out,
-+                                             bool background, bool light) const
++                                             bool background, bool light,
++                                             std::chrono::steady_clock::time_point
++                                                 deadline = std::chrono::steady_clock::
++                                                     time_point::max()) const
 +      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 +  // 計算済みの予測のうち、読み reading に合うものを最大 max 件(読みの長い計算から)。
 +  std::vector<Prediction> CachedPredictions(const std::string& reading,
@@ -21623,10 +21982,18 @@ index 000000000..3b9359a45
 +  // 先回りの変換(KOTORI_LM_PRECONVERT)と、打つ手が止まってから始めるまでの時間。
 +  bool preconvert_ = true;
 +  int preconvert_delay_ms_ = 120;
++  // キャッシュのない Tab で、その場で予測を作る時間の上限(ms、KOTORI_LM_TAB_BUDGET。0 なら上限なし)。
++  int tab_budget_ms_ = 700;
++  // 生成した文を文節に分けるか(KOTORI_LM_SPLIT。docs/adr/0027)。
++  bool split_generated_ = true;
 +  // 先回りの変換の結果。
 +  mutable std::optional<Generated> gen_cache_ ABSL_GUARDED_BY(mutex_);
 +  // 裏で計算中の先回りの変換と、変換の要求が来ている読み(読み + TAB + 前の文)。job_mu_ で守る。
 +  mutable std::string running_convert_;
++  // 最後に変換した読み(読み + TAB + 前の文)。先回りの変換でやり直さない。job_mu_ で守る。
++  mutable std::string last_converted_key_;
++  // 最後に要求(変換・Tab)が終わった時刻(steady_clock、マイクロ秒)。
++  mutable std::atomic<int64_t> last_request_us_{0};
 +  mutable std::string urgent_key_;
 +  mutable std::deque<Entry> cache_;
 +  std::atomic<bool> stop_{false};
@@ -21669,6 +22036,65 @@ index 000000000..3b9359a45
 +}  // namespace mozc
 +
 +#endif  // MOZC_REWRITER_LM_REWRITER_H_
+diff --git a/src/rewriter/lm_rewriter_test.cc b/src/rewriter/lm_rewriter_test.cc
+new file mode 100644
+index 000000000..e5cd343cc
+--- /dev/null
++++ b/src/rewriter/lm_rewriter_test.cc
+@@ -0,0 +1,53 @@
++// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
++
++#include "rewriter/lm_rewriter.h"
++
++#include <string>
++#include <utility>
++#include <vector>
++
++#include "testing/gunit.h"
++
++namespace mozc {
++namespace {
++
++using Units = std::vector<std::pair<std::string, std::string>>;
++
++TEST(LmRewriterSplitTest, SplitsBeforeContentAfterHiragana) {
++  const Units units = {{"明日", "あした"}, {"の", "の"},     {"会議", "かいぎ"},
++                       {"は", "は"},       {"10", "じゅう"}, {"時", "じ"},
++                       {"から", "から"},   {"です", "です"}};
++  std::vector<std::string> keys, values;
++  kotori_internal::SplitIntoSegments(units, 8, &keys, &values);
++  EXPECT_EQ(keys, (std::vector<std::string>{"あしたの", "かいぎは",
++                                            "じゅうじからです"}));
++  EXPECT_EQ(values, (std::vector<std::string>{"明日の", "会議は", "10時からです"}));
++}
++
++TEST(LmRewriterSplitTest, KeepsConsecutiveContentTogether) {
++  // 漢字の後に漢字が続くとき(ひらがなで終わっていない)は区切らない。
++  const Units units = {{"東京", "とうきょう"}, {"特許", "とっきょ"}, {"が", "が"}};
++  std::vector<std::string> keys, values;
++  kotori_internal::SplitIntoSegments(units, 8, &keys, &values);
++  EXPECT_EQ(values, (std::vector<std::string>{"東京特許が"}));
++  EXPECT_EQ(keys, (std::vector<std::string>{"とうきょうとっきょが"}));
++}
++
++TEST(LmRewriterSplitTest, JoinsOverflowIntoLastSegment) {
++  const Units units = {{"本", "ほん"}, {"を", "を"}, {"机", "つくえ"},
++                       {"に", "に"},   {"彼", "かれ"}, {"が", "が"}};
++  std::vector<std::string> keys, values;
++  kotori_internal::SplitIntoSegments(units, 2, &keys, &values);
++  EXPECT_EQ(values, (std::vector<std::string>{"本を", "机に彼が"}));
++  EXPECT_EQ(keys, (std::vector<std::string>{"ほんを", "つくえにかれが"}));
++}
++
++TEST(LmRewriterSplitTest, EmptyUnits) {
++  std::vector<std::string> keys, values;
++  kotori_internal::SplitIntoSegments({}, 8, &keys, &values);
++  EXPECT_TRUE(keys.empty());
++  EXPECT_TRUE(values.empty());
++}
++
++}  // namespace
++}  // namespace mozc
 diff --git a/src/rewriter/rewriter.cc b/src/rewriter/rewriter.cc
 index d92e814fd..792ecb2c2 100644
 --- a/src/rewriter/rewriter.cc
@@ -21694,10 +22120,10 @@ index d92e814fd..792ecb2c2 100644
  #endif  // MOZC_USER_DICTIONARY_REWRITER
 diff --git a/src/rewriter/zenz_scorer.cc b/src/rewriter/zenz_scorer.cc
 new file mode 100644
-index 000000000..59dd0e981
+index 000000000..f2deb4b31
 --- /dev/null
 +++ b/src/rewriter/zenz_scorer.cc
-@@ -0,0 +1,728 @@
+@@ -0,0 +1,735 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/zenz_scorer.h"
@@ -22092,8 +22518,15 @@ index 000000000..59dd0e981
 +  for (int q = 1; q <= max_seq_; ++q) llama_memory_seq_rm(mem, q, -1, -1);
 +  llama_memory_seq_rm(mem, 0, static_cast<llama_pos>(keep), -1);
 +  cached_.resize(keep);
++  // やめる関数があるときは 32 トークンずつ計算し、その間にやめられるようにする(CPU では前置きの
++  // 計算が長い)。ないときは 1 回で計算する(GPU では呼ぶ回数が効くため)。
++  const size_t kPrefixChunk = tl_cancel ? 32 : static_cast<size_t>(kBatch);
 +  for (size_t at = keep; at < want;) {
-+    const size_t n = std::min(want - at, static_cast<size_t>(kBatch));
++    if (at > keep && tl_cancel && tl_cancel()) {
++      ResetMemory();
++      return false;
++    }
++    const size_t n = std::min(want - at, kPrefixChunk);
 +    llama_batch b = llama_batch_init(n, 0, 1);
 +    for (size_t i = 0; i < n; ++i) {
 +      b.token[i] = prefix[at + i];

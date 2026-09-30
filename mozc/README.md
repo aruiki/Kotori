@@ -58,6 +58,7 @@ Windows で手元でビルドする: 作業ツリーの `src` で
 | `typing_test.py` | 打鍵の再現。1 文字ずつ入力中の候補を出し、AI の予測と応答時間を見る |
 | `cost_bench.py` | 入力中の AI の計算量。日常の文を打って変換し、AI の稼働率(計算の時間 / かかった時間)を出す(docs/adr/0024) |
 | `space_latency.py` | 打ってから Space を押したときの応答時間。`KOTORI_LM_DEVICE=cpu` で GPU のない PC を再現する |
+| `perf_table.py` | 品質 × 機器(GPU / CPU)ごとの最初の変換・変換の時間・メモリ・VRAM の表(`docs/PERFORMANCE.md`) |
 | `../eval_predict.py --warm 秒` | Tab の予測の当たりと応答時間(実際の入力のように候補を出してから Tab) |
 | `../eval_predict.py --warm 秒 --suggest` | 入力中の候補(打鍵ごとの軽い予測)の当たり |
 | `capture_window.py` | 設定画面などのウィンドウだけを PNG に撮る(MSI を `msiexec /a` で展開した exe で) |
@@ -70,3 +71,27 @@ Windows で手元でビルドする: 作業ツリーの `src` で
 
 段階: 1. 素の Mozc をビルドする → 2. 名前と識別子を Kotori に変える → 3. LM リランクを
 組み込む → 4. 評価して配布する。詳しくは docs/adr/0012。
+
+## 評価と調整の環境変数(`rewriter/lm_rewriter.cc` ほか)
+
+製品の既定の動きを変えずに、評価や比較で中身を差し替えるためのもの。
+
+| 変数 | 意味 |
+| --- | --- |
+| `KOTORI_ZENZ_MODEL`、`KOTORI_LLM_MODEL` | zenz / LLM のモデルのパス |
+| `KOTORI_MODEL_DIR`、`KOTORI_RUNTIME_DIR` | モデルのフォルダ、llama.cpp の DLL のフォルダ(既定は mozc_server と同じ所) |
+| `KOTORI_LM_DEVICE=cpu` | GPU を使わない(ノート PC の再現、docs/adr/0024) |
+| `KOTORI_LM_PRELOAD=0` | 起動時に裏で読み込まず、要求の中で読み込む(評価。状態のファイルも書かない) |
+| `KOTORI_LM_BEAMS`、`KOTORI_LM_LLM_TOP`、`KOTORI_LM_K`、`KOTORI_LM_NSENT` | 生成する文の数、LLM で採点する数、文節ごとに並べ替える数、ラティスの文全体の候補の数 |
+| `KOTORI_LM_LLM_WEIGHT`、`KOTORI_LM_WEIGHTS`、`KOTORI_LM_GEN_PENALTY`、`KOTORI_LM_GEN_PENALTY_LLM` | 点数の重み(LLM 0.7)と、生成した文の減点(0.5 / LLM ありで 0) |
+| `KOTORI_LM_SENTENCE=0`、`KOTORI_LM_POST`、`KOTORI_LM_RIGHT` | 文全体の選択を切る、文全体の選択の後も文節ごとに並べ替える、右の文脈を使う |
+| `KOTORI_LM_SPLIT=0` | 生成した文を文節に分けない(docs/adr/0027) |
+| `KOTORI_LM_BUDGET` | 変換で AI に使う時間の上限(ms。既定は GPU 2000 / CPU 600、0 で上限なし) |
+| `KOTORI_LM_TAB_BUDGET` | キャッシュのない Tab の上限(ms、既定 700、docs/adr/0025) |
+| `KOTORI_LM_PREDICT=0`、`KOTORI_LM_PREDICT_MODE`、`KOTORI_LM_PREDICT_TOKENS`、`KOTORI_LM_PREDICT_BEAMS` | 予測を切る、予測の作り方、続きのトークン数、続きの数 |
+| `KOTORI_LM_LIGHT_BEAMS`、`KOTORI_LM_LIGHT_RANK`、`KOTORI_LM_LIGHT_DELAY`、`KOTORI_LM_FULL_DELAY` | 打鍵ごとの軽い予測の中身と、始めるまでの待ち(既定 作り直しは 600 ms、docs/adr/0024) |
+| `KOTORI_LM_PRECONVERT=0` | 先回りの変換を切る(docs/adr/0024) |
+| `KOTORI_LM_THREADS` | 推論のスレッド数(既定 4) |
+| `KOTORI_LM_PRECEDING`、`KOTORI_LM_CONTEXT_MAP` | 前の文を差し替える(評価) |
+| `KOTORI_LM_TIME`、`KOTORI_LM_STATS`、`KOTORI_LM_TRACE`、`KOTORI_LM_DEBUG` | 時間の内訳、計算量の累計、1 回ごとの計算、候補と点数を stderr に出す |
+| `KOTORI_LM_EXACT_LSE` | 語彙の正規化を近似しない(比較用、docs/adr/0024) |
