@@ -20003,10 +20003,10 @@ index 000000000..cf2c801ea
 +#endif  // MOZC_REWRITER_LLAMA_RUNTIME_H_
 diff --git a/src/rewriter/lm_rewriter.cc b/src/rewriter/lm_rewriter.cc
 new file mode 100644
-index 000000000..a433d9ac1
+index 000000000..7f7aa33f2
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.cc
-@@ -0,0 +1,1731 @@
+@@ -0,0 +1,1738 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/lm_rewriter.h"
@@ -20794,10 +20794,15 @@ index 000000000..a433d9ac1
 +  const auto t0 = std::chrono::steady_clock::now();
 +  // AI に使う時間の上限(モデルを用意した後から数える)。超えたら生成をやめ、LLM も使わない
 +  // (遅い PC で固まらないため)。
-+  std::chrono::steady_clock::time_point deadline;
++  std::chrono::steady_clock::time_point deadline, gen_deadline;
 +  int budget_ms = 0;
 +  auto over = [&] {
 +    return budget_ms > 0 && std::chrono::steady_clock::now() > deadline;
++  };
++  // 生成は上限の 6 割までにし、残りを採点に残す(採点の 1 回の計算は途中でやめられないため。
++  // docs/adr/0029)。
++  auto gen_over = [&] {
++    return budget_ms > 0 && std::chrono::steady_clock::now() > gen_deadline;
 +  };
 +  auto ms = [](auto a, auto b) {
 +    return std::chrono::duration<double, std::milli>(b - a).count();
@@ -20813,8 +20818,10 @@ index 000000000..a433d9ac1
 +  budget_ms = BudgetMs();
 +  // 上限は要求が来た時点から数える(ロックを待った時間も含める)。この要求の中でモデルを読み込んだ
 +  // とき(評価)は、読み込みの後から数える。
-+  deadline = (t_load - t0 > std::chrono::milliseconds(50) ? t_load : t_request) +
-+             std::chrono::milliseconds(budget_ms);
++  const auto t_budget =
++      t_load - t0 > std::chrono::milliseconds(50) ? t_load : t_request;
++  deadline = t_budget + std::chrono::milliseconds(budget_ms);
++  gen_deadline = t_budget + std::chrono::milliseconds(budget_ms * 6 / 10);
 +
 +  // 候補 = ラティスの文全体の候補(区切り付き)+ zenz が読みから生成した文(区切りなし)。
 +  std::vector<const converter::Candidate*> cands;
@@ -20845,11 +20852,11 @@ index 000000000..a433d9ac1
 +      generated = gen_cache_->texts;  // 先回りの変換で作ったもの
 +    } else {
 +      {
-+        CancelScope cancel(over);
++        CancelScope cancel(gen_over);
 +        generated = scorer->Generate(context, reading, beams);
 +      }
 +      // 裏の先回りの変換が同じ読みを作り直さないように残す(途中でやめたものは残さない)。
-+      if (!over()) gen_cache_ = Generated{key, beams, loaded_path_, generated};
++      if (!gen_over()) gen_cache_ = Generated{key, beams, loaded_path_, generated};
 +    }
 +  }
 +  {
@@ -20875,8 +20882,8 @@ index 000000000..a433d9ac1
 +    }
 +  }
 +  const auto t_gen = std::chrono::steady_clock::now();
-+  // 生成で時間の上限を超えたら、採点もせずに Mozc の結果を出す(待たせないため)。
-+  if (values.size() < 2 || over()) return std::nullopt;
++  // 生成で時間を使い切ったら、採点もせずに Mozc の結果を出す(待たせないため)。
++  if (values.size() < 2 || gen_over()) return std::nullopt;
 +  // 点数 = zenz の log P(文 | 読み、前の文) + LLM の log P(文 | 前の文)(docs/adr/0016)。
 +  // LLM がないときは zenz だけで選ぶ。
 +  const std::optional<std::vector<float>> zlogp =
