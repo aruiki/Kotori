@@ -20003,10 +20003,10 @@ index 000000000..cf2c801ea
 +#endif  // MOZC_REWRITER_LLAMA_RUNTIME_H_
 diff --git a/src/rewriter/lm_rewriter.cc b/src/rewriter/lm_rewriter.cc
 new file mode 100644
-index 000000000..f99bae165
+index 000000000..53427a094
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.cc
-@@ -0,0 +1,1820 @@
+@@ -0,0 +1,1822 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/lm_rewriter.h"
@@ -20578,6 +20578,7 @@ index 000000000..f99bae165
 +  if (const char* v = Env("KOTORI_LM_TAB_BUDGET")) tab_budget_ms_ = std::atoi(v);
 +  if (const char* v = Env("KOTORI_LM_SPLIT")) split_generated_ = *v != '0';
 +  if (const char* v = Env("KOTORI_LM_FILTER_JUNK")) filter_junk_ = *v != '0';
++  if (const char* v = Env("KOTORI_LM_TAB_SHOW")) tab_show_ = std::atoi(v);
 +  if (const char* v = Env("KOTORI_LM_MIN_CONTINUATION")) {
 +    min_continuation_chars_ = std::atoi(v);
 +  }
@@ -21530,7 +21531,8 @@ index 000000000..f99bae165
 +      ranked_ai.push_back(from_ai[i]);
 +    }
 +  }
-+  const size_t shown = std::min<size_t>(ranked.size(), predict_beams_ + 1);
++  const size_t shown = std::min<size_t>(
++      ranked.size(), tab_show_ > 0 ? tab_show_ : predict_beams_ + 1);
 +  ranked.resize(shown);
 +  ranked_ai.resize(shown);
 +  if (Env("KOTORI_LM_TIME") != nullptr) {
@@ -21829,10 +21831,10 @@ index 000000000..f99bae165
 +}  // namespace mozc
 diff --git a/src/rewriter/lm_rewriter.h b/src/rewriter/lm_rewriter.h
 new file mode 100644
-index 000000000..4fb8a55fe
+index 000000000..d50432560
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.h
-@@ -0,0 +1,294 @@
+@@ -0,0 +1,296 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
 +// Kotori: AI による変換(docs/adr/0013、0015、0016)。
@@ -22077,6 +22079,8 @@ index 000000000..4fb8a55fe
 +  bool filter_junk_ = true;
 +  // 予測の続きの最小の文字数(KOTORI_LM_MIN_CONTINUATION。0 なら制限なし。docs/adr/0030)。
 +  int min_continuation_chars_ = 2;
++  // Tab で AI が先頭に並べる候補の数(KOTORI_LM_TAB_SHOW。0 なら生成する続きの数 + 1。docs/adr/0030)。
++  int tab_show_ = 2;
 +  // 先回りの変換の結果。
 +  mutable std::optional<Generated> gen_cache_ ABSL_GUARDED_BY(mutex_);
 +  // 裏で計算中の先回りの変換と、変換の要求が来ている読み(読み + TAB + 前の文)。job_mu_ で守る。
