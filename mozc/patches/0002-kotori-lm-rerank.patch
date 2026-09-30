@@ -19623,10 +19623,10 @@ index 000000000..9573fd721
 +#endif  // MOZC_REWRITER_LLAMA_RUNTIME_H_
 diff --git a/src/rewriter/lm_rewriter.cc b/src/rewriter/lm_rewriter.cc
 new file mode 100644
-index 000000000..ae33c8d1c
+index 000000000..9fe42da36
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.cc
-@@ -0,0 +1,1234 @@
+@@ -0,0 +1,1280 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/lm_rewriter.h"
@@ -19669,6 +19669,13 @@ index 000000000..ae33c8d1c
 +
 +namespace mozc {
 +namespace {
++
++// これより長い読みは、zenz に文を書かせない(ラティスの文を採点するだけにする)。
++constexpr size_t kMaxGenerateChars = 120;
++// これより長い読みは、AI の予測をしない(予測は短い打ちかけに使うもので、長いと遅い)。
++constexpr size_t kMaxPredictChars = 40;
++// これより文節が多いときは、文節ごとの見直しをしない(1 文節ごとに採点するので遅い)。
++constexpr size_t kMaxSegmentsToRescore = 16;
 +
 +// UTF-8 の文字を 1 つずつ(コードポイントで)返す。
 +std::vector<uint32_t> CodePoints(absl::string_view text) {
@@ -20220,7 +20227,7 @@ index 000000000..ae33c8d1c
 +  // 写しただけとみなして除く(zenz は読みを写した文を高く採点することがある)。
 +  const size_t lattice_kana =
 +      values.empty() ? SIZE_MAX : CountKana(values.front());
-+  if (beams > 0 && Util::CharsLen(reading) <= 255) {
++  if (beams > 0 && Util::CharsLen(reading) <= kMaxGenerateChars) {
 +    for (const std::string& g : scorer->Generate(context, reading, beams)) {
 +      if (std::find(values.begin(), values.end(), g) != values.end()) continue;
 +      if ((lattice_kana != SIZE_MAX && CountKana(g) >= lattice_kana + 4) ||
@@ -20461,19 +20468,32 @@ index 000000000..ae33c8d1c
 +
 +std::vector<LmRewriter::Prediction> LmRewriter::ComputePredictions(
 +    const config::Config& config, const std::string& reading,
-+    const std::string& context, std::string* conv_out, bool background) const {
++    const std::string& context, std::string* conv_out, bool background,
++    bool light) const {
 +  std::vector<Prediction> preds;
 +  size_t k = 0, llm_top = 0;
 +  int beams = 0;
 +  ZenzScorer* llm = nullptr;
 +  ZenzScorer* scorer = PrepareFor(config, &k, &llm, &beams, &llm_top, true);
 +  if (scorer == nullptr || llm == nullptr) return preds;
-+  // 裏で計算しているときは、変換の要求が来たらすぐやめる。打鍵に間に合うよう軽くする
-+  // (続きは 2 件・6 トークン、辞書の語を試す段は省く)。
-+  auto yield = [&] { return background && urgent_.load() > 0; };
-+  const int mode = background ? (predict_mode_ & 3) : predict_mode_;
-+  const int n_beams = background ? 2 : predict_beams_;
-+  const int n_tokens = background ? std::min(predict_tokens_, 6) : predict_tokens_;
++  // 裏で計算しているときは、変換の要求が来たらすぐやめる。light なら打鍵に間に合うよう
++  // 軽くする(続きは 2 件・6 トークン、辞書の語を試す段は省く)。重い計算(作り直し)は
++  // 次の打鍵が来てもやめる。軽い計算は最後までして、次の打鍵の候補に使う。
++  auto yield = [&] {
++    return background && (urgent_.load() > 0 || stop_.load() ||
++                          (!light && new_job_.load()));
++  };
++  // 生成の途中(1 トークンごと)でもやめられるようにする。
++  struct CancelScope {
++    explicit CancelScope(std::function<bool()> f) {
++      ZenzScorer::SetThreadCancel(std::move(f));
++    }
++    ~CancelScope() { ZenzScorer::SetThreadCancel(nullptr); }
++  } cancel_scope(background ? std::function<bool()>(yield)
++                            : std::function<bool()>());
++  const int mode = light ? (predict_mode_ & 3) : predict_mode_;
++  const int n_beams = light ? 2 : predict_beams_;
++  const int n_tokens = light ? std::min(predict_tokens_, 6) : predict_tokens_;
 +  const std::vector<std::string> rchars = Chars(reading);
 +  auto convert = [&](const std::string& r) -> std::string {
 +    for (const std::string& g : scorer->Generate(context, r, 2)) {
@@ -20508,7 +20528,7 @@ index 000000000..ae33c8d1c
 +  //    「きょうはいいて」→「今日はいい」+「天気」)。
 +  std::vector<std::pair<std::string, std::string>> partial;  // (文, 土台)
 +  std::vector<std::string> partial_covered;
-+  const size_t max_drop = background ? 1 : 2;
++  const size_t max_drop = light ? 1 : 2;
 +  for (size_t drop = 1; drop <= max_drop && rchars.size() >= drop + 2; ++drop) {
 +    if (yield()) return preds;
 +    std::string head, rest;
@@ -20521,7 +20541,7 @@ index 000000000..ae33c8d1c
 +      for (const std::string& c : llm->Continue(Tail(context) + base, n_tokens,
 +                                                n_beams + 1)) {
 +        if (NaturalStart(c) &&
-+            (background ||
++            (light ||
 +             MatchesReading(*dictionary_, single_kanji_, c, rest, true))) {
 +          add(base + c, base, head);
 +        }
@@ -20595,14 +20615,14 @@ index 000000000..ae33c8d1c
 +  const auto tt2 = std::chrono::steady_clock::now();
 +  // 上位の予測は、続きの読みを求めておく(打鍵ごとの確認を速くするため)。
 +  if (dictionary_ != nullptr) {
-+    const size_t n = background ? 3 : 6;
++    const size_t n = light ? 3 : 6;
 +    for (size_t i = 0; i < preds.size() && i < n && !yield(); ++i) {
 +      const std::string cont = preds[i].text.substr(preds[i].base.size());
 +      const std::string y = ReadingOf(*dictionary_, single_kanji_, cont);
 +      if (!y.empty()) preds[i].yomi = preds[i].covered + y;
 +    }
-+    if (background) {
-+      // 裏では、読みが求まって今の読みで始まるものだけを残す。
++    if (light) {
++      // 軽い計算では、読みが求まって今の読みで始まるものだけを残す。
 +      std::vector<Prediction> kept;
 +      for (Prediction& p : preds) {
 +        if (!p.yomi.empty() && absl::StartsWith(p.yomi, reading)) {
@@ -20617,7 +20637,8 @@ index 000000000..ae33c8d1c
 +      return std::chrono::duration<double, std::milli>(z - a).count();
 +    };
 +    std::fprintf(stderr, "[ptime] %s conv=%.0f gen+rank=%.0f yomi=%.0f\n",
-+                 background ? "bg" : "fg", ms(tt0, tt1), ms(tt1, tt2),
++                 light ? "bg" : background ? "bg-full" : "fg", ms(tt0, tt1),
++                 ms(tt1, tt2),
 +                 ms(tt2, std::chrono::steady_clock::now()));
 +  }
 +  return preds;
@@ -20670,13 +20691,19 @@ index 000000000..ae33c8d1c
 +  if (!predict_ || segments->conversion_segments_size() != 1) return false;
 +  Segment& seg = *segments->mutable_conversion_segment(0);
 +  const std::string reading(seg.key());
-+  if (Util::CharsLen(reading) < 2) return false;
++  const size_t len = Util::CharsLen(reading);
++  if (len < 2 || len > kMaxPredictChars) return false;
 +  const auto t0 = std::chrono::steady_clock::now();
 +  const std::string context = HistoryContext(request, *segments);
 +  std::string conv;
-+  const std::vector<Prediction> preds =
-+      ComputePredictions(request.config(), reading, context, &conv, false);
-+  StorePredictions(reading, context, preds);
++  // 入力中の候補のために裏で計算した予測があれば使う(Tab を待たせない)。なければ計算する。
++  std::vector<Prediction> preds = CachedPredictions(reading, context, 6);
++  const bool from_cache = !preds.empty();
++  if (!from_cache) {
++    preds = ComputePredictions(request.config(), reading, context, &conv, false,
++                               false);
++    StorePredictions(reading, context, preds);
++  }
 +  size_t k = 0, llm_top = 0;
 +  int beams = 0;
 +  ZenzScorer* llm = nullptr;
@@ -20722,11 +20749,11 @@ index 000000000..ae33c8d1c
 +  ranked_ai.resize(shown);
 +  if (Env("KOTORI_LM_TIME") != nullptr) {
 +    std::fprintf(
-+        stderr, "[predict] %.0fms pool=%zu shown=%zu\n",
++        stderr, "[predict] %.0fms pool=%zu shown=%zu cache=%d\n",
 +        std::chrono::duration<double, std::milli>(
 +            std::chrono::steady_clock::now() - t0)
 +            .count(),
-+        pool.size(), shown);
++        pool.size(), shown, from_cache ? 1 : 0);
 +  }
 +  if (shown == 0) return false;
 +  InsertPredictions(&seg, reading, ranked, ranked_ai);
@@ -20747,6 +20774,32 @@ index 000000000..ae33c8d1c
 +  while (cache_.size() > 32) cache_.pop_front();
 +}
 +
++std::vector<LmRewriter::Prediction> LmRewriter::CachedPredictions(
++    const std::string& reading, const std::string& context, size_t max) const {
++  std::vector<Entry> entries;
++  {
++    std::lock_guard<std::mutex> lock(job_mu_);
++    entries.assign(cache_.begin(), cache_.end());
++  }
++  std::stable_sort(entries.begin(), entries.end(),
++                   [](const Entry& x, const Entry& y) {
++                     return x.reading.size() > y.reading.size();
++                   });
++  std::vector<Prediction> out;
++  for (const Entry& e : entries) {
++    if (e.context != context || !absl::StartsWith(reading, e.reading)) continue;
++    for (const Prediction& p : e.preds) {
++      if (out.size() >= max) break;
++      const bool dup = std::any_of(out.begin(), out.end(), [&](const Prediction& q) {
++        return q.text == p.text;
++      });
++      if (!dup && PredictionFits(p, reading)) out.push_back(p);
++    }
++    if (out.size() >= max) break;
++  }
++  return out;
++}
++
 +bool LmRewriter::RewriteSuggestion(const ConversionRequest& request,
 +                                   Segments* segments) const {
 +  if (!predict_ || segments->conversion_segments_size() != 1) return false;
@@ -20760,32 +20813,11 @@ index 000000000..ae33c8d1c
 +  const std::string context = HistoryContext(request, *segments);
 +  // 1. 計算済みの予測のうち、今の読みに合うものを出す(読みの長いものから)。
 +  std::vector<std::string> texts;
-+  {
-+    std::vector<Entry> entries;
-+    {
-+      std::lock_guard<std::mutex> lock(job_mu_);
-+      entries.assign(cache_.begin(), cache_.end());
-+    }
-+    std::stable_sort(entries.begin(), entries.end(),
-+                     [](const Entry& x, const Entry& y) {
-+                       return x.reading.size() > y.reading.size();
-+                     });
-+    for (const Entry& e : entries) {
-+      if (e.context != context || !absl::StartsWith(reading, e.reading)) {
-+        continue;
-+      }
-+      for (const Prediction& p : e.preds) {
-+        if (texts.size() >= static_cast<size_t>(suggest_count_)) break;
-+        if (std::find(texts.begin(), texts.end(), p.text) != texts.end()) {
-+          continue;
-+        }
-+        if (PredictionFits(p, reading)) texts.push_back(p.text);
-+      }
-+      if (texts.size() >= static_cast<size_t>(suggest_count_)) break;
-+    }
++  for (const Prediction& p : CachedPredictions(reading, context, suggest_count_)) {
++    texts.push_back(p.text);
 +  }
-+  // 2. 今の読みの予測を裏で計算させる(待たない)。
-+  {
++  // 2. 今の読みの予測を裏で計算させる(待たない)。長い読みは計算しない。
++  if (rchars.size() <= kMaxPredictChars) {
 +    std::lock_guard<std::mutex> lock(job_mu_);
 +    bool cached = false;
 +    for (const Entry& e : cache_) {
@@ -20793,6 +20825,7 @@ index 000000000..ae33c8d1c
 +    }
 +    if (!cached) {
 +      job_ = Job{reading, context, config};
++      new_job_ = true;
 +      job_cv_.notify_one();
 +    }
 +  }
@@ -20815,20 +20848,31 @@ index 000000000..ae33c8d1c
 +      if (stop_) return;
 +      job = std::move(*job_);
 +      job_.reset();
++      new_job_ = false;
 +    }
-+    std::vector<Prediction> preds;
-+    {
-+      absl::MutexLock lock(mutex_);
-+      preds = ComputePredictions(job.config, job.reading, job.context, nullptr,
-+                                 true);
++    // 途中でやめたか(変換の要求・停止、重い計算は次の打鍵も)。やめたときは結果を残さない。
++    auto interrupted = [&](bool light) {
++      return urgent_.load() > 0 || stop_.load() || (!light && new_job_.load());
++    };
++    // 1. 軽い計算(次の打鍵に間に合わせる)。2. 手が止まっていれば、Tab と同じ重さで
++    //    作り直す(Tab を押したときに、待たずに良い予測を出せる)。
++    for (const bool light : {true, false}) {
++      std::vector<Prediction> preds;
++      {
++        absl::MutexLock lock(mutex_);
++        preds = ComputePredictions(job.config, job.reading, job.context, nullptr,
++                                   true, light);
++      }
++      if (Env("KOTORI_LM_DEBUG") != nullptr) {
++        std::fprintf(stderr, "[worker%s] %s -> %zu preds%s%s%s\n",
++                     light ? "" : " full", job.reading.c_str(), preds.size(),
++                     preds.empty() ? "" : " first=",
++                     preds.empty() ? "" : preds[0].text.c_str(),
++                     interrupted(light) ? " (interrupted)" : "");
++      }
++      if (interrupted(light)) break;
++      StorePredictions(job.reading, job.context, preds);
 +    }
-+    // 変換に譲って途中でやめたときは、結果を残さない(次の打鍵で計算し直す)。
-+    if (Env("KOTORI_LM_DEBUG") != nullptr) {
-+      std::fprintf(stderr, "[worker] %s -> %zu preds%s%s\n", job.reading.c_str(),
-+                   preds.size(), preds.empty() ? "" : " first=",
-+                   preds.empty() ? "" : (preds[0].text + " yomi=" + preds[0].yomi).c_str());
-+    }
-+    if (urgent_.load() == 0) StorePredictions(job.reading, job.context, preds);
 +  }
 +}
 +
@@ -20855,6 +20899,8 @@ index 000000000..ae33c8d1c
 +      sentence_ &&
 +      ApplyBest(segments, HistoryContext(request, *segments), &changed);
 +  if (matched && !post_segment_) return changed;
++  // 文節が多いと、文節ごとの採点(文節ごとに 1 回)で数秒かかる。文全体の選択だけにする。
++  if (segments->conversion_segments_size() > kMaxSegmentsToRescore) return changed;
 +  // 文節ごとにも見直す。文全体で選んだときは(LLM も見て決めたので)先頭は変えず、
 +  // 2 番目以降の候補だけを並べる。
 +  return RewriteEachSegment(request, scorer, k, matched, segments) || changed;
@@ -20863,10 +20909,10 @@ index 000000000..ae33c8d1c
 +}  // namespace mozc
 diff --git a/src/rewriter/lm_rewriter.h b/src/rewriter/lm_rewriter.h
 new file mode 100644
-index 000000000..ce6fb551c
+index 000000000..4e3f64614
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.h
-@@ -0,0 +1,200 @@
+@@ -0,0 +1,206 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
 +// Kotori: AI による変換(docs/adr/0013、0015、0016)。
@@ -20989,8 +21035,12 @@ index 000000000..ce6fb551c
 +                                             const std::string& reading,
 +                                             const std::string& context,
 +                                             std::string* conv_out,
-+                                             bool background) const
++                                             bool background, bool light) const
 +      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
++  // 計算済みの予測のうち、読み reading に合うものを最大 max 件(読みの長い計算から)。
++  std::vector<Prediction> CachedPredictions(const std::string& reading,
++                                            const std::string& context,
++                                            size_t max) const;
 +  // 予測が今の読み reading でも使えるか(続きの読みが、新しく打った読みで始まるか)。
 +  bool PredictionFits(const Prediction& p, const std::string& reading) const;
 +  void InsertPredictions(Segment* seg, const std::string& reading,
@@ -21040,7 +21090,9 @@ index 000000000..ce6fb551c
 +  mutable std::condition_variable job_cv_;
 +  mutable std::optional<Job> job_;
 +  mutable std::deque<Entry> cache_;
-+  bool stop_ = false;
++  std::atomic<bool> stop_{false};
++  // 裏の予測の仕事が新しく来たか(来たら今の計算をやめる)。
++  mutable std::atomic<bool> new_job_{false};
 +  // 変換の要求が来ている数(裏の予測はこれが 1 以上なら途中でやめる)。
 +  mutable std::atomic<int> urgent_{0};
 +  // サジェストに出す AI の予測の数。
@@ -21092,10 +21144,10 @@ index d92e814fd..792ecb2c2 100644
  #endif  // MOZC_USER_DICTIONARY_REWRITER
 diff --git a/src/rewriter/zenz_scorer.cc b/src/rewriter/zenz_scorer.cc
 new file mode 100644
-index 000000000..85e5ab93f
+index 000000000..1f908caa7
 --- /dev/null
 +++ b/src/rewriter/zenz_scorer.cc
-@@ -0,0 +1,458 @@
+@@ -0,0 +1,466 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/zenz_scorer.h"
@@ -21119,6 +21171,9 @@ index 000000000..85e5ab93f
 +
 +namespace mozc {
 +namespace {
++
++// このスレッドの生成を途中でやめるかを返す関数(ZenzScorer::SetThreadCancel)。
++thread_local std::function<bool()> tl_cancel;
 +
 +constexpr uint32_t kNumContext = 2048;
 +// 1 回の計算で扱うトークン数。大きいと、結果(ロジット)を受け取る領域が語彙数 × この数だけ要る
@@ -21363,6 +21418,10 @@ index 000000000..85e5ab93f
 +}
 +
 +
++void ZenzScorer::SetThreadCancel(std::function<bool()> cancel) {
++  tl_cancel = std::move(cancel);
++}
++
 +std::vector<std::vector<llama_token>> ZenzScorer::BeamSearch(
 +    const std::vector<llama_token>& prefix, int max_len, int beams,
 +    const std::function<bool(llama_token)>& is_end, bool finish_at_max) {
@@ -21407,6 +21466,7 @@ index 000000000..85e5ab93f
 +  int base = 1;
 +  std::vector<int> idx(n_vocab);
 +  for (int step = 0; step < max_len && !live.empty(); ++step) {
++    if (tl_cancel && tl_cancel()) return {};
 +    struct Next {
 +      float logp;
 +      size_t parent;
@@ -21556,10 +21616,10 @@ index 000000000..85e5ab93f
 +}  // namespace mozc
 diff --git a/src/rewriter/zenz_scorer.h b/src/rewriter/zenz_scorer.h
 new file mode 100644
-index 000000000..5f327c12e
+index 000000000..385155214
 --- /dev/null
 +++ b/src/rewriter/zenz_scorer.h
-@@ -0,0 +1,85 @@
+@@ -0,0 +1,89 @@
 +// Copyright 2026, Kotori IME contributors
 +// All rights reserved.
 +//
@@ -21603,6 +21663,10 @@ index 000000000..5f327c12e
 +  static std::unique_ptr<ZenzScorer> Open(const std::string& path, int threads,
 +                                          const std::string& runtime_dir);
 +  ~ZenzScorer();
++
++  // このスレッドの生成(Generate・Continue)を、1 トークンごとに途中でやめるかを返す関数。
++  // 裏の予測で使い、変換の要求が来たらすぐ GPU を譲る。空の関数なら止めない。
++  static void SetThreadCancel(std::function<bool()> cancel);
 +
 +  // 候補ごとの log P(候補 </s> | 読みと左文脈)。失敗したら nullopt。
 +  std::optional<std::vector<float>> Score(
