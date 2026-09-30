@@ -1,0 +1,529 @@
+[
+ {
+  "index": "n01",
+  "context_text": "",
+  "input": "へやのかぎをなくした",
+  "expected_output": [
+   "部屋の鍵をなくした",
+   "部屋の鍵を無くした"
+  ]
+ },
+ {
+  "index": "n02",
+  "context_text": "",
+  "input": "くるまのかぎはどこ？",
+  "expected_output": [
+   "車の鍵はどこ？"
+  ]
+ },
+ {
+  "index": "n03",
+  "context_text": "",
+  "input": "なにがたべたい？",
+  "expected_output": [
+   "何が食べたい？"
+  ]
+ },
+ {
+  "index": "n04",
+  "context_text": "",
+  "input": "なにかあったらいってね",
+  "expected_output": [
+   "何かあったら言ってね"
+  ]
+ },
+ {
+  "index": "n05",
+  "context_text": "",
+  "input": "きのうえいがをみた",
+  "expected_output": [
+   "昨日映画を見た",
+   "昨日映画を観た"
+  ]
+ },
+ {
+  "index": "n06",
+  "context_text": "",
+  "input": "てれびをみながらごはんをたべた",
+  "expected_output": [
+   "テレビを見ながらご飯を食べた",
+   "テレビを見ながらごはんを食べた"
+  ]
+ },
+ {
+  "index": "n07",
+  "context_text": "",
+  "input": "ねこがひざのうえでねている",
+  "expected_output": [
+   "猫が膝の上で寝ている",
+   "猫がひざの上で寝ている"
+  ]
+ },
+ {
+  "index": "n08",
+  "context_text": "",
+  "input": "いぬのさんぽにいってくる",
+  "expected_output": [
+   "犬の散歩に行ってくる"
+  ]
+ },
+ {
+  "index": "n09",
+  "context_text": "",
+  "input": "このけーきはとてもおいしい",
+  "expected_output": [
+   "このケーキはとても美味しい",
+   "このケーキはとてもおいしい"
+  ]
+ },
+ {
+  "index": "n10",
+  "context_text": "",
+  "input": "たくさんのひとがあつまった",
+  "expected_output": [
+   "たくさんの人が集まった",
+   "沢山の人が集まった"
+  ]
+ },
+ {
+  "index": "n11",
+  "context_text": "",
+  "input": "ちょっとまってください",
+  "expected_output": [
+   "ちょっと待ってください"
+  ]
+ },
+ {
+  "index": "n12",
+  "context_text": "",
+  "input": "あしたならできるよ",
+  "expected_output": [
+   "明日ならできるよ",
+   "明日なら出来るよ"
+  ]
+ },
+ {
+  "index": "n13",
+  "context_text": "",
+  "input": "ほんとうにありがとう",
+  "expected_output": [
+   "本当にありがとう"
+  ]
+ },
+ {
+  "index": "n14",
+  "context_text": "",
+  "input": "いろいろおせわになりました",
+  "expected_output": [
+   "色々お世話になりました",
+   "いろいろお世話になりました"
+  ]
+ },
+ {
+  "index": "n15",
+  "context_text": "",
+  "input": "みんなでしゃしんをとろう",
+  "expected_output": [
+   "みんなで写真を撮ろう",
+   "皆で写真を撮ろう"
+  ]
+ },
+ {
+  "index": "n16",
+  "context_text": "",
+  "input": "こどものころによくあそんだ",
+  "expected_output": [
+   "子供の頃によく遊んだ",
+   "子どもの頃によく遊んだ",
+   "子供のころによく遊んだ",
+   "子どものころによく遊んだ"
+  ]
+ },
+ {
+  "index": "n17",
+  "context_text": "",
+  "input": "めがねをかけるとよくみえる",
+  "expected_output": [
+   "眼鏡をかけるとよく見える",
+   "メガネをかけるとよく見える"
+  ]
+ },
+ {
+  "index": "n18",
+  "context_text": "",
+  "input": "すしをたべにいこう",
+  "expected_output": [
+   "寿司を食べに行こう",
+   "すしを食べに行こう"
+  ]
+ },
+ {
+  "index": "n19",
+  "context_text": "",
+  "input": "ばんごはんはそばにしよう",
+  "expected_output": [
+   "晩ご飯はそばにしよう",
+   "晩ご飯は蕎麦にしよう",
+   "晩ごはんはそばにしよう",
+   "晩ごはんは蕎麦にしよう",
+   "晩御飯はそばにしよう",
+   "晩御飯は蕎麦にしよう"
+  ]
+ },
+ {
+  "index": "n20",
+  "context_text": "",
+  "input": "いちごのけーきをかった",
+  "expected_output": [
+   "いちごのケーキを買った",
+   "イチゴのケーキを買った",
+   "苺のケーキを買った"
+  ]
+ },
+ {
+  "index": "n21",
+  "context_text": "",
+  "input": "りんごをみっつください",
+  "expected_output": [
+   "りんごを三つください",
+   "リンゴを三つください",
+   "りんごを3つください",
+   "リンゴを3つください",
+   "りんごを３つください",
+   "リンゴを３つください"
+  ]
+ },
+ {
+  "index": "n22",
+  "context_text": "",
+  "input": "すてきなぷれぜんとをありがとう",
+  "expected_output": [
+   "素敵なプレゼントをありがとう",
+   "すてきなプレゼントをありがとう"
+  ]
+ },
+ {
+  "index": "n23",
+  "context_text": "",
+  "input": "すごくうれしかった",
+  "expected_output": [
+   "すごく嬉しかった",
+   "すごくうれしかった",
+   "凄く嬉しかった"
+  ]
+ },
+ {
+  "index": "n24",
+  "context_text": "",
+  "input": "たのしいじかんだった",
+  "expected_output": [
+   "楽しい時間だった"
+  ]
+ },
+ {
+  "index": "n25",
+  "context_text": "",
+  "input": "だいじょうぶ、きにしないで",
+  "expected_output": [
+   "大丈夫、気にしないで"
+  ]
+ },
+ {
+  "index": "n26",
+  "context_text": "",
+  "input": "がんばってね",
+  "expected_output": [
+   "頑張ってね",
+   "がんばってね"
+  ]
+ },
+ {
+  "index": "n27",
+  "context_text": "",
+  "input": "もちろんさんかします",
+  "expected_output": [
+   "もちろん参加します",
+   "勿論参加します"
+  ]
+ },
+ {
+  "index": "n28",
+  "context_text": "",
+  "input": "ちょうどいまついたところ",
+  "expected_output": [
+   "ちょうど今着いたところ",
+   "丁度今着いたところ"
+  ]
+ },
+ {
+  "index": "n29",
+  "context_text": "",
+  "input": "ほとんどおわった",
+  "expected_output": [
+   "ほとんど終わった",
+   "殆ど終わった"
+  ]
+ },
+ {
+  "index": "n30",
+  "context_text": "",
+  "input": "いっしょにかえろう",
+  "expected_output": [
+   "一緒に帰ろう"
+  ]
+ },
+ {
+  "index": "n31",
+  "context_text": "",
+  "input": "さいふをわすれてきた",
+  "expected_output": [
+   "財布を忘れてきた"
+  ]
+ },
+ {
+  "index": "n32",
+  "context_text": "",
+  "input": "けいたいのじゅうでんがきれた",
+  "expected_output": [
+   "携帯の充電が切れた"
+  ]
+ },
+ {
+  "index": "n33",
+  "context_text": "",
+  "input": "ふとんをほした",
+  "expected_output": [
+   "布団を干した"
+  ]
+ },
+ {
+  "index": "n34",
+  "context_text": "",
+  "input": "せんたくものをとりこんで",
+  "expected_output": [
+   "洗濯物を取り込んで"
+  ]
+ },
+ {
+  "index": "n35",
+  "context_text": "",
+  "input": "つかれたからはやくねる",
+  "expected_output": [
+   "疲れたから早く寝る"
+  ]
+ },
+ {
+  "index": "n36",
+  "context_text": "",
+  "input": "あさごはんをたべそこねた",
+  "expected_output": [
+   "朝ご飯を食べ損ねた",
+   "朝ごはんを食べ損ねた",
+   "朝御飯を食べ損ねた",
+   "朝ご飯を食べそこねた",
+   "朝ごはんを食べそこねた"
+  ]
+ },
+ {
+  "index": "n37",
+  "context_text": "",
+  "input": "えきのちかくのかふぇでまってる",
+  "expected_output": [
+   "駅の近くのカフェで待ってる"
+  ]
+ },
+ {
+  "index": "n38",
+  "context_text": "",
+  "input": "こんどのにちようびはあいてる？",
+  "expected_output": [
+   "今度の日曜日は空いてる？",
+   "今度の日曜日はあいてる？"
+  ]
+ },
+ {
+  "index": "n39",
+  "context_text": "",
+  "input": "そのふく、にあってるね",
+  "expected_output": [
+   "その服、似合ってるね"
+  ]
+ },
+ {
+  "index": "n40",
+  "context_text": "",
+  "input": "きょうはさきにかえります",
+  "expected_output": [
+   "今日は先に帰ります"
+  ]
+ },
+ {
+  "index": "n41",
+  "context_text": "",
+  "input": "かいものについてきて",
+  "expected_output": [
+   "買い物について来て",
+   "買い物についてきて"
+  ]
+ },
+ {
+  "index": "n42",
+  "context_text": "",
+  "input": "でんきをけしてね",
+  "expected_output": [
+   "電気を消してね"
+  ]
+ },
+ {
+  "index": "n43",
+  "context_text": "",
+  "input": "まどをあけてもいい？",
+  "expected_output": [
+   "窓を開けてもいい？"
+  ]
+ },
+ {
+  "index": "n44",
+  "context_text": "",
+  "input": "しおをとってくれる？",
+  "expected_output": [
+   "塩を取ってくれる？"
+  ]
+ },
+ {
+  "index": "n45",
+  "context_text": "",
+  "input": "おさらをあらっておいた",
+  "expected_output": [
+   "お皿を洗っておいた"
+  ]
+ },
+ {
+  "index": "n46",
+  "context_text": "",
+  "input": "はをみがいてからねなさい",
+  "expected_output": [
+   "歯を磨いてから寝なさい",
+   "歯を磨いてから寝なさい"
+  ]
+ },
+ {
+  "index": "n47",
+  "context_text": "",
+  "input": "かみのけがのびた",
+  "expected_output": [
+   "髪の毛が伸びた"
+  ]
+ },
+ {
+  "index": "n48",
+  "context_text": "",
+  "input": "くつをぬいであがってね",
+  "expected_output": [
+   "靴を脱いで上がってね"
+  ]
+ },
+ {
+  "index": "n49",
+  "context_text": "",
+  "input": "かさをもっていったほうがいい",
+  "expected_output": [
+   "傘を持って行った方がいい",
+   "傘を持っていった方がいい",
+   "傘を持って行ったほうがいい",
+   "傘を持っていったほうがいい"
+  ]
+ },
+ {
+  "index": "n50",
+  "context_text": "",
+  "input": "てがみをかいた",
+  "expected_output": [
+   "手紙を書いた"
+  ]
+ },
+ {
+  "index": "n51",
+  "context_text": "",
+  "input": "ほんやによってからかえる",
+  "expected_output": [
+   "本屋に寄ってから帰る"
+  ]
+ },
+ {
+  "index": "n52",
+  "context_text": "",
+  "input": "こうえんでさんぽした",
+  "expected_output": [
+   "公園で散歩した"
+  ]
+ },
+ {
+  "index": "n53",
+  "context_text": "",
+  "input": "やさいもちゃんとたべなさい",
+  "expected_output": [
+   "野菜もちゃんと食べなさい"
+  ]
+ },
+ {
+  "index": "n54",
+  "context_text": "",
+  "input": "たまごをふたつわった",
+  "expected_output": [
+   "卵を二つ割った",
+   "卵を2つ割った",
+   "卵を２つ割った",
+   "たまごを二つ割った"
+  ]
+ },
+ {
+  "index": "n55",
+  "context_text": "",
+  "input": "じてんしゃでがっこうにいく",
+  "expected_output": [
+   "自転車で学校に行く"
+  ]
+ },
+ {
+  "index": "n56",
+  "context_text": "",
+  "input": "となりのへやがうるさい",
+  "expected_output": [
+   "隣の部屋がうるさい"
+  ]
+ },
+ {
+  "index": "n57",
+  "context_text": "",
+  "input": "しゅうまつはいえでゆっくりする",
+  "expected_output": [
+   "週末は家でゆっくりする"
+  ]
+ },
+ {
+  "index": "n58",
+  "context_text": "",
+  "input": "おふろわいたよ",
+  "expected_output": [
+   "お風呂沸いたよ"
+  ]
+ },
+ {
+  "index": "n59",
+  "context_text": "",
+  "input": "めざましをかけわすれた",
+  "expected_output": [
+   "目覚ましをかけ忘れた",
+   "目覚ましを掛け忘れた"
+  ]
+ },
+ {
+  "index": "n60",
+  "context_text": "",
+  "input": "こんやはかれーにしよう",
+  "expected_output": [
+   "今夜はカレーにしよう"
+  ]
+ }
+]
