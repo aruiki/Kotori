@@ -86,10 +86,10 @@ def hero():
 
 def accuracy():
     rows = [
-        ("Kotori日本語入力  High", 91.5, "GPU", True),
-        ("Kotori日本語入力  Standard(既定)", 90.5, "GPU", True),
+        ("Kotori日本語入力  High", 92.5, "GPU", True),
+        ("Kotori日本語入力  Standard(既定)", 91.5, "GPU", True),
+        ("Kotori日本語入力  Low", 86.5, "GPU なしでも動く", True),
         ("azooKey + Zenzai(参考)", 85.0, "", False),
-        ("Kotori日本語入力  Low", 84.5, "GPU なしでも動く", True),
         ("Mozc(Google 日本語入力のオープンソース版)", 51.0, "", False),
     ]
     w, row_h, top = 880, 58, 104
