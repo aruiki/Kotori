@@ -19623,10 +19623,10 @@ index 000000000..9573fd721
 +#endif  // MOZC_REWRITER_LLAMA_RUNTIME_H_
 diff --git a/src/rewriter/lm_rewriter.cc b/src/rewriter/lm_rewriter.cc
 new file mode 100644
-index 000000000..c82132f38
+index 000000000..ae33c8d1c
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.cc
-@@ -0,0 +1,1187 @@
+@@ -0,0 +1,1234 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/lm_rewriter.h"
@@ -19670,20 +19670,54 @@ index 000000000..c82132f38
 +namespace mozc {
 +namespace {
 +
-+// ひらがなの文字数(読みを漢字に変えずに写しただけの生成を見分けるのに使う)。
-+size_t CountHiragana(absl::string_view text) {
-+  size_t n = 0;
++// UTF-8 の文字を 1 つずつ(コードポイントで)返す。
++std::vector<uint32_t> CodePoints(absl::string_view text) {
++  std::vector<uint32_t> out;
 +  for (size_t i = 0; i < text.size();) {
 +    const unsigned char c = text[i];
 +    const size_t len = c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
-+    if (len == 3 && i + 2 < text.size()) {
-+      const uint32_t cp = ((c & 0x0F) << 12) | ((text[i + 1] & 0x3F) << 6) |
-+                          (text[i + 2] & 0x3F);
-+      if (cp >= 0x3041 && cp <= 0x3096) ++n;
++    uint32_t cp = c;
++    if (len == 2 && i + 1 < text.size()) {
++      cp = ((c & 0x1F) << 6) | (text[i + 1] & 0x3F);
++    } else if (len == 3 && i + 2 < text.size()) {
++      cp = ((c & 0x0F) << 12) | ((text[i + 1] & 0x3F) << 6) |
++           (text[i + 2] & 0x3F);
++    } else if (len == 4 && i + 3 < text.size()) {
++      cp = ((c & 0x07) << 18) | ((text[i + 1] & 0x3F) << 12) |
++           ((text[i + 2] & 0x3F) << 6) | (text[i + 3] & 0x3F);
 +    }
++    out.push_back(cp);
 +    i += len;
 +  }
++  return out;
++}
++
++bool IsKana(uint32_t cp) {
++  return (cp >= 0x3041 && cp <= 0x3096) || (cp >= 0x30A1 && cp <= 0x30FA);
++}
++
++// かな(ひらがな・カタカナ)の文字数(読みを漢字に変えずに写しただけの生成を見分けるのに使う)。
++size_t CountKana(absl::string_view text) {
++  size_t n = 0;
++  for (uint32_t cp : CodePoints(text)) n += IsKana(cp) ? 1 : 0;
 +  return n;
++}
++
++// 小書きのかな(ゃ・ョ など)が、かなでない文字のすぐ後に来るか(「機ョ」)。日本語として
++// ありえないので、そういう生成は除く。
++bool HasStraySmallKana(absl::string_view text) {
++  static constexpr uint32_t kSmall[] = {
++      0x3041, 0x3043, 0x3045, 0x3047, 0x3049, 0x3083, 0x3085, 0x3087, 0x308E,
++      0x30A1, 0x30A3, 0x30A5, 0x30A7, 0x30A9, 0x30E3, 0x30E5, 0x30E7, 0x30EE};
++  const std::vector<uint32_t> cps = CodePoints(text);
++  for (size_t i = 0; i < cps.size(); ++i) {
++    if (std::find(std::begin(kSmall), std::end(kSmall), cps[i]) ==
++        std::end(kSmall)) {
++      continue;
++    }
++    if (i == 0 || !IsKana(cps[i - 1])) return true;
++  }
++  return false;
 +}
 +
 +// 変換を待たせないための目印。変換の要求が来ている間、裏の予測は途中でやめる。
@@ -20035,6 +20069,10 @@ index 000000000..c82132f38
 +    max_sentences_ = std::max(1, std::atoi(v));
 +  }
 +  if (const char* v = Env("KOTORI_LM_LLM_WEIGHT")) lambda_llm_ = std::atof(v);
++  if (const char* v = Env("KOTORI_LM_GEN_PENALTY")) gen_penalty_ = std::atof(v);
++  if (const char* v = Env("KOTORI_LM_GEN_PENALTY_LLM")) {
++    gen_penalty_llm_ = std::atof(v);
++  }
 +  model_dir_ = SystemUtil::GetServerDirectory();
 +  // llama.cpp の DLL とモデルのフォルダ(評価用に差し替えられる)。
 +  runtime_dir_ = model_dir_;
@@ -20181,11 +20219,12 @@ index 000000000..c82132f38
 +  // ラティスの 1 位のひらがなの数。生成した文がこれより 4 文字以上多ければ、読みを漢字に変えずに
 +  // 写しただけとみなして除く(zenz は読みを写した文を高く採点することがある)。
 +  const size_t lattice_kana =
-+      values.empty() ? SIZE_MAX : CountHiragana(values.front());
++      values.empty() ? SIZE_MAX : CountKana(values.front());
 +  if (beams > 0 && Util::CharsLen(reading) <= 255) {
 +    for (const std::string& g : scorer->Generate(context, reading, beams)) {
 +      if (std::find(values.begin(), values.end(), g) != values.end()) continue;
-+      if (lattice_kana != SIZE_MAX && CountHiragana(g) >= lattice_kana + 4) {
++      if ((lattice_kana != SIZE_MAX && CountKana(g) >= lattice_kana + 4) ||
++          HasStraySmallKana(g)) {
 +        if (Env("KOTORI_LM_DEBUG") != nullptr) {
 +          std::fprintf(stderr, "[kotori] rejected (kana) %s\n", g.c_str());
 +        }
@@ -20248,6 +20287,8 @@ index 000000000..c82132f38
 +  for (size_t i = 0; i < values.size(); ++i) {
 +    double s = lambda_lm_ * (*zlogp)[i];
 +    if (llogp) s += lambda_llm_ * (*llogp)[i];
++    // 生成した文は辞書の表記を通らないので、同じくらいの点ならラティスの文を選ぶ。
++    if (cands[i] == nullptr) s -= llogp ? gen_penalty_llm_ : gen_penalty_;
 +    if (debug) {
 +      std::fprintf(stderr, "[kotori] %s zenz=%.2f llm=%.2f %s score=%.2f\n",
 +                   values[i].c_str(), (*zlogp)[i], llogp ? (*llogp)[i] : 0.f,
@@ -20294,8 +20335,9 @@ index 000000000..c82132f38
 +  return resize;
 +}
 +
-+bool LmRewriter::ApplyBest(Segments* segments,
-+                           const std::string& context) const {
++bool LmRewriter::ApplyBest(Segments* segments, const std::string& context,
++                           bool* changed_out) const {
++  *changed_out = false;
 +  if (!best_ || best_->context != context ||
 +      best_->reading != ConversionReading(*segments)) {
 +    return false;
@@ -20334,11 +20376,13 @@ index 000000000..c82132f38
 +    *seg.insert_candidate(0) = std::move(c);
 +    changed = true;
 +  }
-+  return changed;
++  *changed_out = changed;
++  return true;
 +}
 +
 +bool LmRewriter::RewriteEachSegment(const ConversionRequest& request,
 +                                    ZenzScorer* scorer, size_t k,
++                                    bool keep_top,
 +                                    Segments* segments) const {
 +  std::string context = HistoryContext(request, *segments);
 +  bool changed = false;
@@ -20371,9 +20415,9 @@ index 000000000..c82132f38
 +        }
 +        std::vector<size_t> order(n);
 +        std::iota(order.begin(), order.end(), 0);
-+        std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
-+          return score[a] > score[b];
-+        });
++        // keep_top なら先頭(文全体で選んだもの)は動かさず、2 番目以降だけ並べる。
++        std::stable_sort(order.begin() + (keep_top ? 1 : 0), order.end(),
++                         [&](size_t a, size_t b) { return score[a] > score[b]; });
 +        std::vector<converter::Candidate> copies;
 +        copies.reserve(n);
 +        for (size_t i = 0; i < n; ++i) copies.push_back(seg.candidate(order[i]));
@@ -20806,20 +20850,23 @@ index 000000000..c82132f38
 +  ZenzScorer* scorer = Prepare(request, &k, &llm, &beams);
 +  if (scorer == nullptr) return false;
 +  // 文全体で選んだ文が今の区切りに合えば、それを先頭に置く。
-+  const bool applied =
-+      sentence_ && ApplyBest(segments, HistoryContext(request, *segments));
-+  if (applied && !post_segment_) return true;
-+  // 文節ごとにも見直す(数字の書き方など、文全体の候補にない変種を比べる)。
-+  return RewriteEachSegment(request, scorer, k, segments) || applied;
++  bool changed = false;
++  const bool matched =
++      sentence_ &&
++      ApplyBest(segments, HistoryContext(request, *segments), &changed);
++  if (matched && !post_segment_) return changed;
++  // 文節ごとにも見直す。文全体で選んだときは(LLM も見て決めたので)先頭は変えず、
++  // 2 番目以降の候補だけを並べる。
++  return RewriteEachSegment(request, scorer, k, matched, segments) || changed;
 +}
 +
 +}  // namespace mozc
 diff --git a/src/rewriter/lm_rewriter.h b/src/rewriter/lm_rewriter.h
 new file mode 100644
-index 000000000..b42e729f5
+index 000000000..ce6fb551c
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.h
-@@ -0,0 +1,195 @@
+@@ -0,0 +1,200 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
 +// Kotori: AI による変換(docs/adr/0013、0015、0016)。
@@ -20915,8 +20962,10 @@ index 000000000..b42e729f5
 +      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 +  void EnsureLlmLoaded(const std::string& path) const
 +      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
-+  bool ApplyBest(Segments* segments, const std::string& context) const
-+      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
++  // 文全体で選んだ文が今の区切りに合えば、各文節の先頭をそれにして true を返す
++  // (*changed は候補を入れ替えたか)。
++  bool ApplyBest(Segments* segments, const std::string& context,
++                 bool* changed) const ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 +  // 予測の 1 件。text = base(covered の読みの変換)+ 続き。
 +  struct Prediction {
 +    std::string text;
@@ -20958,7 +21007,7 @@ index 000000000..b42e729f5
 +                         Segments* segments) const;
 +  void WorkerLoop();
 +  bool RewriteEachSegment(const ConversionRequest& request,
-+                          ZenzScorer* scorer, size_t k,
++                          ZenzScorer* scorer, size_t k, bool keep_top,
 +                          Segments* segments) const;
 +  double Combine(float logp, int cost) const {
 +    return lambda_lm_ * logp - lambda_lattice_ * cost / temperature_;
@@ -21003,6 +21052,9 @@ index 000000000..b42e729f5
 +  bool right_context_ = true;
 +  double lambda_lm_ = 1.0;
 +  double lambda_llm_ = 1.0;
++  // 生成した文(ラティスにない文)の点数から引く値。LLM なし / あり。
++  double gen_penalty_ = 0.5;
++  double gen_penalty_llm_ = 0.0;
 +  double lambda_lattice_ = 1.0;
 +  double temperature_ = 1000.0;
 +  int threads_ = 4;
