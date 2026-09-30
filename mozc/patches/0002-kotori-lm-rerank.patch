@@ -19623,10 +19623,10 @@ index 000000000..9573fd721
 +#endif  // MOZC_REWRITER_LLAMA_RUNTIME_H_
 diff --git a/src/rewriter/lm_rewriter.cc b/src/rewriter/lm_rewriter.cc
 new file mode 100644
-index 000000000..ff00e3a16
+index 000000000..c82132f38
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.cc
-@@ -0,0 +1,1156 @@
+@@ -0,0 +1,1187 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/lm_rewriter.h"
@@ -19669,6 +19669,22 @@ index 000000000..ff00e3a16
 +
 +namespace mozc {
 +namespace {
++
++// ひらがなの文字数(読みを漢字に変えずに写しただけの生成を見分けるのに使う)。
++size_t CountHiragana(absl::string_view text) {
++  size_t n = 0;
++  for (size_t i = 0; i < text.size();) {
++    const unsigned char c = text[i];
++    const size_t len = c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
++    if (len == 3 && i + 2 < text.size()) {
++      const uint32_t cp = ((c & 0x0F) << 12) | ((text[i + 1] & 0x3F) << 6) |
++                          (text[i + 2] & 0x3F);
++      if (cp >= 0x3041 && cp <= 0x3096) ++n;
++    }
++    i += len;
++  }
++  return n;
++}
 +
 +// 変換を待たせないための目印。変換の要求が来ている間、裏の予測は途中でやめる。
 +class Urgent {
@@ -20162,9 +20178,19 @@ index 000000000..ff00e3a16
 +    values.push_back(c.value);
 +    if (cands.size() >= max_sentences_) break;
 +  }
++  // ラティスの 1 位のひらがなの数。生成した文がこれより 4 文字以上多ければ、読みを漢字に変えずに
++  // 写しただけとみなして除く(zenz は読みを写した文を高く採点することがある)。
++  const size_t lattice_kana =
++      values.empty() ? SIZE_MAX : CountHiragana(values.front());
 +  if (beams > 0 && Util::CharsLen(reading) <= 255) {
 +    for (const std::string& g : scorer->Generate(context, reading, beams)) {
 +      if (std::find(values.begin(), values.end(), g) != values.end()) continue;
++      if (lattice_kana != SIZE_MAX && CountHiragana(g) >= lattice_kana + 4) {
++        if (Env("KOTORI_LM_DEBUG") != nullptr) {
++          std::fprintf(stderr, "[kotori] rejected (kana) %s\n", g.c_str());
++        }
++        continue;
++      }
 +      // 読みを落とした文や、読みにない語を足した文を除く。
 +      if (dictionary_ != nullptr &&
 +          !MatchesReading(*dictionary_, single_kanji_, g, reading)) {
@@ -20194,6 +20220,11 @@ index 000000000..ff00e3a16
 +      return (*zlogp)[a] > (*zlogp)[b];
 +    });
 +    order.resize(std::min(order.size(), llm_top));
++    // ラティスの 1 位は必ず採点する(zenz が生成を高く見積もっても、Mozc の答えと比べられるように)。
++    if (cands.front() != nullptr &&
++        std::find(order.begin(), order.end(), 0) == order.end()) {
++      order.push_back(0);
++    }
 +    std::vector<std::string> subset;
 +    for (size_t i : order) subset.push_back(values[i]);
 +    if (auto sub = llm->Score(context, reading, subset)) {
