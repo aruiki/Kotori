@@ -14,6 +14,10 @@ on:
       - '!mozc/README.md'
       - '!mozc/release-notes.md'
       - '!mozc/VERSION'
+      # 評価と計測の道具は MSI の中身に関係しない(MSI のビルドは 45 分以上かかるので、道具だけの PR では回さない)。
+      - '!mozc/tools/**'
+      - '!mozc/eval_*.py'
+      - '!mozc/patches/README.md'
 
 permissions:
   contents: write
