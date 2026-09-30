@@ -15,8 +15,8 @@
 5. 取得:
 
    ```sh
-   git clone --recurse-submodules https://github.com/aruiki/Kotori.git
-   cd Kotori
+   git clone --recurse-submodules https://github.com/aruiki/KotoriIME-japanese-.git
+   cd KotoriIME-japanese-
    ```
 
    すでに clone してあるなら `git submodule update --init`(`third_party/llama.cpp` が要る)。
