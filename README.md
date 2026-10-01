@@ -174,10 +174,15 @@ GPU は自動で見つけて使います。ドライバー以外の準備は要�
 新しい版は、前の版の上にそのまま入れられます(v0.3.0-beta.6 以降)。それより前の版が入っているときは、
 一度アンインストールしてから入れてください。アンインストールは「設定」→「アプリ」から行えます。
 
+使い方、データの置き場、アンインストールで残るもの、困ったときの対処は **[使い方と困ったとき](docs/USER_GUIDE.md)** に
+まとめています。不具合・誤変換は [Issues](https://github.com/aruiki/KotoriIME-japanese-/issues/new/choose) へ、
+セキュリティの問題は [SECURITY.md](SECURITY.md) の方法で知らせてください。
+
 ## 最近の更新
 
 | 版 | 主な変更 |
 | --- | --- |
+| [v1.0.0-rc.1](https://github.com/aruiki/KotoriIME-japanese-/releases/tag/v1.0.0-rc.1)(リリース候補) | 製品版の候補。診断情報の書き出し、落ちたときの記録(入力した文字は含まない)、通信の部品を外した、第三者の表示 |
 | [v0.3.0-beta.8](https://github.com/aruiki/KotoriIME-japanese-/releases/tag/v0.3.0-beta.8) | GPU のない PC で、長い文の変換が速く正確に(打ってすぐ Space の正解 36 → 46 / 60 文) |
 | [v0.3.0-beta.7](https://github.com/aruiki/KotoriIME-japanese-/releases/tag/v0.3.0-beta.7) | 10 分使わなければ VRAM を空ける。入力中の GPU の負荷をさらに約 1 割減 |
 | [v0.3.0-beta.6](https://github.com/aruiki/KotoriIME-japanese-/releases/tag/v0.3.0-beta.6) | 上書きインストール、予測が邪魔になりにくく、Unreal 93.0%、VRAM 約 170 MB 減 |
@@ -226,6 +231,8 @@ GPU は自動で見つけて使います。ドライバー以外の準備は要�
 
 Mozc の学習とユーザー辞書がそのまま使えます。ユーザー辞書に登録した語は、AI が書き換えません。
 </details>
+
+ほかの症状と対処は [使い方と困ったとき](docs/USER_GUIDE.md#困ったとき) にあります。
 
 ## 開発者向け
 

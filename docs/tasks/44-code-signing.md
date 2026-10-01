@@ -16,6 +16,8 @@ exe・dll に署名する。
 1. **メンテナ**: 署名の手段に申し込み、CI で使う秘密(トークンなど)をリポジトリの Secrets に入れる。
 2. ワークフローで、MSI を作る前に Kotori が作る exe・dll(`mozc_*.exe`、`mozc_tip32.dll`、`mozc_tip64.dll`)に
    署名し、MSI にも署名する。llama.cpp・Qt・VC ランタイムの DLL は、配布元の署名があればそのまま。なければ署名する。
+   v0.3.0-beta.8 で調べた結果: 署名があるのは VC ランタイム(`vcruntime140.dll` など)だけ。`llama.dll`・`ggml*.dll`・
+   `libomp.dll`(公式ビルド)と `Qt6*.dll`(Mozc の手順でビルド)は未署名なので、どれも Kotori で署名する。
 3. 秘密がない実行(PR、フォーク)では署名を飛ばす(今と同じ未署名の MSI を作る)。
 4. `check_release.py` に、MSI とインストールする exe・dll の署名を確かめる項目を足す(`Get-AuthenticodeSignature`)。
 5. 署名した版から、README とリリースノートの「未署名」「詳細情報 → 実行」の案内を消す。
