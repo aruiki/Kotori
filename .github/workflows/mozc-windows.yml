@@ -1,12 +1,19 @@
 # Mozc ベースの Windows 版を作る(docs/adr/0012 の段階 1)。
 # google/mozc をコミットで固定して取得し、mozc/patches/ のパッチを当てて Kotori64.msi を作る。
 # 手順は Mozc の公式 CI(.github/workflows/windows.yaml)と docs/build_mozc_in_windows.md に合わせる。
-# 手で実行すると、できた MSI を最新のリリース(Latest)として公開する。版は mozc/VERSION の beta の番号を
-# 既にあるタグの次にし、名前は日本時間の日時と版にする(v0.1.0-beta.x の Rust 版と同じ付け方)。
+# 手で実行すると、できた MSI をリリースとして公開する。段階(channel)は beta・rc・stable から選ぶ
+# (docs/adr/0037、作業カード 40)。版は mozc/tools/release_tag.py が mozc/VERSION と既にあるタグから決め、
+# 名前は日本時間の日時と版にする。rc はプレリリース、beta と stable は Latest。
 name: Mozc (Windows)
 
 on:
   workflow_dispatch:
+    inputs:
+      channel:
+        description: 'リリースの段階(beta / rc / stable)'
+        type: choice
+        options: [beta, rc, stable]
+        default: beta
   pull_request:
     paths:
       - .github/workflows/mozc-windows.yml
@@ -49,6 +56,17 @@ jobs:
           path: mozc-src
           submodules: false
           persist-credentials: false
+      # 版はビルドの前に決める(同じ版の正式版が既にあるときなどを、45 分のビルドの前に落とす)。
+      - name: 版を決める
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        working-directory: kotori
+        env:
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          $out = python mozc/tools/release_tag.py --channel $env:CHANNEL --repo "https://github.com/$env:GITHUB_REPOSITORY"
+          if ($LASTEXITCODE -ne 0) { throw "版を決められない(上のメッセージ)" }
+          $out | ForEach-Object { Write-Host $_; $_ >> $env:GITHUB_ENV }
       - name: パッチを当てる
         shell: pwsh
         run: |
@@ -186,27 +204,20 @@ jobs:
         shell: pwsh
         working-directory: kotori
         run: |
-          $base = (Get-Content mozc/VERSION -Raw).Trim()
-          $pattern = "refs/tags/v$([regex]::Escape($base))-beta\.(\d+)$"
-          $last = git ls-remote --tags "https://github.com/$env:GITHUB_REPOSITORY" "refs/tags/v$base-beta.*" |
-            ForEach-Object { if ($_ -match $pattern) { [int]$Matches[1] } } |
-            Measure-Object -Maximum
-          $v = "$base-beta.$([int]$last.Maximum + 1)"
           $now = [TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]::UtcNow, 'Tokyo Standard Time')
           $stamp = $now.ToString('yyyy.Mdd.HHmmss', [Globalization.CultureInfo]::InvariantCulture)
           $hash = (Get-FileHash ../Kotori64.msi -Algorithm SHA256).Hash.ToLower()
           Set-Content -Encoding ascii ../Kotori64.msi.sha256 "$hash  Kotori64.msi"
-          Write-Host "版 v$v、名前 $stamp (v$v)"
-          "TAG=v$v" >> $env:GITHUB_ENV
-          "RELEASE_NAME=$stamp (v$v)" >> $env:GITHUB_ENV
+          Write-Host "版 $env:TAG、名前 $stamp ($env:TAG)"
+          "RELEASE_NAME=$stamp ($env:TAG)" >> $env:GITHUB_ENV
       - if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
           name: ${{ env.RELEASE_NAME }}
           target_commitish: ${{ github.sha }}
-          prerelease: false
-          make_latest: true
+          prerelease: ${{ env.PRERELEASE == 'true' }}
+          make_latest: ${{ env.MAKE_LATEST }}
           body_path: kotori/mozc/release-notes.md
           files: |
             Kotori64.msi

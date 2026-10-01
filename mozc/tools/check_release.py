@@ -2,6 +2,7 @@
 
 GitHub Releases から `Kotori64.msi` と `.sha256` を取り、次を確かめる。1 つでも外れたら終了コード 1。
 - SHA-256 が `.sha256` と一致する
+- MSI の大きさが 1.8 GiB 以下(GitHub Releases の 1 ファイルの上限 2 GiB の手前で気づく。カード 40)
 - MSI の ProductVersion が、比べる版(既定は 1 つ前のリリース)より大きい(上書きで入れ替わるための条件)
 - 展開した中身に、同梱するモデルと実行ファイルと第三者の表示がそろっていて、入れない物(通信の部品)がない
 - `mozc_server.exe` のファイルの版が ProductVersion と一致する
@@ -27,6 +28,7 @@ BUNDLED = ["mozc_server.exe", "mozc_tool.exe", "mozc_renderer.exe", "mozc_tip64.
            "documents/credits_en.html"]
 # 入れない物。ggml-rpc.dll は別の PC に計算を任せる通信の部品(REQ-15-1、作業カード 41)。
 ABSENT = ["ggml-rpc.dll"]
+MAX_MSI_BYTES = int(1.8 * 2**30)
 
 
 def run(cmd, **kw):
@@ -71,7 +73,9 @@ class Checks:
 
 
 def check_contents(msi: pathlib.Path, work: pathlib.Path, check: Checks):
-    """MSI を展開して、同梱物・入れない物・実行ファイルの版を確かめる。"""
+    """MSI の大きさと、展開した同梱物・入れない物・実行ファイルの版を確かめる。"""
+    size = msi.stat().st_size
+    check(size <= MAX_MSI_BYTES, f"大きさ {size / 2**30:.2f} GiB ≦ {MAX_MSI_BYTES / 2**30:.1f} GiB(上限 2 GiB)")
     ver = msi_version(msi)
     ext = work / "ext"
     shutil.rmtree(ext, ignore_errors=True)
