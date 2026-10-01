@@ -30,3 +30,7 @@ AI の計算は 4 スレッド。docs/adr/0024〜0027 の後。
 | GPU | Low | 385 ms | 62 / 83 / 91 ms | 133 MB | 524 MB |
 | GPU | Standard | 730 ms | 62 / 84 / 87 ms | 474 MB | 1490 MB |
 | GPU | High | 738 ms | 76 / 102 / 106 ms | 559 MB | 1483 MB |
+
+## 2026-10-01: 同じ PC、生成の前置きの共有(docs/adr/0033)
+
+入力中の AI の稼働率(`mozc/tools/cost_bench.py`、Standard): 47.1% → 42.6%。予測の当たりと変換の精度は同じ。
