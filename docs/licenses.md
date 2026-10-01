@@ -13,13 +13,15 @@
 ## Windows 版の MSI(Mozc 版、現在の配布物)に同梱するもの
 
 `Kotori64.msi`(`.github/workflows/mozc-windows.yml`、docs/adr/0012、0016)。インストーラの使用許諾
-(`mozc/tools/gen_assets.py` が作る `license.rtf`)と、インストール先の `NOTICE-*.txt`・`documents` に同じ内容を載せる。
+(`mozc/tools/gen_assets.py` が作る `license.rtf`)と、インストール先の `NOTICE-*.txt`・`LICENSE-*.txt`・`documents`
+(Mozc の `credits_en.html`。Abseil・Protocol Buffers・Qt などの全文)に同じ内容を載せる。`check_release.py` がそろっているかを確かめる。
 
 | 構成要素 | ライセンス | 取得元・固定 | 備考 |
 | --- | --- | --- | --- |
 | Mozc | BSD-3-Clause(Copyright Google Inc.) | google/mozc(`MOZC_COMMIT` で固定)+ `mozc/patches/` | Google の名前を推奨の表示に使わない(第 3 項) |
-| Qt 6 | LGPL-3.0 | Mozc のビルド手順(`build_qt.py`) | 動的リンク(Qt6*.dll)。差し替えられる |
-| llama.cpp / ggml | MIT | 公式の Windows ビルド b11259(Vulkan、SHA-256 で検証) | 実行時に読み込む DLL |
+| Qt 6.9.1 | LGPL-3.0 | Mozc のビルド手順(`build_qt.py`) | 動的リンク(Qt6*.dll)。差し替えられる。差し替え方とソースの入手先は `NOTICE-third-party.txt`、LGPL-3.0 が取り込む GPL-3.0 の全文は `LICENSE-GPL-3.0.txt`(Qt のソースの `LICENSES/GPL-3.0-only.txt`) |
+| llama.cpp / ggml | MIT | 公式の Windows ビルド b11259(Vulkan、SHA-256 で検証) | 実行時に読み込む DLL。`ggml-rpc.dll`(通信の部品)は入れない(REQ-15-1、作業カード 41) |
+| LLVM OpenMP ランタイム(`libomp.dll`) | Apache-2.0 WITH LLVM-exception | llama.cpp の公式 Windows ビルドに含まれる | 全文は `LICENSE-llvm-openmp.txt`(llvm-project llvmorg-20.1.0 の `openmp/LICENSE.TXT`) |
 | zenz-v2.5-small | CC BY-SA 4.0(Keita Miwa。元は ku-nlp/gpt2-small-japanese-char) | `training/zenz/fetch.sh`(版と SHA-256 を固定) | q8_0 に量子化して同梱。`NOTICE-zenz.txt` |
 | zenz-v2.5-medium | CC BY-SA 4.0(Keita Miwa。元は ku-nlp/gpt2-medium-japanese-char) | 同上 | q8_0 に量子化して同梱。GPU のない PC の Low と Unreal で使う(docs/adr/0024) |
 | TinySwallow-1.5B | Apache-2.0(Sakana AI) | `training/llm/make.sh`(版を固定) | Q5_K_M に量子化して同梱。`NOTICE-tinyswallow.txt` |

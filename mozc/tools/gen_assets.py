@@ -77,8 +77,9 @@ Kotori日本語入力(以下 Kotori)は Mozc(Copyright 2010-2026 Google Inc.、B
 
 同梱している部品とライセンス:
 ・Mozc: BSD-3-Clause(Google Inc.)
-・Qt 6: LGPL-3.0(動的リンク)
+・Qt 6: LGPL-3.0(動的リンク。差し替え方とソースの入手先は NOTICE-third-party.txt)
 ・llama.cpp / ggml: MIT(Copyright The ggml authors)
+・LLVM OpenMP ランタイム(libomp.dll): Apache-2.0 WITH LLVM-exception
 ・zenz-v2.5-small: CC BY-SA 4.0(© Keita Miwa。元は ku-nlp/gpt2-small-japanese-char)。8 bit に量子化して同梱
 ・zenz-v2.5-medium: CC BY-SA 4.0(© Keita Miwa。元は ku-nlp/gpt2-medium-japanese-char)。8 bit に量子化して同梱
 ・TinySwallow-1.5B: Apache-2.0(Sakana AI)。5 bit に量子化して同梱
@@ -101,4 +102,36 @@ rtf = ("{\\rtf1\\ansi\\ansicpg932\\deff0{\\fonttbl{\\f0\\fnil\\fcharset128 Yu Go
     "学習した内容は変えていない。\n\n"
     "llama.cpp / ggml (MIT): https://github.com/ggml-org/llama.cpp\n"
     "  インストール先の LICENSE-llama.cpp.txt を参照。\n", encoding="utf-8")
+
+# 第三者の表示(作業カード 41、REQ-16-1)。全文は同じフォルダの LICENSE-*.txt と documents\credits_en.html。
+# LICENSE-llvm-openmp.txt は llvm/llvm-project の llvmorg-20.1.0 の openmp/LICENSE.TXT
+# (SHA-256 fdad1758a9e1f9d5a81e18879b3406772115edc92c24bfa36b70c654f325e8e4)、LICENSE-GPL-3.0.txt は
+# Qt 6.9.1 のソースの LICENSES/GPL-3.0-only.txt をそのまま写したもの。
+(out / "NOTICE-third-party.txt").write_text(
+    "Kotori日本語入力に同梱している第三者のソフトウェア\n\n"
+    "この PC のインストール先(C:\\Program Files (x86)\\Kotori)にあるファイルと、そのライセンスの一覧です。\n"
+    "AI のモデルは NOTICE-zenz.txt と NOTICE-tinyswallow.txt にあります。\n\n"
+    "■ Mozc(mozc_*.exe、mozc_tip*.dll、辞書)\n"
+    "  BSD-3-Clause、Copyright Google Inc. https://github.com/google/mozc\n"
+    "  Kotori は Mozc を改変したもので、Google が提供・推奨するものではありません。\n"
+    "  Mozc が使う Abseil、Protocol Buffers、Windows Implementation Library、IPAdic などの表示は\n"
+    "  documents\\credits_en.html にあります。\n\n"
+    "■ Qt 6.9.1(Qt6Core.dll、Qt6Gui.dll、Qt6Widgets.dll、platforms\\qwindows.dll)\n"
+    "  GNU Lesser General Public License v3.0(LGPL-3.0)。全文は documents\\credits_en.html の「Qt Base」、\n"
+    "  LGPL-3.0 が取り込んでいる GNU GPL v3.0 の全文は LICENSE-GPL-3.0.txt。\n"
+    "  Kotori は Qt を改変していません。設定画面(mozc_tool.exe)が上の DLL を動的に読み込みます。\n"
+    "  - ソース: https://download.qt.io/archive/qt/6.9/6.9.1/submodules/qtbase-everywhere-src-6.9.1.tar.xz\n"
+    "  - ビルドの手順: Mozc の src/build_tools/build_qt.py(Kotori が固定している Mozc のコミットのもの。\n"
+    "    https://github.com/aruiki/KotoriIME-japanese- の docs/DEVELOPMENT.md)\n"
+    "  - 差し替え方: 同じ版(6.9.x)で、同じ設定でビルドした DLL を、インストール先の同じ名前のファイルと\n"
+    "    置き換えると、その Qt で動きます。\n"
+    "  - Kotori のソース一式(Mozc への変更を含む)は上のリポジトリで公開しています。\n\n"
+    "■ llama.cpp / ggml b11259(llama.dll、ggml*.dll)\n"
+    "  MIT License、Copyright The ggml authors。全文は LICENSE-llama.cpp.txt。\n"
+    "  https://github.com/ggml-org/llama.cpp の公式の Windows ビルドをそのまま同梱しています。\n\n"
+    "■ LLVM OpenMP ランタイム(libomp.dll)\n"
+    "  Apache License 2.0 with LLVM Exceptions。全文は LICENSE-llvm-openmp.txt。\n"
+    "  https://github.com/llvm/llvm-project(llama.cpp の公式の Windows ビルドに含まれるもの)。\n\n"
+    "■ Microsoft Visual C++ ランタイム(vcruntime140*.dll、msvcp140*.dll)\n"
+    "  Microsoft Visual Studio のライセンスで再配布が認められたもの。\n", encoding="utf-8")
 print("ok", sorted(p.name for p in out.iterdir()))
