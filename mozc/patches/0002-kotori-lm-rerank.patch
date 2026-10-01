@@ -20006,10 +20006,10 @@ index 000000000..cf2c801ea
 +#endif  // MOZC_REWRITER_LLAMA_RUNTIME_H_
 diff --git a/src/rewriter/lm_rewriter.cc b/src/rewriter/lm_rewriter.cc
 new file mode 100644
-index 000000000..4396b64f4
+index 000000000..56422df15
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.cc
-@@ -0,0 +1,1886 @@
+@@ -0,0 +1,1922 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/lm_rewriter.h"
@@ -20570,6 +20570,8 @@ index 000000000..4396b64f4
 +  if (const char* v = Env("KOTORI_LM_LIGHT_RANK")) light_rank_ = *v != '0';
 +  if (const char* v = Env("KOTORI_LM_LIGHT_DELAY")) light_delay_ms_ = std::atoi(v);
 +  if (const char* v = Env("KOTORI_LM_FULL_DELAY")) full_delay_ms_ = std::atoi(v);
++  if (const char* v = Env("KOTORI_LM_CPU_LONG")) cpu_long_chars_ = std::atoi(v);
++  if (const char* v = Env("KOTORI_ZENZ_LONG_MODEL")) env_long_path_ = v;
 +  if (const char* v = Env("KOTORI_LM_IDLE_UNLOAD")) {
 +    idle_unload_ms_ = std::max(0, std::atoi(v)) * 1000;
 +  }
@@ -20667,12 +20669,15 @@ index 000000000..4396b64f4
 +  }
 +  // 要求の最中なら外さない(次の確かめで外す)。
 +  if (!mutex_.TryLock()) return;
-+  const bool any = scorer_ != nullptr || llm_ != nullptr || extra_ != nullptr;
++  const bool any = scorer_ != nullptr || llm_ != nullptr || extra_ != nullptr ||
++                   long_scorer_ != nullptr;
 +  if (any) {
 +    scorer_.reset();
 +    llm_.reset();
 +    extra_.reset();
-+    loaded_ = llm_loaded_ = extra_loaded_ = false;
++    long_scorer_.reset();
++    loaded_ = llm_loaded_ = extra_loaded_ = long_loaded_ = false;
++    long_path_.clear();
 +    loaded_path_.clear();
 +    llm_path_.clear();
 +    extra_path_.clear();
@@ -20741,7 +20746,7 @@ index 000000000..4396b64f4
 +ZenzScorer* LmRewriter::PrepareFor(const config::Config& config, size_t* k,
 +                                   ZenzScorer** llm, int* beams,
 +                                   size_t* llm_top, bool for_predict,
-+                                   bool may_load) const {
++                                   bool may_load, size_t reading_chars) const {
 +  *llm = nullptr;
 +  if (!config.kotori_lm_enabled()) return nullptr;
 +  // GPU のない PC(内蔵 GPU だけの PC を含む)では、品質の設定に関係なく Low にする。LLM は
@@ -20767,6 +20772,29 @@ index 000000000..4396b64f4
 +    return nullptr;
 +  }
 +  EnsureLoaded(path);
++  // GPU のない PC で長い読みなら、速い zenz を使う(docs/adr/0035)。品質の段階の zenz と同じなら使わない。
++  ZenzScorer* main_scorer = scorer_.get();
++  if (!gpu && cpu_long_chars_ > 0 &&
++      reading_chars > static_cast<size_t>(cpu_long_chars_)) {
++    const std::string long_path =
++        env_long_path_.empty() ? FileUtil::JoinPath(model_dir_, kDefaultModelName)
++                               : env_long_path_;
++    if (long_path != path) {
++      if (!(long_loaded_ && long_path_ == long_path)) {
++        if (!may_load) {
++          RequestLoad(config);
++        } else {
++          long_loaded_ = true;
++          long_path_ = long_path;
++          long_scorer_.reset();
++          if (FileUtil::FileExists(long_path).ok()) {
++            long_scorer_ = ZenzScorer::Open(long_path, threads_, runtime_dir_);
++          }
++        }
++      }
++      if (long_scorer_ != nullptr) main_scorer = long_scorer_.get();
++    }
++  }
 +  // 2 つ目の zenz(Unreal、または評価用の KOTORI_ZENZ_EXTRA_MODEL)。ファイルがなければ使わない。
 +  {
 +    std::string extra = env_extra_path_;
@@ -20792,7 +20820,7 @@ index 000000000..4396b64f4
 +  // では品質に関係なく使う。品質 Low では最初の Tab で読み込み、その後は読み込んだままにする。
 +  if (!UsesLlm(config)) {
 +    EnsureLlmLoaded(std::string());  // 使わない設定なら VRAM を空ける
-+    return scorer_.get();
++    return main_scorer;
 +  }
 +  if (*llm_top > 0 || for_predict) {
 +    std::string llm_path = config.kotori_lm_model_path();
@@ -20800,12 +20828,18 @@ index 000000000..4396b64f4
 +    if (llm_path.empty()) llm_path = FileUtil::JoinPath(model_dir_, kLlmModelName);
 +    if (!may_load && !(llm_loaded_ && llm_path_ == llm_path)) {
 +      RequestLoad(config);
-+      return scorer_.get();
++      return main_scorer;
 +    }
 +    EnsureLlmLoaded(llm_path);
 +    *llm = llm_.get();
 +  }
-+  return scorer_.get();
++  return main_scorer;
++}
++
++std::string LmRewriter::ModelKey(const ZenzScorer* scorer) const {
++  const std::string& path =
++      scorer != nullptr && scorer == long_scorer_.get() ? long_path_ : loaded_path_;
++  return path + "|" + extra_path_;
 +}
 +
 +std::string LmRewriter::CacheKey(const config::Config& config,
@@ -20893,7 +20927,7 @@ index 000000000..4396b64f4
 +  size_t llm_top = 0;
 +  ZenzScorer* llm = nullptr;
 +  ZenzScorer* scorer = PrepareFor(request.config(), &k, &llm, &beams, &llm_top,
-+                                  false, sync_load_);
++                                  false, sync_load_, Util::CharsLen(reading));
 +  if (scorer == nullptr) return std::nullopt;
 +  const auto t_load = std::chrono::steady_clock::now();
 +  budget_ms = BudgetMs();
@@ -20929,7 +20963,7 @@ index 000000000..4396b64f4
 +  std::vector<std::string> generated;
 +  if (beams > 0 && Util::CharsLen(reading) <= kMaxGenerateChars) {
 +    if (gen_cache_ && gen_cache_->key == key && gen_cache_->beams == beams &&
-+        gen_cache_->model == loaded_path_ + "|" + extra_path_) {
++        gen_cache_->model == ModelKey(scorer)) {
 +      generated = gen_cache_->texts;  // 先回りの変換で作ったもの
 +    } else {
 +      {
@@ -21741,17 +21775,17 @@ index 000000000..4396b64f4
 +    size_t k = 0, llm_top = 0;
 +    int beams = 0;
 +    ZenzScorer* llm = nullptr;
-+    ZenzScorer* scorer =
-+        PrepareFor(job.config, &k, &llm, &beams, &llm_top, false, true);
++    ZenzScorer* scorer = PrepareFor(job.config, &k, &llm, &beams, &llm_top,
++                                    false, true, Util::CharsLen(job.reading));
 +    if (scorer != nullptr && beams > 0 &&
 +        !(gen_cache_ && gen_cache_->key == key && gen_cache_->beams == beams &&
-+          gen_cache_->model == loaded_path_ + "|" + extra_path_)) {
++          gen_cache_->model == ModelKey(scorer))) {
 +      std::vector<std::string> texts;
 +      {
 +        CancelScope cancel(cancelled);
 +        texts = scorer->Generate(job.context, job.reading, beams);
 +      }
-+      if (!cancelled()) gen_cache_ = Generated{key, beams, loaded_path_ + "|" + extra_path_, texts};
++      if (!cancelled()) gen_cache_ = Generated{key, beams, ModelKey(scorer), texts};
 +    }
 +  }
 +  {
@@ -21793,6 +21827,8 @@ index 000000000..4396b64f4
 +          int beams = 0;
 +          ZenzScorer* llm = nullptr;
 +          PrepareFor(config, &k, &llm, &beams, &llm_top, false, true);
++          // GPU のない PC では、長い読みに使う zenz も読み込んでおく(docs/adr/0035)。
++          PrepareFor(config, &k, &llm, &beams, &llm_top, false, true, SIZE_MAX);
 +          // 入力中の AI 予測を使うなら、予測の LLM も読み込んでおく。
 +          if (predict_ && config.kotori_lm_predict()) {
 +            PrepareFor(config, &k, &llm, &beams, &llm_top, true, true);
@@ -21898,10 +21934,10 @@ index 000000000..4396b64f4
 +}  // namespace mozc
 diff --git a/src/rewriter/lm_rewriter.h b/src/rewriter/lm_rewriter.h
 new file mode 100644
-index 000000000..7c0902590
+index 000000000..647b64d2b
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.h
-@@ -0,0 +1,307 @@
+@@ -0,0 +1,321 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
 +// Kotori: AI による変換(docs/adr/0013、0015、0016)。
@@ -22001,9 +22037,15 @@ index 000000000..7c0902590
 +  // Prepare の本体。*llm_top は LLM で採点する候補の数。
 +  // may_load が偽なら、読み込んでいないモデルは裏のスレッドに頼んで nullptr を返す
 +  // (要求の中で読み込んで待たせないため)。
++  // reading_chars は生成・採点する読みの文字数。GPU のない PC では、長い読みに速い zenz を使う
++  // (docs/adr/0035)。0 なら品質の段階の zenz。
 +  ZenzScorer* PrepareFor(const config::Config& config, size_t* k,
 +                         ZenzScorer** llm, int* beams, size_t* llm_top,
-+                         bool for_predict, bool may_load) const
++                         bool for_predict, bool may_load,
++                         size_t reading_chars = 0) const
++      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
++  // 生成の結果を覚えるときの、そのモデルの名前(先回りの変換の結果を使い回してよいか)。
++  std::string ModelKey(const ZenzScorer* scorer) const
 +      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 +  // 実際に動いている AI の状態を、ユーザーのプロファイルの kotori_ai_status.txt に書く
 +  // (設定画面が読んで表示する。docs/adr/0026)。state は loading / ready。
@@ -22108,6 +22150,14 @@ index 000000000..7c0902590
 +  mutable std::string loaded_path_ ABSL_GUARDED_BY(mutex_);
 +  mutable bool loaded_ ABSL_GUARDED_BY(mutex_) = false;
 +  mutable std::unique_ptr<ZenzScorer> scorer_ ABSL_GUARDED_BY(mutex_);
++  // Kotori: GPU のない PC で、長い読みに使う速い zenz(既定は同梱の small。docs/adr/0035)。
++  // medium は CPU では長い文の生成が時間の上限に収まらず、AI なしになるため。
++  std::string env_long_path_;
++  mutable std::string long_path_ ABSL_GUARDED_BY(mutex_);
++  mutable bool long_loaded_ ABSL_GUARDED_BY(mutex_) = false;
++  mutable std::unique_ptr<ZenzScorer> long_scorer_ ABSL_GUARDED_BY(mutex_);
++  // この文字数より長い読みに long_scorer_ を使う(KOTORI_LM_CPU_LONG。0 なら使わない)。
++  int cpu_long_chars_ = 12;
 +  mutable std::string llm_path_ ABSL_GUARDED_BY(mutex_);
 +  mutable bool llm_loaded_ ABSL_GUARDED_BY(mutex_) = false;
 +  mutable std::unique_ptr<ZenzScorer> llm_ ABSL_GUARDED_BY(mutex_);
