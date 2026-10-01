@@ -62,3 +62,8 @@ body:
     attributes:
       label: どのくらい起きるか
       options: [毎回, ときどき, 1 回だけ]
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 診断情報
+      description: 設定の「AI 変換」タブの「診断情報を書き出す...」で保存したファイルを、ここにドラッグして添付してください(入力した文字は含みません)
