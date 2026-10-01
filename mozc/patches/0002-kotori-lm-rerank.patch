@@ -20006,10 +20006,10 @@ index 000000000..cf2c801ea
 +#endif  // MOZC_REWRITER_LLAMA_RUNTIME_H_
 diff --git a/src/rewriter/lm_rewriter.cc b/src/rewriter/lm_rewriter.cc
 new file mode 100644
-index 000000000..56422df15
+index 000000000..d61abbca0
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.cc
-@@ -0,0 +1,1922 @@
+@@ -0,0 +1,2189 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/lm_rewriter.h"
@@ -20017,6 +20017,8 @@ index 000000000..56422df15
 +#include <algorithm>
 +#include <cctype>
 +#include <chrono>
++#include <cmath>
++#include <functional>
 +#include <cstdint>
 +#include <cstdio>
 +#include <cstdlib>
@@ -20064,6 +20066,8 @@ index 000000000..56422df15
 +// GPU のないとき、AI を使う読みの長さの上限(文字)。CPU の zenz-medium では、これより長い文の生成・採点が
 +// 時間の上限に収まらず、採点の 1 回の計算は途中で止められないため(docs/adr/0029)。
 +constexpr size_t kMaxCpuChars = 60;
++// Kotori: 打ち間違いの補正を試す読みの長さの上限(docs/adr/0036)。
++constexpr size_t kMaxTypoChars = 40;
 +
 +// UTF-8 の文字を 1 つずつ(コードポイントで)返す。
 +std::vector<uint32_t> CodePoints(absl::string_view text) {
@@ -20272,6 +20276,149 @@ index 000000000..56422df15
 +  }
 +  std::vector<std::pair<std::string, std::string>> found;  // (読み, 表記)
 +};
++
++// Kotori: 打ち間違いの補正(docs/adr/0036)。ローマ字入力でよくある 1 か所の打ち間違い(濁点の有無、
++// 子音の抜け「す→う」、母音の誤り、文字の抜け・重複・入れ替え、を/お)を、読みの 1 か所の書き換えで表す。
++constexpr const char* kKanaRows[] = {
++    "あいうえお", "かきくけこ", "さしすせそ", "たちつてと", "なにぬねの",
++    "はひふへほ", "まみむめも", "や_ゆ_よ", "らりるれろ", "わ___を",
++    "がぎぐげご", "ざじずぜぞ", "だぢづでど", "ばびぶべぼ", "ぱぴぷぺぽ"};
++constexpr int kKanaRowCount = sizeof(kKanaRows) / sizeof(kKanaRows[0]);
++
++// 濁点・半濁点の付け外しで行き来する行の組。
++constexpr int kDakutenPairs[][2] = {{1, 10}, {2, 11}, {3, 12}, {5, 13}, {5, 14}, {13, 14}};
++
++const std::vector<std::vector<std::string>>& KanaTable() {
++  static const auto* table = [] {
++    auto* t = new std::vector<std::vector<std::string>>();
++    for (const char* row : kKanaRows) {
++      std::vector<std::string> cols;
++      for (const std::string& ch : Chars(row)) cols.push_back(ch == "_" ? "" : ch);
++      t->push_back(std::move(cols));
++    }
++    return t;
++  }();
++  return *table;
++}
++
++bool KanaPos(const std::string& ch, int* row, int* col) {
++  const auto& t = KanaTable();
++  for (int r = 0; r < static_cast<int>(t.size()); ++r) {
++    for (int c = 0; c < static_cast<int>(t[r].size()); ++c) {
++      if (!t[r][c].empty() && t[r][c] == ch) {
++        *row = r;
++        *col = c;
++        return true;
++      }
++    }
++  }
++  return false;
++}
++
++// 読みを 1 か所だけ書き換えた候補(元の読みは含まない)。
++std::vector<std::string> TypoVariants(const std::vector<std::string>& r) {
++  const auto& t = KanaTable();
++  std::vector<std::string> out;
++  absl::flat_hash_map<std::string, bool> seen;
++  const std::string orig = absl::StrJoin(r, "");
++  seen[orig] = true;
++  auto add = [&](std::vector<std::string> v) {
++    std::string s = absl::StrJoin(v, "");
++    if (s.empty() || seen.contains(s)) return;
++    seen[s] = true;
++    out.push_back(std::move(s));
++  };
++  auto replaced = [&](size_t j, const std::string& ch) {
++    std::vector<std::string> v = r;
++    v[j] = ch;
++    return v;
++  };
++  for (size_t j = 0; j < r.size(); ++j) {
++    int row = -1, col = -1;
++    if (KanaPos(r[j], &row, &col)) {
++      for (const auto& p : kDakutenPairs) {
++        const int other = p[0] == row ? p[1] : p[1] == row ? p[0] : -1;
++        if (other >= 0 && !t[other][col].empty()) add(replaced(j, t[other][col]));
++      }
++      for (int c = 0; c < 5; ++c) {
++        if (c != col && !t[row][c].empty()) add(replaced(j, t[row][c]));
++      }
++      if (row == 0) {  // 子音の抜け(「す」を「う」と打った)
++        for (int r2 = 1; r2 < kKanaRowCount; ++r2) {
++          if (!t[r2][col].empty()) add(replaced(j, t[r2][col]));
++        }
++      }
++    }
++    if (r[j] == "お") add(replaced(j, "を"));
++    // 文字の重複・余分。削ると文が短くなって点が上がりやすいので、同じ文字の重複と「っ」「ん」に限る。
++    const bool kana = r[j] >= "ぁ" && r[j] <= "ゖ";
++    if (kana && ((j + 1 < r.size() && r[j] == r[j + 1]) || r[j] == "っ" || r[j] == "ん")) {
++      std::vector<std::string> v = r;
++      v.erase(v.begin() + j);
++      add(std::move(v));
++    }
++    if (kana && j + 1 < r.size() && r[j] != r[j + 1] &&  // 入れ替え(かなどうし)
++        r[j + 1] >= "ぁ" && r[j + 1] <= "ゖ") {
++      std::vector<std::string> v = r;
++      std::swap(v[j], v[j + 1]);
++      add(std::move(v));
++    }
++  }
++  for (size_t j = 0; j <= r.size(); ++j) {  // 文字の抜け
++    for (const char* ins : {"う", "い", "ん", "っ"}) {
++      std::vector<std::string> v = r;
++      v.insert(v.begin() + j, ins);
++      add(std::move(v));
++    }
++  }
++  return out;
++}
++
++// 読みの先頭から辞書の語でたどれる長さごとの、いちばん小さいコスト。
++class MinCostCollector : public dictionary::DictionaryInterface::Callback {
++ public:
++  ResultType OnToken(absl::string_view, absl::string_view,
++                     dictionary::Token token) override {
++    auto it = cost.find(token.key.size());
++    if (it == cost.end() || token.cost < it->second) cost[token.key.size()] = token.cost;
++    return TRAVERSE_CONTINUE;
++  }
++  absl::flat_hash_map<size_t, int> cost;  // 読みのバイト数 → コスト
++};
++
++// 読みを辞書の語で区切ったときのコストの合計の最小(語のつながりは見ない粗い目安)。辞書にない
++// 文字は 1 文字ごとに大きなコスト。打ち間違いのある読みは、語に区切れず高くなる。
++int ReadingCost(const dictionary::DictionaryInterface& dic, absl::string_view reading,
++                absl::flat_hash_map<std::string, std::vector<std::pair<size_t, int>>>* cache) {
++  constexpr int kUnknown = 10000;
++  constexpr int kPerWord = 2000;
++  const std::vector<std::string> r = Chars(reading);
++  std::vector<size_t> off(r.size() + 1, 0);
++  for (size_t j = 0; j < r.size(); ++j) off[j + 1] = off[j] + r[j].size();
++  std::vector<int> best(r.size() + 1, std::numeric_limits<int>::max());
++  best[0] = 0;
++  for (size_t i = 0; i < r.size(); ++i) {
++    if (best[i] == std::numeric_limits<int>::max()) continue;
++    best[i + 1] = std::min(best[i + 1], best[i] + kUnknown);
++    const std::string suffix(reading.substr(off[i]));
++    auto it = cache->find(suffix);
++    if (it == cache->end()) {
++      MinCostCollector col;
++      dic.LookupPrefix(suffix, &col);
++      std::vector<std::pair<size_t, int>> v(col.cost.begin(), col.cost.end());
++      it = cache->emplace(suffix, std::move(v)).first;
++    }
++    for (const auto& [bytes, cost] : it->second) {
++      for (size_t k = i + 1; k <= r.size(); ++k) {
++        if (off[k] - off[i] == bytes) {
++          best[k] = std::min(best[k], best[i] + cost + kPerWord);
++          break;
++        }
++      }
++    }
++  }
++  return best[r.size()];
++}
 +
 +// 前方一致の検索は語が多いので、数を抑える。
 +class PredictiveCollector : public dictionary::DictionaryInterface::Callback {
@@ -20571,6 +20718,12 @@ index 000000000..56422df15
 +  if (const char* v = Env("KOTORI_LM_LIGHT_DELAY")) light_delay_ms_ = std::atoi(v);
 +  if (const char* v = Env("KOTORI_LM_FULL_DELAY")) full_delay_ms_ = std::atoi(v);
 +  if (const char* v = Env("KOTORI_LM_CPU_LONG")) cpu_long_chars_ = std::atoi(v);
++  if (const char* v = Env("KOTORI_LM_TYPO")) typo_correct_ = *v != '0';
++  if (const char* v = Env("KOTORI_LM_TYPO_MARGIN")) typo_margin_ = std::atof(v);
++  if (const char* v = Env("KOTORI_LM_TYPO_K")) typo_k_ = std::max(1, std::atoi(v));
++  if (const char* v = Env("KOTORI_LM_TYPO_GAIN")) typo_gain_ = std::atoi(v);
++  if (const char* v = Env("KOTORI_LM_TYPO_GATE")) typo_gate_ = std::atof(v);
++  if (const char* v = Env("KOTORI_LM_TYPO_STRONG")) typo_strong_gain_ = std::atoi(v);
 +  if (const char* v = Env("KOTORI_ZENZ_LONG_MODEL")) env_long_path_ = v;
 +  if (const char* v = Env("KOTORI_LM_IDLE_UNLOAD")) {
 +    idle_unload_ms_ = std::max(0, std::atoi(v)) * 1000;
@@ -21068,7 +21221,16 @@ index 000000000..56422df15
 +  }
 +
 +  Best best{reading, context, {}, {}};
-+  if (cands[top] == nullptr) {
++  // Kotori: 打ち間違いを補った文の方がずっと自然なら、それを 1 つの文節として出す(docs/adr/0036)。
++  std::string fixed;
++  if (typo_correct_ && llm != nullptr && llogp && dictionary_ != nullptr && !over() &&
++      Util::CharsLen(reading) <= kMaxTypoChars &&
++      FindTypoCorrection(scorer, llm, context, reading, values[top],
++                         lambda_lm_ * (*zlogp)[top] + lambda_llm_ * (*llogp)[top],
++                         over, &fixed)) {
++    best.keys = {reading};
++    best.values = {fixed};
++  } else if (cands[top] == nullptr) {
 +    // 生成した文は区切りを持たないので、表記と読みの対応で文節に分ける(一語だけ直しやすく
 +    // するため)。対応が取れないときや分割を切ったときは、全体を 1 つの文節にする。
 +    std::vector<std::pair<std::string, std::string>> units;
@@ -21931,13 +22093,118 @@ index 000000000..56422df15
 +         changed;
 +}
 +
++bool LmRewriter::FindTypoCorrection(ZenzScorer* scorer, ZenzScorer* llm,
++                                    const std::string& context,
++                                    const std::string& reading,
++                                    const std::string& chosen, double chosen_score,
++                                    const std::function<bool()>& over,
++                                    std::string* fixed) const {
++  const auto t0 = std::chrono::steady_clock::now();
++  // 選んだ文が十分に自然なら(読み 1 文字あたりの点が typo_gate_ 以上)、試さない。打ち間違いのある
++  // 読みの文は不自然になりやすい。ふつうの文で毎回試すと、Space が遅くなるため。
++  const double per_char = chosen_score / std::max<size_t>(1, Util::CharsLen(reading));
++  absl::flat_hash_map<std::string, std::vector<std::pair<size_t, int>>> cache;
++  const int base = ReadingCost(*dictionary_, reading, &cache);
++  std::vector<std::pair<int, std::string>> ranked;
++  int best_cost = base;
++  for (std::string& v : TypoVariants(Chars(reading))) {
++    const int c = ReadingCost(*dictionary_, v, &cache);
++    best_cost = std::min(best_cost, c);
++    if (c <= base - typo_gain_) ranked.emplace_back(c, std::move(v));
++  }
++  // 選んだ文が十分に自然なら試さない。ただし、読みを書き換えると辞書のコストが大きく下がる
++  // (typo_strong_gain_ 以上)ときは試す(zenz が打ち間違いの読みをそのまま写した文を高く見ることがある)。
++  if (per_char >= typo_gate_ && base - best_cost < typo_strong_gain_) {
++    if (Env("KOTORI_LM_DEBUG") != nullptr || Env("KOTORI_LM_TIME") != nullptr) {
++      std::fprintf(stderr, "[typo] %s gate per_char=%.2f gain=%d %.0fms\n", reading.c_str(),
++                   per_char, base - best_cost,
++                   std::chrono::duration<double, std::milli>(
++                       std::chrono::steady_clock::now() - t0).count());
++    }
++    return false;
++  }
++  if (ranked.empty() || over()) {
++    if (Env("KOTORI_LM_DEBUG") != nullptr || Env("KOTORI_LM_TIME") != nullptr) {
++      std::fprintf(stderr, "[typo] %s cost=%d no variant\n", reading.c_str(), base);
++    }
++    return false;
++  }
++  std::stable_sort(ranked.begin(), ranked.end(),
++                   [](const auto& a, const auto& b) { return a.first < b.first; });
++  if (ranked.size() > static_cast<size_t>(typo_k_)) ranked.resize(typo_k_);
++  std::vector<std::string> readings;
++  for (const auto& [c, v] : ranked) readings.push_back(v);
++  // 1 回のビームサーチで扱える列の数に上限があるので、5 つずつ生成する。
++  std::vector<std::vector<std::string>> gens;
++  {
++    CancelScope cancel(over);
++    for (size_t i = 0; i < readings.size() && !over(); i += 5) {
++      const std::vector<std::string> part(
++          readings.begin() + i, readings.begin() + std::min(readings.size(), i + 5));
++      for (auto& g : scorer->GenerateMany(context, part, 2)) gens.push_back(std::move(g));
++    }
++  }
++  if (over()) return false;
++  // 書き換えた読みごとに、生成した文(辞書で読みに合うもの)の zenz の点を、その読みで取る。
++  std::vector<std::string> texts;
++  std::vector<double> zs;
++  for (size_t i = 0; i < gens.size() && i < readings.size(); ++i) {
++    for (const std::string& g : gens[i]) {
++      if (g == chosen || std::find(texts.begin(), texts.end(), g) != texts.end() ||
++          !MatchesReading(*dictionary_, single_kanji_, g, readings[i])) {
++        continue;
++      }
++      const std::optional<std::vector<float>> z = scorer->Score(context, readings[i], {g});
++      if (!z) continue;
++      texts.push_back(g);
++      zs.push_back((*z)[0]);
++      break;
++    }
++  }
++  if (texts.empty() || over()) {
++    if (Env("KOTORI_LM_DEBUG") != nullptr || Env("KOTORI_LM_TIME") != nullptr) {
++      std::fprintf(stderr, "[typo] %s variants=%zu no text (over=%d)\n", reading.c_str(),
++                   ranked.size(), over() ? 1 : 0);
++      for (size_t i = 0; i < gens.size() && i < readings.size(); ++i) {
++        for (const std::string& g : gens[i]) {
++          std::fprintf(stderr, "[typo]   %s -> %s\n", readings[i].c_str(), g.c_str());
++        }
++      }
++    }
++    return false;
++  }
++  const std::optional<std::vector<float>> lp = llm->Score(context, reading, texts);
++  if (!lp) return false;
++  size_t top = 0;
++  double top_score = -std::numeric_limits<double>::infinity();
++  for (size_t i = 0; i < texts.size(); ++i) {
++    const double s = lambda_lm_ * zs[i] + lambda_llm_ * (*lp)[i];
++    if (s > top_score) {
++      top = i;
++      top_score = s;
++    }
++  }
++  const double base_lp = chosen_score;
++  const bool apply = top_score - base_lp >= typo_margin_;
++  if (Env("KOTORI_LM_DEBUG") != nullptr || Env("KOTORI_LM_TIME") != nullptr) {
++    std::fprintf(stderr, "[typo] %s cost=%d variants=%zu gen=%zu best=%s %.2f vs %.2f %s %.0fms\n",
++                 reading.c_str(), base, ranked.size(), texts.size(),
++                 texts[top].c_str(), top_score, base_lp, apply ? "APPLY" : "keep",
++                 std::chrono::duration<double, std::milli>(
++                     std::chrono::steady_clock::now() - t0).count());
++  }
++  if (!apply) return false;
++  *fixed = texts[top];
++  return true;
++}
++
 +}  // namespace mozc
 diff --git a/src/rewriter/lm_rewriter.h b/src/rewriter/lm_rewriter.h
 new file mode 100644
-index 000000000..647b64d2b
+index 000000000..dab7c68ff
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.h
-@@ -0,0 +1,321 @@
+@@ -0,0 +1,339 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
 +// Kotori: AI による変換(docs/adr/0013、0015、0016)。
@@ -22043,6 +22310,14 @@ index 000000000..647b64d2b
 +                         ZenzScorer** llm, int* beams, size_t* llm_top,
 +                         bool for_predict, bool may_load,
 +                         size_t reading_chars = 0) const
++      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
++  // 打ち間違いを補った読みの文が、選んだ文 chosen(点 chosen_score = λ_lm・zenz + λ_llm・LLM)より
++  // typo_margin_ 以上高い点なら、その文を *fixed に入れて true(docs/adr/0036)。
++  bool FindTypoCorrection(ZenzScorer* scorer, ZenzScorer* llm,
++                          const std::string& context, const std::string& reading,
++                          const std::string& chosen, double chosen_score,
++                          const std::function<bool()>& over,
++                          std::string* fixed) const
 +      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 +  // 生成の結果を覚えるときの、そのモデルの名前(先回りの変換の結果を使い回してよいか)。
 +  std::string ModelKey(const ZenzScorer* scorer) const
@@ -22158,6 +22433,16 @@ index 000000000..647b64d2b
 +  mutable std::unique_ptr<ZenzScorer> long_scorer_ ABSL_GUARDED_BY(mutex_);
 +  // この文字数より長い読みに long_scorer_ を使う(KOTORI_LM_CPU_LONG。0 なら使わない)。
 +  int cpu_long_chars_ = 12;
++  // Kotori: 打ち間違いの補正(docs/adr/0036)。KOTORI_LM_TYPO、KOTORI_LM_TYPO_MARGIN(LLM の log P の差)、
++  // KOTORI_LM_TYPO_K(試す読みの数)、KOTORI_LM_TYPO_GAIN(辞書で区切ったコストが下がる量)。
++  bool typo_correct_ = true;
++  float typo_margin_ = 5.0f;
++  // 選んだ文の点の読み 1 文字あたりがこれ以上なら試さない(KOTORI_LM_TYPO_GATE)。
++  double typo_gate_ = -1.8;
++  // 読みを書き換えた辞書のコストがこれ以上下がるなら、選んだ文が自然でも試す(KOTORI_LM_TYPO_STRONG)。
++  int typo_strong_gain_ = 4000;
++  int typo_k_ = 10;
++  int typo_gain_ = 2000;
 +  mutable std::string llm_path_ ABSL_GUARDED_BY(mutex_);
 +  mutable bool llm_loaded_ ABSL_GUARDED_BY(mutex_) = false;
 +  mutable std::unique_ptr<ZenzScorer> llm_ ABSL_GUARDED_BY(mutex_);

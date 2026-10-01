@@ -102,6 +102,7 @@ def main() -> int:
     ap.add_argument("--out", default="")
     ap.add_argument("--context", action="store_true", help="問題の context_text を前の文として AI に渡す")
     ap.add_argument("--timeout", type=float, default=36000, help="全体の制限時間(秒)")
+    ap.add_argument("--stderr", default="", help="変換器の stderr(KOTORI_LM_DEBUG などの出力)を保存するファイル")
     ap.add_argument("--min-acc", type=float, default=None, help="Acc@1(%%)がこれ未満なら失敗にする")
     args = ap.parse_args()
 
@@ -136,6 +137,8 @@ def main() -> int:
         print(proc.stderr.decode("utf-8", "replace")[-2000:], file=sys.stderr)
         return 1
     out = proc.stdout.decode("utf-8", "replace")
+    if args.stderr:
+        Path(args.stderr).write_bytes(proc.stderr)
     # KOTORI_LM_TIME を付けたときは、AI の変換にかかった時間(文全体の選択)の分布も出す。
     times = sorted(float(m.group(1)) for m in
                    re.finditer(r"\[time\].* total=(\d+)ms", proc.stderr.decode("utf-8", "replace")))

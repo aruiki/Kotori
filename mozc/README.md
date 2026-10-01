@@ -102,6 +102,7 @@ Windows で手元でビルドする: 作業ツリーの `src` で
 | `KOTORI_LM_PRECONVERT=0` | 先回りの変換を切る(docs/adr/0024) |
 | `KOTORI_LM_IDLE_UNLOAD` | 入力がなくなってからモデルを外すまでの秒数(既定 600、0 で外さない、docs/adr/0034) |
 | `KOTORI_LM_CPU_LONG`、`KOTORI_ZENZ_LONG_MODEL` | GPU のない PC で、この文字数より長い読みに使う zenz(既定 12 文字、同梱の small。0 で使い分けない、docs/adr/0035) |
+| `KOTORI_LM_TYPO=0`、`KOTORI_LM_TYPO_MARGIN`、`KOTORI_LM_TYPO_GATE`、`KOTORI_LM_TYPO_STRONG`、`KOTORI_LM_TYPO_GAIN`、`KOTORI_LM_TYPO_K` | 打ち間違いの補正を切る、直すのに要る点の差(既定 5)、試す条件(読み 1 文字あたりの点、既定 -1.8。辞書のコストが 4000 以上下がれば条件によらず試す)、辞書で区切ったコストが下がる量(既定 2000)、試す読みの数(既定 10)。docs/adr/0036 |
 | `KOTORI_LM_THREADS` | 推論のスレッド数(既定 4) |
 | `KOTORI_LM_PRECEDING`、`KOTORI_LM_CONTEXT_MAP` | 前の文を差し替える(評価) |
 | `KOTORI_LM_TIME`、`KOTORI_LM_STATS`、`KOTORI_LM_TRACE`、`KOTORI_LM_DEBUG` | 時間の内訳、計算量の累計、1 回ごとの計算、候補と点数を stderr に出す |
