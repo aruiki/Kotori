@@ -2,6 +2,7 @@
 
 GitHub Releases から `Kotori64.msi` と `.sha256` を取り、次を確かめる。1 つでも外れたら終了コード 1。
 - SHA-256 が `.sha256` と一致する
+- MSI の大きさが 1.8 GiB 以下(GitHub Releases の 1 ファイルの上限 2 GiB の手前で気づく。カード 40)
 - MSI の ProductVersion が、比べる版(既定は 1 つ前のリリース)より大きい(上書きで入れ替わるための条件)
 - 展開した中身に、同梱するモデルと実行ファイルがそろっている
 - `mozc_server.exe` のファイルの版が ProductVersion と一致する
@@ -21,6 +22,7 @@ REPO = "aruiki/KotoriIME-japanese-"
 BUNDLED = ["mozc_server.exe", "mozc_tool.exe", "mozc_renderer.exe", "mozc_tip64.dll", "llama.dll",
            "zenz-v2.5-small-q8_0.gguf", "zenz-v2.5-medium-q8_0.gguf", "tinyswallow-1.5b-q5_k_m.gguf",
            "NOTICE-zenz.txt", "NOTICE-tinyswallow.txt"]
+MAX_MSI_BYTES = int(1.8 * 2**30)
 
 
 def run(cmd, **kw):
@@ -76,6 +78,8 @@ def main() -> int:
     want = (work / tag / "Kotori64.msi.sha256").read_text().split()[0]
     got = hashlib.sha256(msi.read_bytes()).hexdigest()
     check(got == want, f"SHA-256 {got[:16]}…")
+    size = msi.stat().st_size
+    check(size <= MAX_MSI_BYTES, f"大きさ {size / 2**30:.2f} GiB ≦ {MAX_MSI_BYTES / 2**30:.1f} GiB(上限 2 GiB)")
     ver = msi_version(msi)
     if prev:
         prev_ver = msi_version(download(prev, work / prev))
