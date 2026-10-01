@@ -101,6 +101,7 @@ Windows で手元でビルドする: 作業ツリーの `src` で
 | `KOTORI_LM_LIGHT_BEAMS`、`KOTORI_LM_LIGHT_RANK`、`KOTORI_LM_LIGHT_DELAY`、`KOTORI_LM_FULL_DELAY` | 打鍵ごとの軽い予測の中身と、始めるまでの待ち(既定 作り直しは 600 ms、docs/adr/0024) |
 | `KOTORI_LM_PRECONVERT=0` | 先回りの変換を切る(docs/adr/0024) |
 | `KOTORI_LM_IDLE_UNLOAD` | 入力がなくなってからモデルを外すまでの秒数(既定 600、0 で外さない、docs/adr/0034) |
+| `KOTORI_LM_CPU_LONG`、`KOTORI_ZENZ_LONG_MODEL` | GPU のない PC で、この文字数より長い読みに使う zenz(既定 12 文字、同梱の small。0 で使い分けない、docs/adr/0035) |
 | `KOTORI_LM_THREADS` | 推論のスレッド数(既定 4) |
 | `KOTORI_LM_PRECEDING`、`KOTORI_LM_CONTEXT_MAP` | 前の文を差し替える(評価) |
 | `KOTORI_LM_TIME`、`KOTORI_LM_STATS`、`KOTORI_LM_TRACE`、`KOTORI_LM_DEBUG` | 時間の内訳、計算量の累計、1 回ごとの計算、候補と点数を stderr に出す |
