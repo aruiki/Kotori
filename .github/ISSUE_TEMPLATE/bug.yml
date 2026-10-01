@@ -1,0 +1,64 @@
+name: 不具合
+description: 入力できない、落ちる、固まる、遅い、表示が崩れるなど
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        報告ありがとうございます。**パスワードや個人の情報、入力した文の中身は貼らないでください。**
+        誤変換(思った字にならない)は「誤変換」の方で、セキュリティの問題は SECURITY.md の方法で知らせてください。
+        先に [困ったとき](https://github.com/aruiki/KotoriIME-japanese-/blob/main/docs/USER_GUIDE.md#困ったとき) も見てください。
+  - type: input
+    id: version
+    attributes:
+      label: Kotori の版
+      description: 入れた MSI のリリース名(例 v0.3.0-beta.8)、または「設定」→「アプリ」に出る版
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows の版
+      description: 例 Windows 11 24H2(「設定」→「システム」→「バージョン情報」)
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU
+      description: 例 RTX 3060 / GPU なし(ノート PC の内蔵 GPU だけ)
+    validations:
+      required: true
+  - type: dropdown
+    id: quality
+    attributes:
+      label: 品質(設定の「AI 変換」)
+      options: [Standard(既定), Low, High, Unreal, 分からない]
+    validations:
+      required: true
+  - type: input
+    id: ai_status
+    attributes:
+      label: AI の状態(設定の「AI 変換」タブに出る文)
+      description: '例「AI の状態: 動いています(…)」'
+  - type: input
+    id: app
+    attributes:
+      label: 起きたアプリ
+      description: 例 メモ帳、Chrome のフォーム、Word、VS Code
+  - type: textarea
+    id: steps
+    attributes:
+      label: 手順と起きたこと
+      description: 何をしたら、何が起きたか。何が起きると思っていたか
+      placeholder: |
+        1. メモ帳で日本語入力をオンにする
+        2. 10 文字ほど打って Space
+        3. 数秒固まる
+    validations:
+      required: true
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: どのくらい起きるか
+      options: [毎回, ときどき, 1 回だけ]

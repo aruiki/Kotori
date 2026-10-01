@@ -1,0 +1,42 @@
+name: 誤変換
+description: 思った字にならなかった、不自然な候補が 1 番目に出た
+labels: [misconversion]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        集めた誤変換は、評価のセットに足して直すのに使います(公開されます)。
+        **読みと結果だけを書き、個人の情報が入る文は言い換えてください。**
+  - type: input
+    id: reading
+    attributes:
+      label: 読み(ひらがな)
+      placeholder: かれはこうえんでこうえんをした
+    validations:
+      required: true
+  - type: input
+    id: expected
+    attributes:
+      label: 期待した変換
+      placeholder: 彼は公園で公演をした
+    validations:
+      required: true
+  - type: input
+    id: actual
+    attributes:
+      label: 実際の 1 番目の候補
+      placeholder: 彼は公園で公園をした
+    validations:
+      required: true
+  - type: input
+    id: context
+    attributes:
+      label: 直前に確定した文(あれば)
+      description: AI は前の文を見て選ぶので、分かると直しやすくなります
+  - type: input
+    id: version
+    attributes:
+      label: Kotori の版と品質
+      placeholder: v0.3.0-beta.8、Standard、RTX 3060
+    validations:
+      required: true

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 使い方と困ったとき
+    url: https://github.com/aruiki/KotoriIME-japanese-/blob/main/docs/USER_GUIDE.md
+    about: 入れ方、設定、データの置き場、よくある症状の対処
+  - name: セキュリティの問題(脆弱性)
+    url: https://github.com/aruiki/KotoriIME-japanese-/blob/main/SECURITY.md
+    about: 公開の Issue には書かず、こちらの方法で知らせてください

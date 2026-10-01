@@ -1,0 +1,16 @@
+name: 要望
+description: こうなってほしい、こういう機能がほしい
+labels: [enhancement]
+body:
+  - type: textarea
+    id: want
+    attributes:
+      label: してほしいこと
+      description: 困っている場面と、どうなるとよいか
+    validations:
+      required: true
+  - type: textarea
+    id: other
+    attributes:
+      label: ほかの IME ではどうか(分かれば)
+      description: 例 ATOK ではこう動く
