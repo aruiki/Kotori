@@ -42,6 +42,441 @@ index eb74e536e..2e53c117e 100644
  # Japanese Usage Dictionary (2025-01-25)
  JA_USAGE_DICT_TAG = "2025-01-25"
  
+diff --git a/src/base/BUILD.bazel b/src/base/BUILD.bazel
+index d8ebba55d..89ef47238 100644
+--- a/src/base/BUILD.bazel
++++ b/src/base/BUILD.bazel
+@@ -48,6 +48,34 @@ load("//build_tools:embed_file.bzl", "mozc_embed_file")
+ 
+ package(default_visibility = ["//:__subpackages__"])
+ 
++# Kotori: 診断情報と異常終了の記録(作業カード 42)。
++mozc_cc_library(
++    name = "kotori_diagnostics",
++    srcs = ["kotori_diagnostics.cc"],
++    hdrs = ["kotori_diagnostics.h"],
++    deps = [
++        ":file_util",
++        ":system_util",
++        ":version",
++        "@com_google_absl//absl/strings",
++        "@com_google_absl//absl/types:span",
++    ],
++)
++
++mozc_cc_test(
++    name = "kotori_diagnostics_test",
++    size = "small",
++    srcs = ["kotori_diagnostics_test.cc"],
++    deps = [
++        ":file_util",
++        ":kotori_diagnostics",
++        "//base/file:temp_dir",
++        "//testing:gunit_main",
++        "@com_google_absl//absl/status:statusor",
++        "@com_google_absl//absl/strings",
++    ],
++)
++
+ mozc_cc_library(
+     name = "init_mozc",
+     srcs = ["init_mozc.cc"],
+diff --git a/src/base/kotori_diagnostics.cc b/src/base/kotori_diagnostics.cc
+new file mode 100644
+index 000000000..69fffd532
+--- /dev/null
++++ b/src/base/kotori_diagnostics.cc
+@@ -0,0 +1,207 @@
++// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
++
++#include "base/kotori_diagnostics.h"
++
++#include <algorithm>
++#include <csignal>
++#include <cstdio>
++#include <filesystem>
++#include <string>
++#include <system_error>
++#include <utility>
++#include <vector>
++
++#include "absl/strings/match.h"
++#include "absl/strings/str_cat.h"
++#include "absl/strings/str_split.h"
++#include "absl/strings/string_view.h"
++#include "absl/types/span.h"
++#include "base/file_util.h"
++#include "base/system_util.h"
++#include "base/version.h"
++
++#ifdef _WIN32
++#include <windows.h>
++#endif  // _WIN32
++
++namespace mozc {
++namespace kotori {
++namespace {
++
++// kotori_ai_status.txt のうち、診断情報に出してよいキー(rewriter/lm_rewriter.cc の WriteStatus)。
++// どれも状態・GPU の名前・モデルのファイル名で、入力した文字は入らない。
++constexpr absl::string_view kStatusKeys[] = {"state", "device", "zenz", "llm",
++                                             "message"};
++// 異常終了の記録のうち、出してよいキー(下の WriteCrashLog が書くもの)。
++constexpr absl::string_view kCrashKeys[] = {"time",   "version", "kind",
++                                            "code",   "module",  "offset",
++                                            "frame"};
++constexpr size_t kMaxValueLength = 200;
++
++// key=value の行のうち、許可したキーの行だけを残す。値は長さを切る。
++std::string FilterLines(absl::string_view text,
++                        absl::Span<const absl::string_view> keys) {
++  std::string out;
++  for (absl::string_view line : absl::StrSplit(text, '\n')) {
++    absl::ConsumeSuffix(&line, "\r");
++    const size_t eq = line.find('=');
++    if (eq == absl::string_view::npos) continue;
++    const absl::string_view key = line.substr(0, eq);
++    if (std::find(keys.begin(), keys.end(), key) == keys.end()) continue;
++    absl::StrAppend(&out, key, "=",
++                    line.substr(eq + 1).substr(0, kMaxValueLength), "\n");
++  }
++  return out;
++}
++
++#ifdef _WIN32
++// 異常終了のときに書くので、起動時に場所を決めておく。
++wchar_t g_crash_dir[MAX_PATH] = {};
++char g_version[64] = {};
++LPTOP_LEVEL_EXCEPTION_FILTER g_previous_filter = nullptr;
++
++// address を「モジュール名 + オフセット」にする。
++void Locate(const void *address, char *module, size_t module_size,
++            unsigned long long *offset) {
++  HMODULE handle = nullptr;
++  module[0] = '\0';
++  *offset = reinterpret_cast<unsigned long long>(address);
++  if (!::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
++                                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
++                            static_cast<LPCWSTR>(address), &handle)) {
++    std::snprintf(module, module_size, "?");
++    return;
++  }
++  wchar_t path[MAX_PATH] = {};
++  ::GetModuleFileNameW(handle, path, MAX_PATH);
++  const wchar_t *base = path;
++  for (const wchar_t *p = path; *p; ++p) {
++    if (*p == L'\\' || *p == L'/') base = p + 1;
++  }
++  ::WideCharToMultiByte(CP_UTF8, 0, base, -1, module,
++                        static_cast<int>(module_size), nullptr, nullptr);
++  *offset -= reinterpret_cast<unsigned long long>(handle);
++}
++
++// 異常終了の記録を書く。メモリの中身は書かない(入力した文字が残っているため)。
++void WriteCrashLog(const char *kind, unsigned long code, const void *address) {
++  if (g_crash_dir[0] == L'\0') return;
++  SYSTEMTIME t;
++  ::GetLocalTime(&t);
++  wchar_t path[MAX_PATH] = {};
++  _snwprintf_s(path, MAX_PATH, _TRUNCATE,
++               L"%s\\crash-%04u%02u%02u-%02u%02u%02u-%lu.txt", g_crash_dir,
++               t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond,
++               ::GetCurrentProcessId());
++  static char buf[8192];
++  int n = std::snprintf(
++      buf, sizeof(buf),
++      "time=%04u-%02u-%02u %02u:%02u:%02u\nversion=%s\nkind=%s\ncode=0x%08lX\n",
++      t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond, g_version,
++      kind, code);
++  char module[MAX_PATH];
++  unsigned long long offset = 0;
++  if (address != nullptr) {
++    Locate(address, module, sizeof(module), &offset);
++    n += std::snprintf(buf + n, sizeof(buf) - n, "module=%s\noffset=0x%llX\n",
++                       module, offset);
++  }
++  // 呼び出しの道筋(この関数から上へ)。x64 では例外の処理は同じスタックで行われるので、
++  // 落ちた場所の呼び出し元までたどれる。
++  void *frames[48];
++  const USHORT count = ::RtlCaptureStackBackTrace(0, 48, frames, nullptr);
++  for (USHORT i = 0; i < count && n < static_cast<int>(sizeof(buf)) - 300;
++       ++i) {
++    Locate(frames[i], module, sizeof(module), &offset);
++    n += std::snprintf(buf + n, sizeof(buf) - n, "frame=%s+0x%llX\n", module,
++                       offset);
++  }
++  HANDLE file = ::CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
++                              FILE_ATTRIBUTE_NORMAL, nullptr);
++  if (file == INVALID_HANDLE_VALUE) return;
++  DWORD written = 0;
++  ::WriteFile(file, buf, static_cast<DWORD>(n), &written, nullptr);
++  ::CloseHandle(file);
++}
++
++LONG WINAPI CrashFilter(EXCEPTION_POINTERS *info) {
++  WriteCrashLog("exception", info->ExceptionRecord->ExceptionCode,
++                info->ExceptionRecord->ExceptionAddress);
++  // Mozc の既定(base/init_mozc.cc)と同じく、その後はプロセスを終える。
++  return g_previous_filter != nullptr ? g_previous_filter(info)
++                                      : EXCEPTION_EXECUTE_HANDLER;
++}
++
++void AbortHandler(int) {
++  WriteCrashLog("abort", 0, nullptr);
++  ::ExitProcess(3);
++}
++#endif  // _WIN32
++
++}  // namespace
++
++std::string CrashLogDir() {
++  return FileUtil::JoinPath(SystemUtil::GetUserProfileDirectory(), "crash");
++}
++
++std::vector<std::string> PruneCrashLogs(const std::string &dir,
++                                        int max_files) {
++  // C++20 の u8string は char8_t なので、UTF-8 の std::string と行き来する。
++  auto to_utf8 = [](const std::filesystem::path &path) {
++    const std::u8string s = path.u8string();
++    return std::string(s.begin(), s.end());
++  };
++  std::vector<std::string> files;
++  std::error_code ec;
++  for (const auto &entry : std::filesystem::directory_iterator(
++           std::filesystem::path(std::u8string(dir.begin(), dir.end())), ec)) {
++    const std::string name = to_utf8(entry.path().filename());
++    if (absl::StartsWith(name, "crash-") && absl::EndsWith(name, ".txt")) {
++      files.push_back(to_utf8(entry.path()));
++    }
++  }
++  std::sort(files.rbegin(), files.rend());
++  while (files.size() > static_cast<size_t>(std::max(max_files, 0))) {
++    FileUtil::UnlinkOrLogError(files.back());
++    files.pop_back();
++  }
++  return files;
++}
++
++void InstallCrashLogger() { InstallCrashLoggerTo(CrashLogDir()); }
++
++void InstallCrashLoggerTo(const std::string &dir) {
++#ifdef _WIN32
++  FileUtil::CreateDirectory(dir).IgnoreError();
++  PruneCrashLogs(dir, kMaxCrashLogs - 1);
++  ::MultiByteToWideChar(CP_UTF8, 0, dir.c_str(), -1, g_crash_dir, MAX_PATH);
++  std::snprintf(g_version, sizeof(g_version), "%s",
++                Version::GetMozcVersion().c_str());
++  g_previous_filter = ::SetUnhandledExceptionFilter(CrashFilter);
++  std::signal(SIGABRT, AbortHandler);
++#endif  // _WIN32
++}
++
++std::string FormatDiagnostics(const DiagnosticsInput &input) {
++  std::string out =
++      "Kotori日本語入力 診断情報\n"
++      "入力した文字・読み・候補・前の文は含みません。Issue に貼るか添付してください。\n\n";
++  absl::StrAppend(&out, "[版と環境]\n", "version=", input.version, "\n",
++                  "os=", input.os_version, "\n", "gpu=", input.gpu_summary,
++                  "\n\n");
++  absl::StrAppend(&out, "[設定]\n", "ai=", input.lm_enabled ? "on" : "off",
++                  "\n", "predict=", input.predict_enabled ? "on" : "off", "\n",
++                  "quality=", input.quality, "\n", "model=", input.model, "\n",
++                  "model_path=", input.custom_model_path ? "指定あり" : "同梱",
++                  "\n\n");
++  absl::StrAppend(&out, "[AI の状態]\n", input.ai_status_text, "\n",
++                  FilterLines(input.ai_status_file, kStatusKeys), "\n");
++  absl::StrAppend(&out, "[異常終了の記録] ", input.crash_logs.size(), " 件\n");
++  for (const auto &[name, text] : input.crash_logs) {
++    absl::StrAppend(&out, "--- ", name, "\n", FilterLines(text, kCrashKeys));
++  }
++  return out;
++}
++
++}  // namespace kotori
++}  // namespace mozc
+diff --git a/src/base/kotori_diagnostics.h b/src/base/kotori_diagnostics.h
+new file mode 100644
+index 000000000..f11d94e16
+--- /dev/null
++++ b/src/base/kotori_diagnostics.h
+@@ -0,0 +1,55 @@
++// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
++
++// Kotori: 診断情報と異常終了の記録(作業カード 42、SPEC 13.3、REQ-15-2)。
++// 入力した文字・読み・候補・前の文は扱わない。異常終了の記録はメモリの中身(入力した文字が
++// 残っている)を書かず、例外の種類と場所(モジュール名 + オフセット)だけを書く。
++// 診断情報は、決まった項目だけを許可した形で組み立てる(許可していない項目は通さない)。
++
++#ifndef MOZC_BASE_KOTORI_DIAGNOSTICS_H_
++#define MOZC_BASE_KOTORI_DIAGNOSTICS_H_
++
++#include <string>
++#include <utility>
++#include <vector>
++
++namespace mozc {
++namespace kotori {
++
++// 残す異常終了の記録の数。
++inline constexpr int kMaxCrashLogs = 5;
++
++// 異常終了の記録を置くフォルダ(ユーザーのプロファイルの crash)。
++std::string CrashLogDir();
++
++// mozc_server が落ちたときに、異常終了の記録を CrashLogDir() に書くようにする(Windows のみ)。
++// 呼んだときに、古い記録を消して最新の kMaxCrashLogs 個だけを残す。
++void InstallCrashLogger();
++// 置き場を指定する版(テスト用)。
++void InstallCrashLoggerTo(const std::string &dir);
++
++// dir の crash-*.txt を新しい順に並べ、max_files 個より古いものを消す。残したもののパスを
++// 新しい順に返す(ファイル名に日時が入っているので、名前の順が日時の順)。
++std::vector<std::string> PruneCrashLogs(const std::string &dir, int max_files);
++
++struct DiagnosticsInput {
++  std::string version;         // Mozc の版(Version::GetMozcVersion)
++  std::string os_version;      // SystemUtil::GetOSVersionString
++  std::string gpu_summary;     // 設定画面の GPU の説明
++  std::string ai_status_text;  // 設定画面の「AI の状態」の文
++  std::string ai_status_file;  // kotori_ai_status.txt の中身(key=value)
++  bool lm_enabled = false;
++  bool predict_enabled = false;
++  std::string quality;         // Low / Standard / High / Unreal
++  std::string model;           // 自動 / zenz のみ / zenz + LLM
++  bool custom_model_path = false;  // パスそのものは出さない(ユーザー名が入る)
++  // 異常終了の記録(ファイル名と中身)。
++  std::vector<std::pair<std::string, std::string>> crash_logs;
++};
++
++// 診断情報の文(UTF-8)。ai_status_file と crash_logs は、許可したキーの行だけを通す。
++std::string FormatDiagnostics(const DiagnosticsInput &input);
++
++}  // namespace kotori
++}  // namespace mozc
++
++#endif  // MOZC_BASE_KOTORI_DIAGNOSTICS_H_
+diff --git a/src/base/kotori_diagnostics_test.cc b/src/base/kotori_diagnostics_test.cc
+new file mode 100644
+index 000000000..3bcfec328
+--- /dev/null
++++ b/src/base/kotori_diagnostics_test.cc
+@@ -0,0 +1,116 @@
++// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
++
++#include "base/kotori_diagnostics.h"
++
++#include <cstdlib>
++#include <string>
++#include <vector>
++
++#include "absl/status/statusor.h"
++#include "absl/strings/str_cat.h"
++#include "base/file/temp_dir.h"
++#include "base/file_util.h"
++#include "testing/gmock.h"
++#include "testing/gunit.h"
++
++namespace mozc {
++namespace kotori {
++namespace {
++
++DiagnosticsInput Sample() {
++  DiagnosticsInput in;
++  in.version = "2.31.6300.0";
++  in.os_version = "Windows 10.0.26200";
++  in.gpu_summary = "GPU: NVIDIA GeForce RTX 3060";
++  in.ai_status_text = "AI の状態: 動いています。";
++  in.ai_status_file = "state=llm\r\ndevice=NVIDIA GeForce RTX 3060\r\n";
++  in.lm_enabled = true;
++  in.predict_enabled = true;
++  in.quality = "Standard";
++  in.model = "自動";
++  return in;
++}
++
++TEST(KotoriDiagnosticsTest, KeepsAllowedStatusKeys) {
++  const std::string out = FormatDiagnostics(Sample());
++  EXPECT_NE(out.find("state=llm\n"), std::string::npos);
++  EXPECT_NE(out.find("device=NVIDIA GeForce RTX 3060\n"), std::string::npos);
++  EXPECT_NE(out.find("quality=Standard"), std::string::npos);
++  EXPECT_NE(out.find("[異常終了の記録] 0 件"), std::string::npos);
++}
++
++// 状態のファイルや記録に、許可していない行(入力した文字など)が入っていても出さない(REQ-15-2)。
++TEST(KotoriDiagnosticsTest, DropsUnknownKeysAndInput) {
++  DiagnosticsInput in = Sample();
++  in.ai_status_file +=
++      "reading=かれはこうえんで\n直前に確定した文章\nleft_context=秘密\n";
++  in.crash_logs.push_back(
++      {"crash-20261001-120000-42.txt",
++       "time=2026-10-01 12:00:00\ncode=0xC0000005\nmodule=mozc_server.exe\n"
++       "offset=0x1234\nframe=mozc_server.exe+0x10\ncandidate=公演\n"});
++  const std::string out = FormatDiagnostics(in);
++  for (const char *secret : {"かれは", "秘密", "公演", "直前に確定した文章",
++                             "reading=", "left_context=", "candidate="}) {
++    EXPECT_EQ(out.find(secret), std::string::npos) << secret;
++  }
++  EXPECT_NE(out.find("code=0xC0000005\n"), std::string::npos);
++  EXPECT_NE(out.find("frame=mozc_server.exe+0x10\n"), std::string::npos);
++  EXPECT_NE(out.find("[異常終了の記録] 1 件"), std::string::npos);
++}
++
++// モデルのパスはユーザー名を含むので、指定の有無だけを出す。
++TEST(KotoriDiagnosticsTest, HidesModelPath) {
++  DiagnosticsInput in = Sample();
++  in.custom_model_path = true;
++  const std::string out = FormatDiagnostics(in);
++  EXPECT_NE(out.find("model_path=指定あり"), std::string::npos);
++}
++
++TEST(KotoriDiagnosticsTest, PruneKeepsNewest) {
++  absl::StatusOr<TempDirectory> made = TempDirectory::Default().CreateTempDirectory();
++  ASSERT_OK(made);
++  const TempDirectory &temp = *made;
++  for (int i = 1; i <= 7; ++i) {
++    ASSERT_OK(FileUtil::SetContents(
++        FileUtil::JoinPath(temp.path(),
++                           absl::StrCat("crash-2026100", i, "-000000-1.txt")),
++        "time=x\n"));
++  }
++  ASSERT_OK(FileUtil::SetContents(FileUtil::JoinPath(temp.path(), "other.txt"),
++                                  "x"));
++  const std::vector<std::string> kept = PruneCrashLogs(temp.path(), 5);
++  ASSERT_EQ(kept.size(), 5);
++  EXPECT_EQ(FileUtil::Basename(kept[0]), "crash-20261007-000000-1.txt");
++  EXPECT_EQ(FileUtil::Basename(kept[4]), "crash-20261003-000000-1.txt");
++  EXPECT_FALSE(FileUtil::FileExists(FileUtil::JoinPath(
++                                        temp.path(), "crash-20261001-000000-1.txt"))
++                   .ok());
++  EXPECT_OK(FileUtil::FileExists(FileUtil::JoinPath(temp.path(), "other.txt")));
++}
++
++#ifdef _WIN32
++// 異常終了(abort)で記録が書かれ、メモリの中身ではなく種類と場所だけが入る。
++TEST(KotoriDiagnosticsDeathTest, WritesCrashLogOnAbort) {
++  // 死ぬ側は別のプロセスでこのテストをやり直すので、置き場は毎回同じ名前にする。
++  const std::string dir =
++      FileUtil::JoinPath(TempDirectory::Default().path(), "kotori_crash_test");
++  PruneCrashLogs(dir, 0);  // 前の実行の記録を消す
++  EXPECT_EXIT(
++      {
++        InstallCrashLoggerTo(dir);
++        std::abort();
++      },
++      ::testing::ExitedWithCode(3), "");
++  const std::vector<std::string> logs = PruneCrashLogs(dir, kMaxCrashLogs);
++  ASSERT_EQ(logs.size(), 1);
++  absl::StatusOr<std::string> text = FileUtil::GetContents(logs[0]);
++  ASSERT_OK(text);
++  EXPECT_NE(text->find("kind=abort\n"), std::string::npos) << *text;
++  EXPECT_NE(text->find("version="), std::string::npos) << *text;
++  EXPECT_NE(text->find("frame="), std::string::npos) << *text;
++}
++#endif  // _WIN32
++
++}  // namespace
++}  // namespace kotori
++}  // namespace mozc
 diff --git a/src/bazel/BUILD.llama_cpp.bazel b/src/bazel/BUILD.llama_cpp.bazel
 new file mode 100644
 index 000000000..cbd6e6dc7
@@ -19136,23 +19571,42 @@ index b1af98c8a..ba118cd62 100644
  #endif  // GOOGLE_JAPANESE_INPUT_BUILD
    return name;
  }
+diff --git a/src/gui/config_dialog/BUILD.bazel b/src/gui/config_dialog/BUILD.bazel
+index 335639ca8..661bb7c5d 100644
+--- a/src/gui/config_dialog/BUILD.bazel
++++ b/src/gui/config_dialog/BUILD.bazel
+@@ -201,6 +201,7 @@ mozc_cc_qt_library(
+         "//base:config_file_stream",
+         "//base:file_stream",
+         "//base:file_util",
++        "//base:kotori_diagnostics",
+         "//base:port",
+         "//base:process",
+         "//base:run_level",
 diff --git a/src/gui/config_dialog/config_dialog.cc b/src/gui/config_dialog/config_dialog.cc
-index abbf55d68..5d824cdf6 100644
+index abbf55d68..aa1592b75 100644
 --- a/src/gui/config_dialog/config_dialog.cc
 +++ b/src/gui/config_dialog/config_dialog.cc
-@@ -30,9 +30,24 @@
+@@ -30,9 +30,31 @@
  // Qt component of configure dialog for Mozc
  #include "gui/config_dialog/config_dialog.h"
  
 +#include <QCheckBox>
 +#include <QComboBox>
++#include <QDateTime>
++#include <QDialog>
++#include <QDialogButtonBox>
++#include <QFile>
 +#include <QFrame>
 +#include <QFileDialog>
 +#include <QHBoxLayout>
 +#include <QLabel>
 +#include <QLineEdit>
  #include <QMessageBox>
++#include <QPlainTextEdit>
 +#include <QPushButton>
++#include <QStandardPaths>
++#include <QSysInfo>
 +#include <QVBoxLayout>
  #include <algorithm>
 +
@@ -19165,16 +19619,18 @@ index abbf55d68..5d824cdf6 100644
  #include <istream>
  #include <map>
  #include <memory>
-@@ -43,6 +58,8 @@
+@@ -43,6 +65,10 @@
  #include "absl/log/log.h"
  #include "absl/strings/string_view.h"
  #include "base/config_file_stream.h"
 +#include "base/file_util.h"
++#include "base/kotori_diagnostics.h"
 +#include "base/system_util.h"
++#include "base/version.h"
  #include "client/client.h"
  #include "config/config_handler.h"
  #include "config/stats_config_util.h"
-@@ -83,6 +100,139 @@ void Connect(const QList<T *> &objects, const char *signal,
+@@ -83,6 +109,139 @@ void Connect(const QList<T *> &objects, const char *signal,
  
  namespace mozc {
  namespace gui {
@@ -19314,7 +19770,7 @@ index abbf55d68..5d824cdf6 100644
  
  using ::mozc::config::StatsConfigUtil;
  
-@@ -152,6 +302,164 @@ ConfigDialog::ConfigDialog()
+@@ -152,6 +311,251 @@ ConfigDialog::ConfigDialog()
    symbolsSettingComboBox->addItem(QString::fromUtf8("「」／"));
    symbolsSettingComboBox->addItem(QString::fromUtf8("[]・"));
  
@@ -19459,6 +19915,93 @@ index abbf55d68..5d824cdf6 100644
 +        if (!path.isEmpty()) kotoriLmModelPathEdit_->setText(path);
 +      });
 +    }
++
++    // 4. 診断情報(作業カード 42、SPEC 13.3)。入力した文字は含めない。送信もしない。
++    {
++      auto *l = card();
++      auto *row = new QHBoxLayout();
++      row->addLayout(heading("診断情報",
++                             "不具合を報告するときに添付する情報(版、Windows、GPU、"
++                             "設定、AI の状態、異常終了の記録)を書き出します。"
++                             "入力した文字は含みません。送信はしません。"));
++      row->addStretch();
++      auto *diag = new QPushButton(QString::fromUtf8("診断情報を書き出す..."), page);
++      row->addWidget(diag, 0, Qt::AlignTop);
++      l->addLayout(row);
++      QObject::connect(diag, &QPushButton::clicked, this, [this]() {
++        kotori::DiagnosticsInput in;
++        in.version = Version::GetMozcVersion();
++        // SystemUtil::GetOSVersionString は互換モードの版(10.0.0.0)を返すので、Qt から取る。
++        in.os_version = (QSysInfo::prettyProductName() + " (" +
++                         QSysInfo::kernelVersion() + ")")
++                            .toUtf8()
++                            .toStdString();
++        in.gpu_summary = KotoriGpuSummary();
++        in.ai_status_text = KotoriAiStatus();
++        in.ai_status_file =
++            FileUtil::GetContents(
++                FileUtil::JoinPath(SystemUtil::GetUserProfileDirectory(),
++                                   "kotori_ai_status.txt"))
++                .value_or("");
++        in.lm_enabled = kotoriLmEnabledCheckBox_->isChecked();
++        in.predict_enabled = kotoriLmPredictCheckBox_->isChecked();
++        static constexpr const char *kQuality[] = {"Low", "Standard", "High",
++                                                   "Unreal"};
++        const int q = kotoriLmQualityComboBox_->currentIndex();
++        in.quality = q >= 0 && q < 4 ? kQuality[q] : "?";
++        in.model = kotoriLmModelComboBox_->currentText().toUtf8().toStdString();
++        in.custom_model_path = !kotoriLmModelPathEdit_->text().isEmpty();
++        for (const std::string &path : kotori::PruneCrashLogs(
++                 kotori::CrashLogDir(), kotori::kMaxCrashLogs)) {
++          in.crash_logs.emplace_back(FileUtil::Basename(path),
++                                     FileUtil::GetContents(path).value_or(""));
++        }
++        const QString text = QString::fromUtf8(kotori::FormatDiagnostics(in));
++
++        // 中身を見せてから保存する。
++        QDialog dialog(this);
++        dialog.setWindowTitle(QString::fromUtf8("診断情報"));
++        auto *v = new QVBoxLayout(&dialog);
++        auto *note = new QLabel(
++            QString::fromUtf8("次の内容を保存します。Issue に添付してください。"),
++            &dialog);
++        note->setWordWrap(true);
++        v->addWidget(note);
++        auto *view = new QPlainTextEdit(text, &dialog);
++        view->setReadOnly(true);
++        v->addWidget(view);
++        auto *buttons = new QDialogButtonBox(
++            QDialogButtonBox::Save | QDialogButtonBox::Close, &dialog);
++        buttons->button(QDialogButtonBox::Save)
++            ->setText(QString::fromUtf8("保存..."));
++        buttons->button(QDialogButtonBox::Close)
++            ->setText(QString::fromUtf8("閉じる"));
++        v->addWidget(buttons);
++        QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog,
++                         &QDialog::reject);
++        QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, [&]() {
++          const QString name =
++              QStandardPaths::writableLocation(QStandardPaths::DesktopLocation) +
++              QString::fromUtf8("/Kotori-診断情報-") +
++              QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss") +
++              ".txt";
++          const QString path = QFileDialog::getSaveFileName(
++              &dialog, QString::fromUtf8("診断情報を保存"), name,
++              QString::fromUtf8("テキスト (*.txt)"));
++          if (path.isEmpty()) return;
++          QFile file(path);
++          if (!file.open(QIODevice::WriteOnly) ||
++              file.write(text.toUtf8()) < 0) {
++            QMessageBox::warning(&dialog, QString::fromUtf8("診断情報"),
++                                 QString::fromUtf8("保存できませんでした。"));
++            return;
++          }
++          dialog.accept();
++        });
++        dialog.resize(640, 480);
++        dialog.exec();
++      });
++    }
 +    outer->addStretch();
 +    configDialogTabWidget->insertTab(0, page, QString::fromUtf8("AI 変換"));
 +    configDialogTabWidget->setCurrentIndex(0);
@@ -19479,7 +20022,7 @@ index abbf55d68..5d824cdf6 100644
    keymapSettingComboBox->addItem(tr("Custom keymap"));
    keymapSettingComboBox->addItem(tr("ATOK"));
    keymapSettingComboBox->addItem(tr("MS-IME"));
-@@ -524,6 +832,20 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
+@@ -524,6 +928,20 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
    custom_keymap_table_ = config.custom_keymap_table();
    custom_roman_table_ = config.custom_roman_table();
  
@@ -19500,7 +20043,7 @@ index abbf55d68..5d824cdf6 100644
    // tab2
    SET_COMBOBOX(historyLearningLevelComboBox, HistoryLearningLevel,
                 history_learning_level);
-@@ -612,6 +934,16 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
+@@ -612,6 +1030,16 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
      config->set_custom_roman_table(custom_roman_table_);
    }
  
@@ -23529,6 +24072,40 @@ index 000000000..d23013bc6
 +}  // namespace mozc
 +
 +#endif  // MOZC_REWRITER_ZENZ_SCORER_H_
+diff --git a/src/server/BUILD.bazel b/src/server/BUILD.bazel
+index 8d6a411ec..22f2a433c 100644
+--- a/src/server/BUILD.bazel
++++ b/src/server/BUILD.bazel
+@@ -98,6 +98,7 @@ mozc_cc_library(
+     copts = ["$(STACK_FRAME_UNLIMITED)"],  # mozc_server.cc
+     deps = [
+         "//base:init_mozc",
++        "//base:kotori_diagnostics",
+         "//base:process_mutex",
+         "//base:run_level",
+         "//base:system_util",
+diff --git a/src/server/mozc_server.cc b/src/server/mozc_server.cc
+index eda5d517e..2c99a39c7 100644
+--- a/src/server/mozc_server.cc
++++ b/src/server/mozc_server.cc
+@@ -38,6 +38,7 @@
+ #include "absl/log/check.h"
+ #include "absl/log/log.h"
+ #include "base/init_mozc.h"
++#include "base/kotori_diagnostics.h"
+ #include "base/process_mutex.h"
+ #include "base/run_level.h"
+ #include "base/system_util.h"
+@@ -84,6 +85,9 @@ void InitMozcAndMozcServer(const char *arg0, int *argc, char ***argv,
+   }
+ 
+   mozc::InitMozc(arg0, argc, argv);
++  // Kotori: 落ちたときに、例外の種類と場所だけを記録する(作業カード 42、SPEC 13.3)。
++  // InitMozc が入れる「すぐに終える」処理の前に挟む。
++  mozc::kotori::InstallCrashLogger();
+ 
+   if (run_level == mozc::RunLevel::RESTRICTED) {
+     MOZC_VLOG(1) << "Mozc server starts with timeout mode";
 diff --git a/src/win32/base/display_name_resource.h b/src/win32/base/display_name_resource.h
 index 34ddf93fd..ef789ba71 100644
 --- a/src/win32/base/display_name_resource.h

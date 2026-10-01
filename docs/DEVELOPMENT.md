@@ -36,7 +36,7 @@ Git Bash では Bazel のターゲットの前に `MSYS_NO_PATHCONV=1` を付け
 | 変換器だけ(評価用、数分) | `MSYS_NO_PATHCONV=1 bazelisk build //converter:converter_main --config release_build` |
 | 設定画面だけ | `MSYS_NO_PATHCONV=1 bazelisk build //gui/tool:mozc_tool --config release_build` |
 | MSI(20 分ほど) | `MSYS_NO_PATHCONV=1 bazelisk build package --config release_build`(`bazel-bin/win32/installer/Mozc64.msi`) |
-| 単体テスト | `MSYS_NO_PATHCONV=1 bazelisk test //rewriter:lm_rewriter_test --config release_build` |
+| 単体テスト | `MSYS_NO_PATHCONV=1 bazelisk test //rewriter:lm_rewriter_test //base:kotori_diagnostics_test --config release_build` |
 
 評価と計測はリポジトリで(`eval/fetch.sh` で AJIMEE-Bench を取得しておく)。変換器とモデルの場所は
 `KOTORI_CONVERTER_MAIN`・`KOTORI_INSTALL_DIR`、または環境変数(`mozc/README.md` の一覧)で変える。
