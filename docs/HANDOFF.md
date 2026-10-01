@@ -75,7 +75,7 @@ GPU のない PC の Low は、打ってすぐ Space だと長い文で AI が�
 
 ATOK の実機はないので、ATOK が強いとされる所のセット(`eval/sets/kotori-typo`・`homophone`・`names`)を作り、
 Google 日本語入力・Microsoft IME と実際の IME で比べた(`eval/imebench/`)。同音語と人名・新語は Kotori が上回っている。
-打ち間違いの補正はどの IME も弱く、Kotori で始めた(docs/adr/0036、2 → 13 / 40)。次は、書き換えの候補の絞り込みを良くする、
+打ち間違いの補正はどの IME も弱く、Kotori で始めた(docs/adr/0036、2 → 14 / 40)。次は、書き換えの候補の絞り込みを良くする、
 2 か所以上の打ち間違い、校正(ら抜き・二重敬語)の指摘。
 
 ## 4. すぐにやること

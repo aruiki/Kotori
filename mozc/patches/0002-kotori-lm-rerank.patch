@@ -20006,10 +20006,10 @@ index 000000000..cf2c801ea
 +#endif  // MOZC_REWRITER_LLAMA_RUNTIME_H_
 diff --git a/src/rewriter/lm_rewriter.cc b/src/rewriter/lm_rewriter.cc
 new file mode 100644
-index 000000000..e20080a48
+index 000000000..d61abbca0
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.cc
-@@ -0,0 +1,2176 @@
+@@ -0,0 +1,2189 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/lm_rewriter.h"
@@ -20723,6 +20723,7 @@ index 000000000..e20080a48
 +  if (const char* v = Env("KOTORI_LM_TYPO_K")) typo_k_ = std::max(1, std::atoi(v));
 +  if (const char* v = Env("KOTORI_LM_TYPO_GAIN")) typo_gain_ = std::atoi(v);
 +  if (const char* v = Env("KOTORI_LM_TYPO_GATE")) typo_gate_ = std::atof(v);
++  if (const char* v = Env("KOTORI_LM_TYPO_STRONG")) typo_strong_gain_ = std::atoi(v);
 +  if (const char* v = Env("KOTORI_ZENZ_LONG_MODEL")) env_long_path_ = v;
 +  if (const char* v = Env("KOTORI_LM_IDLE_UNLOAD")) {
 +    idle_unload_ms_ = std::max(0, std::atoi(v)) * 1000;
@@ -22102,13 +22103,25 @@ index 000000000..e20080a48
 +  // 選んだ文が十分に自然なら(読み 1 文字あたりの点が typo_gate_ 以上)、試さない。打ち間違いのある
 +  // 読みの文は不自然になりやすい。ふつうの文で毎回試すと、Space が遅くなるため。
 +  const double per_char = chosen_score / std::max<size_t>(1, Util::CharsLen(reading));
-+  if (per_char >= typo_gate_) return false;
 +  absl::flat_hash_map<std::string, std::vector<std::pair<size_t, int>>> cache;
 +  const int base = ReadingCost(*dictionary_, reading, &cache);
 +  std::vector<std::pair<int, std::string>> ranked;
++  int best_cost = base;
 +  for (std::string& v : TypoVariants(Chars(reading))) {
 +    const int c = ReadingCost(*dictionary_, v, &cache);
++    best_cost = std::min(best_cost, c);
 +    if (c <= base - typo_gain_) ranked.emplace_back(c, std::move(v));
++  }
++  // 選んだ文が十分に自然なら試さない。ただし、読みを書き換えると辞書のコストが大きく下がる
++  // (typo_strong_gain_ 以上)ときは試す(zenz が打ち間違いの読みをそのまま写した文を高く見ることがある)。
++  if (per_char >= typo_gate_ && base - best_cost < typo_strong_gain_) {
++    if (Env("KOTORI_LM_DEBUG") != nullptr || Env("KOTORI_LM_TIME") != nullptr) {
++      std::fprintf(stderr, "[typo] %s gate per_char=%.2f gain=%d %.0fms\n", reading.c_str(),
++                   per_char, base - best_cost,
++                   std::chrono::duration<double, std::milli>(
++                       std::chrono::steady_clock::now() - t0).count());
++    }
++    return false;
 +  }
 +  if (ranked.empty() || over()) {
 +    if (Env("KOTORI_LM_DEBUG") != nullptr || Env("KOTORI_LM_TIME") != nullptr) {
@@ -22188,10 +22201,10 @@ index 000000000..e20080a48
 +}  // namespace mozc
 diff --git a/src/rewriter/lm_rewriter.h b/src/rewriter/lm_rewriter.h
 new file mode 100644
-index 000000000..2174daade
+index 000000000..dab7c68ff
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.h
-@@ -0,0 +1,337 @@
+@@ -0,0 +1,339 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
 +// Kotori: AI による変換(docs/adr/0013、0015、0016)。
@@ -22426,6 +22439,8 @@ index 000000000..2174daade
 +  float typo_margin_ = 5.0f;
 +  // 選んだ文の点の読み 1 文字あたりがこれ以上なら試さない(KOTORI_LM_TYPO_GATE)。
 +  double typo_gate_ = -1.8;
++  // 読みを書き換えた辞書のコストがこれ以上下がるなら、選んだ文が自然でも試す(KOTORI_LM_TYPO_STRONG)。
++  int typo_strong_gain_ = 4000;
 +  int typo_k_ = 10;
 +  int typo_gain_ = 2000;
 +  mutable std::string llm_path_ ABSL_GUARDED_BY(mutex_);
