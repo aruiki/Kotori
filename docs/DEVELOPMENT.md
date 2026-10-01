@@ -36,7 +36,7 @@ Git Bash では Bazel のターゲットの前に `MSYS_NO_PATHCONV=1` を付け
 | 変換器だけ(評価用、数分) | `MSYS_NO_PATHCONV=1 bazelisk build //converter:converter_main --config release_build` |
 | 設定画面だけ | `MSYS_NO_PATHCONV=1 bazelisk build //gui/tool:mozc_tool --config release_build` |
 | MSI(20 分ほど) | `MSYS_NO_PATHCONV=1 bazelisk build package --config release_build`(`bazel-bin/win32/installer/Mozc64.msi`) |
-| 単体テスト | `MSYS_NO_PATHCONV=1 bazelisk test //rewriter:lm_rewriter_test --config release_build` |
+| 単体テスト | `MSYS_NO_PATHCONV=1 bazelisk test //rewriter:lm_rewriter_test //base:kotori_diagnostics_test --config release_build` |
 
 評価と計測はリポジトリで(`eval/fetch.sh` で AJIMEE-Bench を取得しておく)。変換器とモデルの場所は
 `KOTORI_CONVERTER_MAIN`・`KOTORI_INSTALL_DIR`、または環境変数(`mozc/README.md` の一覧)で変える。
@@ -64,11 +64,20 @@ bash mozc/tools/make_patches.sh ~/mz <google/mozc の clone(~/mz でよい)>
 ### 1.5 リリース
 
 1. main にマージする(CI の「Mozc (Windows)」が MSI のビルドと単体テストを回す)。
-2. Actions の「Mozc (Windows)」を main で手動実行する(`gh workflow run "Mozc (Windows)" --ref main`)。
-   版(`mozc/VERSION` の beta の番号)と MSI の版(`version.bzl` の BUILD)は自動で上がり、`mozc/release-notes.md`
-   を本文にして Latest として公開する。約 45 分。
-3. **`python mozc/tools/check_release.py` を回す**(公開された MSI のハッシュ、前の版より版が上がっているか、同梱物、
-   実行ファイルの版)。NG があればリリースノートに注意を書き、直した版を出す。設定画面は `capture_window.py` で見る。
+2. Actions の「Mozc (Windows)」を main で手動実行する(`gh workflow run "Mozc (Windows)" --ref main -f channel=beta`)。
+   段階(docs/adr/0037)は `channel` で選ぶ。
+
+   | channel | 版 | 公開 |
+   | --- | --- | --- |
+   | `beta`(既定) | `v<VERSION>-beta.N` | Latest |
+   | `rc` | `v<VERSION>-rc.N` | プレリリース(Latest にしない) |
+   | `stable` | `v<VERSION>` | Latest。リリースノートに「ベータ版」が残っていたら失敗する |
+
+   版は `mozc/tools/release_tag.py` が `mozc/VERSION` と既にあるタグから決める(ビルドの前に決めるので、失敗は早い)。
+   `v<VERSION>` の正式版を出した後は、`mozc/VERSION` を上げるまでどの段階も出せない。MSI の版(`version.bzl` の BUILD)は
+   段階に関係なく実行番号で上がる。`mozc/release-notes.md` を本文にする。約 45 分。
+3. **`python mozc/tools/check_release.py [タグ]` を回す**(公開された MSI のハッシュ、大きさ(1.8 GiB 以下)、
+   前の版より版が上がっているか、同梱物、実行ファイルの版。rc はプレリリースなので、タグを指定する)。NG があればリリースノートに注意を書き、直した版を出す。設定画面は `capture_window.py` で見る。
    実機の確認項目は `docs/ACCEPTANCE.md`。
 
 ### 1.6 手元の置き場(リポジトリの外)

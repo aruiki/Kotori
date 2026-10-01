@@ -45,6 +45,18 @@ jobs:
           tool: cargo-about
       - run: cargo about generate --workspace --locked about.hbs -o /dev/null
 
+  mozc-tools:
+    # Mozc 版のリリースの道具の単体テスト(作業カード 40)。MSI のビルドは mozc-windows.yml。
+    name: mozc tools (python)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s mozc/tools -p "test_*.py" -v
+
   msrv:
     name: MSRV (1.80)
     runs-on: ubuntu-latest
