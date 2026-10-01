@@ -61,6 +61,7 @@ Windows で手元でビルドする: 作業ツリーの `src` で
 | `typing_test.py` | 打鍵の再現。1 文字ずつ入力中の候補を出し、AI の予測と応答時間を見る |
 | `cost_bench.py` | 入力中の AI の計算量。日常の文を打って変換し、AI の稼働率(計算の時間 / かかった時間)を出す(docs/adr/0024) |
 | `space_latency.py` | 打ってから Space を押したときの応答時間。`KOTORI_LM_DEVICE=cpu` で GPU のない PC を再現する |
+| `idle_test.py` | 入力がないときにモデルを外して VRAM を空け、入力し直すと読み込み直すか(docs/adr/0034) |
 | `perf_table.py` | 品質 × 機器(GPU / CPU)ごとの最初の変換・変換の時間・メモリ・VRAM の表(`docs/PERFORMANCE.md`) |
 | `check_release.py` | 公開した MSI を確かめる(ハッシュ、前の版より版が上がっているか、同梱物、実行ファイルの版)。リリースの後に必ず回す |
 | `../eval_predict.py --warm 秒` | Tab の予測の当たりと応答時間(実際の入力のように候補を出してから Tab) |
@@ -99,6 +100,7 @@ Windows で手元でビルドする: 作業ツリーの `src` で
 | `KOTORI_LM_PREDICT=0`、`KOTORI_LM_PREDICT_MODE`、`KOTORI_LM_PREDICT_TOKENS`、`KOTORI_LM_PREDICT_BEAMS` | 予測を切る、予測の作り方、続きのトークン数、続きの数 |
 | `KOTORI_LM_LIGHT_BEAMS`、`KOTORI_LM_LIGHT_RANK`、`KOTORI_LM_LIGHT_DELAY`、`KOTORI_LM_FULL_DELAY` | 打鍵ごとの軽い予測の中身と、始めるまでの待ち(既定 作り直しは 600 ms、docs/adr/0024) |
 | `KOTORI_LM_PRECONVERT=0` | 先回りの変換を切る(docs/adr/0024) |
+| `KOTORI_LM_IDLE_UNLOAD` | 入力がなくなってからモデルを外すまでの秒数(既定 600、0 で外さない、docs/adr/0034) |
 | `KOTORI_LM_THREADS` | 推論のスレッド数(既定 4) |
 | `KOTORI_LM_PRECEDING`、`KOTORI_LM_CONTEXT_MAP` | 前の文を差し替える(評価) |
 | `KOTORI_LM_TIME`、`KOTORI_LM_STATS`、`KOTORI_LM_TRACE`、`KOTORI_LM_DEBUG` | 時間の内訳、計算量の累計、1 回ごとの計算、候補と点数を stderr に出す |

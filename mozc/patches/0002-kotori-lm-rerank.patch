@@ -19137,7 +19137,7 @@ index b1af98c8a..ba118cd62 100644
    return name;
  }
 diff --git a/src/gui/config_dialog/config_dialog.cc b/src/gui/config_dialog/config_dialog.cc
-index abbf55d68..3167b5923 100644
+index abbf55d68..5d824cdf6 100644
 --- a/src/gui/config_dialog/config_dialog.cc
 +++ b/src/gui/config_dialog/config_dialog.cc
 @@ -30,9 +30,24 @@
@@ -19174,7 +19174,7 @@ index abbf55d68..3167b5923 100644
  #include "client/client.h"
  #include "config/config_handler.h"
  #include "config/stats_config_util.h"
-@@ -83,6 +100,136 @@ void Connect(const QList<T *> &objects, const char *signal,
+@@ -83,6 +100,139 @@ void Connect(const QList<T *> &objects, const char *signal,
  
  namespace mozc {
  namespace gui {
@@ -19298,6 +19298,9 @@ index abbf55d68..3167b5923 100644
 +    return "AI の状態: 動いています(変換用の AI " + kv["zenz"] + "、" + where + ")。";
 +  } else if (state == "loading") {
 +    return "AI の状態: モデルを読み込んでいます。";
++  } else if (state == "sleep") {
++    return "AI の状態: 休んでいます(しばらく入力がないので、GPU のメモリを空けています。"
++           "次に入力すると読み込みます)。";
 +  } else if (state == "error") {
 +    return "AI の状態: 動いていません(" + kv["message"] +
 +           " を読み込めません)。入れ直すと直ることがあります。";
@@ -19311,7 +19314,7 @@ index abbf55d68..3167b5923 100644
  
  using ::mozc::config::StatsConfigUtil;
  
-@@ -152,6 +299,164 @@ ConfigDialog::ConfigDialog()
+@@ -152,6 +302,164 @@ ConfigDialog::ConfigDialog()
    symbolsSettingComboBox->addItem(QString::fromUtf8("「」／"));
    symbolsSettingComboBox->addItem(QString::fromUtf8("[]・"));
  
@@ -19476,7 +19479,7 @@ index abbf55d68..3167b5923 100644
    keymapSettingComboBox->addItem(tr("Custom keymap"));
    keymapSettingComboBox->addItem(tr("ATOK"));
    keymapSettingComboBox->addItem(tr("MS-IME"));
-@@ -524,6 +829,20 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
+@@ -524,6 +832,20 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
    custom_keymap_table_ = config.custom_keymap_table();
    custom_roman_table_ = config.custom_roman_table();
  
@@ -19497,7 +19500,7 @@ index abbf55d68..3167b5923 100644
    // tab2
    SET_COMBOBOX(historyLearningLevelComboBox, HistoryLearningLevel,
                 history_learning_level);
-@@ -612,6 +931,16 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
+@@ -612,6 +934,16 @@ void ConfigDialog::ConvertToProto(config::Config *config) const {
      config->set_custom_roman_table(custom_roman_table_);
    }
  
@@ -20003,10 +20006,10 @@ index 000000000..cf2c801ea
 +#endif  // MOZC_REWRITER_LLAMA_RUNTIME_H_
 diff --git a/src/rewriter/lm_rewriter.cc b/src/rewriter/lm_rewriter.cc
 new file mode 100644
-index 000000000..53427a094
+index 000000000..4396b64f4
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.cc
-@@ -0,0 +1,1822 @@
+@@ -0,0 +1,1886 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/lm_rewriter.h"
@@ -20129,6 +20132,13 @@ index 000000000..53427a094
 +  }
 +  ~CancelScope() { ZenzScorer::SetThreadCancel(nullptr); }
 +};
++
++// 今の時刻(steady_clock、マイクロ秒)。
++int64_t SteadyNowUs() {
++  return std::chrono::duration_cast<std::chrono::microseconds>(
++             std::chrono::steady_clock::now().time_since_epoch())
++      .count();
++}
 +
 +// 変換を待たせないための目印。変換の要求が来ている間、裏の予測は途中でやめる。
 +class Urgent {
@@ -20560,6 +20570,10 @@ index 000000000..53427a094
 +  if (const char* v = Env("KOTORI_LM_LIGHT_RANK")) light_rank_ = *v != '0';
 +  if (const char* v = Env("KOTORI_LM_LIGHT_DELAY")) light_delay_ms_ = std::atoi(v);
 +  if (const char* v = Env("KOTORI_LM_FULL_DELAY")) full_delay_ms_ = std::atoi(v);
++  if (const char* v = Env("KOTORI_LM_IDLE_UNLOAD")) {
++    idle_unload_ms_ = std::max(0, std::atoi(v)) * 1000;
++  }
++  last_activity_us_ = SteadyNowUs();
 +  if (const char* v = Env("KOTORI_LM_NSENT")) {
 +    max_sentences_ = std::max(1, std::atoi(v));
 +  }
@@ -20609,6 +20623,8 @@ index 000000000..53427a094
 +    line("state", "off");
 +  } else if (std::string(state) == "loading") {
 +    line("state", "loading");
++  } else if (std::string(state) == "sleep") {
++    line("state", "sleep");
 +  } else if (!runtime) {
 +    line("state", "error");
 +    line("message", "llama.dll");
@@ -20632,6 +20648,44 @@ index 000000000..53427a094
 +  std::lock_guard<std::mutex> lock(job_mu_);
 +  load_job_ = config;
 +  job_cv_.notify_one();
++}
++
++void LmRewriter::Touch(const config::Config& config) const {
++  last_activity_us_ = SteadyNowUs();
++  if (config.kotori_lm_enabled() && sleeping_.exchange(false)) {
++    RequestLoad(config);
++  }
++}
++
++void LmRewriter::UnloadIfIdle(const config::Config& config) const {
++  if (idle_unload_ms_ <= 0 || sync_load_ || sleeping_.load() || loading_.load()) {
++    return;
++  }
++  if (SteadyNowUs() - last_activity_us_.load() <
++      static_cast<int64_t>(idle_unload_ms_) * 1000) {
++    return;
++  }
++  // 要求の最中なら外さない(次の確かめで外す)。
++  if (!mutex_.TryLock()) return;
++  const bool any = scorer_ != nullptr || llm_ != nullptr || extra_ != nullptr;
++  if (any) {
++    scorer_.reset();
++    llm_.reset();
++    extra_.reset();
++    loaded_ = llm_loaded_ = extra_loaded_ = false;
++    loaded_path_.clear();
++    llm_path_.clear();
++    extra_path_.clear();
++    gen_cache_.reset();
++    sleeping_ = true;
++    WriteStatus(config, "sleep");
++  }
++  mutex_.Unlock();
++  if (!any) return;
++  // 覚えておいた予測(入力した文字を含む)も捨てる。
++  ClearPredictions();
++  std::lock_guard<std::mutex> lock(job_mu_);
++  last_converted_key_.clear();
 +}
 +
 +bool LmRewriter::TryLockForRequest(int wait_ms) const {
@@ -21707,18 +21761,29 @@ index 000000000..53427a094
 +}
 +
 +void LmRewriter::WorkerLoop() {
++  // 最後に受けた設定(入力がないときにモデルを外し、状態を書くのに使う)。
++  std::optional<config::Config> last_config;
 +  while (true) {
 +    Job job;
 +    {
 +      std::unique_lock<std::mutex> lock(job_mu_);
-+      job_cv_.wait(lock, [&] {
++      const auto ready = [&] {
 +        return stop_ || job_.has_value() || load_job_.has_value();
-+      });
++      };
++      // 仕事がなければ 30 秒ごとに、しばらく入力がないかを見てモデルを外す(docs/adr/0034)。
++      while (!job_cv_.wait_for(lock, std::chrono::seconds(30), ready)) {
++        if (!last_config) continue;
++        lock.unlock();
++        UnloadIfIdle(*last_config);
++        lock.lock();
++      }
 +      if (stop_) return;
 +      if (load_job_) {
 +        // モデルの読み込み。読み込み中の変換は待たずに AI なしで出す(TryLockForRequest)。
 +        const config::Config config = std::move(*load_job_);
 +        load_job_.reset();
++        last_config = config;
++        sleeping_ = false;
 +        lock.unlock();
 +        loading_ = true;
 +        {
@@ -21741,6 +21806,7 @@ index 000000000..53427a094
 +      job_.reset();
 +      new_job_ = false;
 +    }
++    last_config = job.config;
 +    if (job.convert) {
 +      RunPreconvert(job);
 +      continue;
@@ -21784,6 +21850,7 @@ index 000000000..53427a094
 +
 +bool LmRewriter::Rewrite(const ConversionRequest& request,
 +                         Segments* segments) const {
++  Touch(request.config());
 +  if (request.request_type() == ConversionRequest::SUGGESTION) {
 +    return RewriteSuggestion(request, segments);
 +  }
@@ -21831,10 +21898,10 @@ index 000000000..53427a094
 +}  // namespace mozc
 diff --git a/src/rewriter/lm_rewriter.h b/src/rewriter/lm_rewriter.h
 new file mode 100644
-index 000000000..d50432560
+index 000000000..7c0902590
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.h
-@@ -0,0 +1,296 @@
+@@ -0,0 +1,307 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
 +// Kotori: AI による変換(docs/adr/0013、0015、0016)。
@@ -21944,6 +22011,10 @@ index 000000000..d50432560
 +      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 +  // 裏のスレッドにモデルの読み込みを頼む。
 +  void RequestLoad(const config::Config& config) const;
++  // 要求が来たことを記録し、モデルを外していれば裏で読み込み直させる。
++  void Touch(const config::Config& config) const;
++  // しばらく入力がなければモデルを外す(裏のスレッドから呼ぶ)。
++  void UnloadIfIdle(const config::Config& config) const;
 +  // 要求の中で mutex_ を取る。モデルの読み込み中や、しばらく取れないときは false(AI なしにする)。
 +  bool TryLockForRequest(int wait_ms) const
 +      ABSL_EXCLUSIVE_TRYLOCK_FUNCTION(true, mutex_);
@@ -22081,6 +22152,13 @@ index 000000000..d50432560
 +  int min_continuation_chars_ = 2;
 +  // Tab で AI が先頭に並べる候補の数(KOTORI_LM_TAB_SHOW。0 なら生成する続きの数 + 1。docs/adr/0030)。
 +  int tab_show_ = 2;
++  // Kotori: しばらく入力がなければモデルを外し、VRAM とメモリを空ける(ms。KOTORI_LM_IDLE_UNLOAD は秒、
++  // 0 なら外さない)。次の入力で裏で読み込み直す(docs/adr/0034)。
++  int idle_unload_ms_ = 10 * 60 * 1000;
++  // 最後に要求(打鍵・変換・Tab)が来た時刻(steady_clock、マイクロ秒)。
++  mutable std::atomic<int64_t> last_activity_us_{0};
++  // 入力がないのでモデルを外している間 true。
++  mutable std::atomic<bool> sleeping_{false};
 +  // 先回りの変換の結果。
 +  mutable std::optional<Generated> gen_cache_ ABSL_GUARDED_BY(mutex_);
 +  // 裏で計算中の先回りの変換と、変換の要求が来ている読み(読み + TAB + 前の文)。job_mu_ で守る。
