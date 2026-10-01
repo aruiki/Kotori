@@ -226,7 +226,7 @@ def accuracy():
     text(c, "日常の文(メールやチャット 81 問)", 36, daily_top + 8, SANS_B, 16, TEXT)
     bars(c, [("Kotori日本語入力  Standard", 97.5, "", True),
              ("Mozc", 80.2, "", False)], daily_top + 16, 54, w)
-    text(c, "測定: 2026-10-01、RTX 3060。azooKey は zenz-v3.2-small、推論 5 回。Google 日本語入力と Microsoft IME は未測定。",
+    text(c, "測定: 2026-10-01、RTX 3060。azooKey は zenz-v3.2-small、推論 5 回。ほかの IME との比較は下の「ほかの IME と比べる」。",
          36, h - 24, SANS_R, 12, SUB)
     save(surf, "accuracy.png")
 
@@ -341,10 +341,54 @@ def settings():
     save(surf, "settings.png")
 
 
+def compare():
+    """実際の IME で同じ条件で比べた結果(eval/imebench、前の文なし、2026-10-01)。"""
+    sets = [
+        ("AJIMEE-Bench", "198 問、難しい同音異義語・文脈", [88.4, 59.6, 58.1]),
+        ("日常の文", "メール・チャット 81 問", [97.5, 86.4, 81.5]),
+        ("同音語の使い分け", "保証/保障/補償 など 40 問", [97.5, 82.5, 65.0]),
+        ("人名・地名・新語", "40 問", [97.5, 82.5, 95.0]),
+    ]
+    names = ["Kotori日本語入力", "Microsoft IME", "Google 日本語入力"]
+    w = 880
+    group_h, top = 112, 140
+    h = top + group_h * len(sets) + 56
+    surf, c = surface(w, h)
+    card(c, w, h)
+    title(c, "ほかの IME と比べる", "実際に IME で入力して測りました(読みをキーで打ち、Space で変換、Enter で確定。前の文はなし)。")
+    # 凡例
+    x = 36
+    for i, n in enumerate(names):
+        col = INK_TOP if i == 0 else (BAR_GRAY if i == 1 else skia.Color(0xD6, 0xD9, 0xE2))
+        rrect(c, x, 108, 14, 14, 3, col)
+        x += 22 + text(c, n, x + 22, 120, SANS_M if i == 0 else SANS_R, 13, TEXT if i == 0 else SUB) + 18
+    bar_x, bar_max = 300, w - 300 - 90
+    for g, (head, sub, vals) in enumerate(sets):
+        y = top + g * group_h
+        if g:
+            c.drawLine(36, y - 10, w - 36, y - 10, skia.Paint(Color=LINE, StrokeWidth=1))
+        text(c, head, 36, y + 26, SANS_B, 16, TEXT)
+        text(c, sub, 36, y + 46, SANS_R, 12, SUB)
+        for i, v in enumerate(vals):
+            by = y + 6 + i * 30
+            bw = bar_max * v / 100
+            paint = skia.Paint(AntiAlias=True)
+            if i == 0:
+                paint.setShader(skia.GradientShader.MakeLinear([(bar_x, 0), (bar_x + bw, 0)], [INK_MID, INK_TOP]))
+            else:
+                paint.setColor(BAR_GRAY if i == 1 else skia.Color(0xD6, 0xD9, 0xE2))
+            c.drawRoundRect(skia.Rect.MakeXYWH(bar_x, by, bw, 22), 5, 5, paint)
+            text(c, f"{v:.1f}%", bar_x + bw + 10, by + 17, SANS_B if i == 0 else SANS_M, 14, SHU if i == 0 else SUB)
+    text(c, "2026-10-01、RTX 3060。Kotori は品質 Unreal。Google 日本語入力 3.34.6260、Microsoft IME は Windows 11 に付属のもの。"
+         "全角・半角の違いは同じとみなす。", 36, h - 24, SANS_R, 11, SUB)
+    save(surf, "compare.png")
+
+
 hero()
 features()
 examples()
 accuracy()
+compare()
 lightness()
 how()
 settings()

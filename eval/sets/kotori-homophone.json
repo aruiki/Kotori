@@ -1,0 +1,326 @@
+[
+ {
+  "index": "h01",
+  "context_text": "",
+  "input": "しょうひんのひんしつをほしょうします",
+  "expected_output": [
+   "商品の品質を保証します"
+  ]
+ },
+ {
+  "index": "h02",
+  "context_text": "",
+  "input": "こくみんのせいかつをほしょうする",
+  "expected_output": [
+   "国民の生活を保障する"
+  ]
+ },
+ {
+  "index": "h03",
+  "context_text": "",
+  "input": "じこのそんがいをほしょうする",
+  "expected_output": [
+   "事故の損害を補償する"
+  ]
+ },
+ {
+  "index": "h04",
+  "context_text": "",
+  "input": "せきにんをついきゅうする",
+  "expected_output": [
+   "責任を追及する"
+  ]
+ },
+ {
+  "index": "h05",
+  "context_text": "",
+  "input": "りえきをついきゅうする",
+  "expected_output": [
+   "利益を追求する"
+  ]
+ },
+ {
+  "index": "h06",
+  "context_text": "",
+  "input": "がくもんのしんりをついきゅうする",
+  "expected_output": [
+   "学問の真理を追究する"
+  ]
+ },
+ {
+  "index": "h07",
+  "context_text": "",
+  "input": "たいじゅうをはかる",
+  "expected_output": [
+   "体重を量る",
+   "体重を計る"
+  ]
+ },
+ {
+  "index": "h08",
+  "context_text": "",
+  "input": "じかんをはかる",
+  "expected_output": [
+   "時間を計る"
+  ]
+ },
+ {
+  "index": "h09",
+  "context_text": "",
+  "input": "きょりをはかる",
+  "expected_output": [
+   "距離を測る"
+  ]
+ },
+ {
+  "index": "h10",
+  "context_text": "",
+  "input": "こっきょうをこえる",
+  "expected_output": [
+   "国境を越える"
+  ]
+ },
+ {
+  "index": "h11",
+  "context_text": "",
+  "input": "ていいんをこえる",
+  "expected_output": [
+   "定員を超える"
+  ]
+ },
+ {
+  "index": "h12",
+  "context_text": "",
+  "input": "きかいにいじょうがみつかった",
+  "expected_output": [
+   "機械に異常が見つかった"
+  ]
+ },
+ {
+  "index": "h13",
+  "context_text": "",
+  "input": "いがいなけっか",
+  "expected_output": [
+   "意外な結果"
+  ]
+ },
+ {
+  "index": "h14",
+  "context_text": "",
+  "input": "かんけいしゃいがいたちいりきんし",
+  "expected_output": [
+   "関係者以外立ち入り禁止",
+   "関係者以外立入禁止"
+  ]
+ },
+ {
+  "index": "h15",
+  "context_text": "",
+  "input": "どうぶつのせいたいをちょうさする",
+  "expected_output": [
+   "動物の生態を調査する"
+  ]
+ },
+ {
+  "index": "h16",
+  "context_text": "",
+  "input": "せいたいもしゃがとくいだ",
+  "expected_output": [
+   "声帯模写が得意だ"
+  ]
+ },
+ {
+  "index": "h17",
+  "context_text": "",
+  "input": "ぶんしょうのこうせいをかんがえる",
+  "expected_output": [
+   "文章の構成を考える"
+  ]
+ },
+ {
+  "index": "h18",
+  "context_text": "",
+  "input": "こうせいなさいばん",
+  "expected_output": [
+   "公正な裁判"
+  ]
+ },
+ {
+  "index": "h19",
+  "context_text": "",
+  "input": "げんこうのこうせいをする",
+  "expected_output": [
+   "原稿の校正をする"
+  ]
+ },
+ {
+  "index": "h20",
+  "context_text": "",
+  "input": "いしがつよい",
+  "expected_output": [
+   "意志が強い"
+  ]
+ },
+ {
+  "index": "h21",
+  "context_text": "",
+  "input": "いしのしんさつをうける",
+  "expected_output": [
+   "医師の診察を受ける"
+  ]
+ },
+ {
+  "index": "h22",
+  "context_text": "",
+  "input": "じぶんのうでにじしんがある",
+  "expected_output": [
+   "自分の腕に自信がある"
+  ]
+ },
+ {
+  "index": "h23",
+  "context_text": "",
+  "input": "おおきなじしんがおきた",
+  "expected_output": [
+   "大きな地震が起きた"
+  ]
+ },
+ {
+  "index": "h24",
+  "context_text": "",
+  "input": "しょうがいのともだち",
+  "expected_output": [
+   "生涯の友達",
+   "生涯の友だち"
+  ]
+ },
+ {
+  "index": "h25",
+  "context_text": "",
+  "input": "しょうがいぶつをとりのぞく",
+  "expected_output": [
+   "障害物を取り除く"
+  ]
+ },
+ {
+  "index": "h26",
+  "context_text": "",
+  "input": "かいとうようしにかきこむ",
+  "expected_output": [
+   "解答用紙に書き込む"
+  ]
+ },
+ {
+  "index": "h27",
+  "context_text": "",
+  "input": "しつもんへのかいとう",
+  "expected_output": [
+   "質問への回答"
+  ]
+ },
+ {
+  "index": "h28",
+  "context_text": "",
+  "input": "たいしょうしゃをしぼる",
+  "expected_output": [
+   "対象者を絞る"
+  ]
+ },
+ {
+  "index": "h29",
+  "context_text": "",
+  "input": "さゆうたいしょうのずけい",
+  "expected_output": [
+   "左右対称の図形"
+  ]
+ },
+ {
+  "index": "h30",
+  "context_text": "",
+  "input": "ふたつのあんをたいしょうする",
+  "expected_output": [
+   "二つの案を対照する",
+   "２つの案を対照する"
+  ]
+ },
+ {
+  "index": "h31",
+  "context_text": "",
+  "input": "きかんしゃがはしる",
+  "expected_output": [
+   "機関車が走る"
+  ]
+ },
+ {
+  "index": "h32",
+  "context_text": "",
+  "input": "ていしゅつのきかんはらいしゅうまで",
+  "expected_output": [
+   "提出の期間は来週まで"
+  ]
+ },
+ {
+  "index": "h33",
+  "context_text": "",
+  "input": "ちきゅうにきかんする",
+  "expected_output": [
+   "地球に帰還する"
+  ]
+ },
+ {
+  "index": "h34",
+  "context_text": "",
+  "input": "しゅうしょくかつどうをはじめる",
+  "expected_output": [
+   "就職活動を始める"
+  ]
+ },
+ {
+  "index": "h35",
+  "context_text": "",
+  "input": "めいしをしゅうしょくする",
+  "expected_output": [
+   "名詞を修飾する"
+  ]
+ },
+ {
+  "index": "h36",
+  "context_text": "",
+  "input": "しんぶんきしゃにはなしをきく",
+  "expected_output": [
+   "新聞記者に話を聞く"
+  ]
+ },
+ {
+  "index": "h37",
+  "context_text": "",
+  "input": "せいひんのしようをかくにんする",
+  "expected_output": [
+   "製品の仕様を確認する"
+  ]
+ },
+ {
+  "index": "h38",
+  "context_text": "",
+  "input": "しようきょかをえる",
+  "expected_output": [
+   "使用許可を得る"
+  ]
+ },
+ {
+  "index": "h39",
+  "context_text": "",
+  "input": "かていのじじょう",
+  "expected_output": [
+   "家庭の事情"
+  ]
+ },
+ {
+  "index": "h40",
+  "context_text": "",
+  "input": "じじょうさようでよごれがおちる",
+  "expected_output": [
+   "自浄作用で汚れが落ちる"
+  ]
+ }
+]

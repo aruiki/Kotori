@@ -1,0 +1,324 @@
+[
+ {
+  "index": "n01",
+  "context_text": "",
+  "input": "おおたにしょうへい",
+  "expected_output": [
+   "大谷翔平"
+  ]
+ },
+ {
+  "index": "n02",
+  "context_text": "",
+  "input": "はにゅうゆづる",
+  "expected_output": [
+   "羽生結弦"
+  ]
+ },
+ {
+  "index": "n03",
+  "context_text": "",
+  "input": "ふじいそうた",
+  "expected_output": [
+   "藤井聡太"
+  ]
+ },
+ {
+  "index": "n04",
+  "context_text": "",
+  "input": "よねづけんし",
+  "expected_output": [
+   "米津玄師"
+  ]
+ },
+ {
+  "index": "n05",
+  "context_text": "",
+  "input": "みやざきはやお",
+  "expected_output": [
+   "宮崎駿"
+  ]
+ },
+ {
+  "index": "n06",
+  "context_text": "",
+  "input": "しんかいまこと",
+  "expected_output": [
+   "新海誠"
+  ]
+ },
+ {
+  "index": "n07",
+  "context_text": "",
+  "input": "むらかみはるき",
+  "expected_output": [
+   "村上春樹"
+  ]
+ },
+ {
+  "index": "n08",
+  "context_text": "",
+  "input": "なつめそうせき",
+  "expected_output": [
+   "夏目漱石"
+  ]
+ },
+ {
+  "index": "n09",
+  "context_text": "",
+  "input": "あくたがわりゅうのすけ",
+  "expected_output": [
+   "芥川龍之介"
+  ]
+ },
+ {
+  "index": "n10",
+  "context_text": "",
+  "input": "とくがわいえやす",
+  "expected_output": [
+   "徳川家康"
+  ]
+ },
+ {
+  "index": "n11",
+  "context_text": "",
+  "input": "さかもとりょうま",
+  "expected_output": [
+   "坂本龍馬",
+   "坂本竜馬"
+  ]
+ },
+ {
+  "index": "n12",
+  "context_text": "",
+  "input": "おだのぶなが",
+  "expected_output": [
+   "織田信長"
+  ]
+ },
+ {
+  "index": "n13",
+  "context_text": "",
+  "input": "ほっかいどうさっぽろし",
+  "expected_output": [
+   "北海道札幌市"
+  ]
+ },
+ {
+  "index": "n14",
+  "context_text": "",
+  "input": "きょうとふうじし",
+  "expected_output": [
+   "京都府宇治市"
+  ]
+ },
+ {
+  "index": "n15",
+  "context_text": "",
+  "input": "かごしまけん",
+  "expected_output": [
+   "鹿児島県"
+  ]
+ },
+ {
+  "index": "n16",
+  "context_text": "",
+  "input": "おきなわけんなはし",
+  "expected_output": [
+   "沖縄県那覇市"
+  ]
+ },
+ {
+  "index": "n17",
+  "context_text": "",
+  "input": "とどろきけいこく",
+  "expected_output": [
+   "等々力渓谷"
+  ]
+ },
+ {
+  "index": "n18",
+  "context_text": "",
+  "input": "おちゃのみず",
+  "expected_output": [
+   "御茶ノ水",
+   "お茶の水"
+  ]
+ },
+ {
+  "index": "n19",
+  "context_text": "",
+  "input": "あきはばら",
+  "expected_output": [
+   "秋葉原"
+  ]
+ },
+ {
+  "index": "n20",
+  "context_text": "",
+  "input": "せいせいえーあい",
+  "expected_output": [
+   "生成AI"
+  ]
+ },
+ {
+  "index": "n21",
+  "context_text": "",
+  "input": "おしかつ",
+  "expected_output": [
+   "推し活"
+  ]
+ },
+ {
+  "index": "n22",
+  "context_text": "",
+  "input": "きめつのやいば",
+  "expected_output": [
+   "鬼滅の刃"
+  ]
+ },
+ {
+  "index": "n23",
+  "context_text": "",
+  "input": "じゅじゅつかいせん",
+  "expected_output": [
+   "呪術廻戦"
+  ]
+ },
+ {
+  "index": "n24",
+  "context_text": "",
+  "input": "そうそうのふりーれん",
+  "expected_output": [
+   "葬送のフリーレン"
+  ]
+ },
+ {
+  "index": "n25",
+  "context_text": "",
+  "input": "りょうしこんぴゅーたー",
+  "expected_output": [
+   "量子コンピューター"
+  ]
+ },
+ {
+  "index": "n26",
+  "context_text": "",
+  "input": "はんどうたい",
+  "expected_output": [
+   "半導体"
+  ]
+ },
+ {
+  "index": "n27",
+  "context_text": "",
+  "input": "せんじょうこうすいたい",
+  "expected_output": [
+   "線状降水帯"
+  ]
+ },
+ {
+  "index": "n28",
+  "context_text": "",
+  "input": "しんがたころなういるす",
+  "expected_output": [
+   "新型コロナウイルス"
+  ]
+ },
+ {
+  "index": "n29",
+  "context_text": "",
+  "input": "はたらきかたかいかく",
+  "expected_output": [
+   "働き方改革"
+  ]
+ },
+ {
+  "index": "n30",
+  "context_text": "",
+  "input": "ぶっかだか",
+  "expected_output": [
+   "物価高"
+  ]
+ },
+ {
+  "index": "n31",
+  "context_text": "",
+  "input": "えんやす",
+  "expected_output": [
+   "円安"
+  ]
+ },
+ {
+  "index": "n32",
+  "context_text": "",
+  "input": "やみばいと",
+  "expected_output": [
+   "闇バイト"
+  ]
+ },
+ {
+  "index": "n33",
+  "context_text": "",
+  "input": "おおさか・かんさいばんぱく",
+  "expected_output": [
+   "大阪・関西万博"
+  ]
+ },
+ {
+  "index": "n34",
+  "context_text": "",
+  "input": "のとはんとうじしん",
+  "expected_output": [
+   "能登半島地震"
+  ]
+ },
+ {
+  "index": "n35",
+  "context_text": "",
+  "input": "ねっちゅうしょう",
+  "expected_output": [
+   "熱中症"
+  ]
+ },
+ {
+  "index": "n36",
+  "context_text": "",
+  "input": "もうしょび",
+  "expected_output": [
+   "猛暑日"
+  ]
+ },
+ {
+  "index": "n37",
+  "context_text": "",
+  "input": "さむらいじゃぱん",
+  "expected_output": [
+   "侍ジャパン"
+  ]
+ },
+ {
+  "index": "n38",
+  "context_text": "",
+  "input": "しょうぎのはっかん",
+  "expected_output": [
+   "将棋の八冠"
+  ]
+ },
+ {
+  "index": "n39",
+  "context_text": "",
+  "input": "よしのや",
+  "expected_output": [
+   "吉野家"
+  ]
+ },
+ {
+  "index": "n40",
+  "context_text": "",
+  "input": "むじるしりょうひん",
+  "expected_output": [
+   "無印良品"
+  ]
+ }
+]

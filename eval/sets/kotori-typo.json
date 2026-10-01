@@ -1,0 +1,330 @@
+[
+ {
+  "index": "t01",
+  "context_text": "",
+  "input": "ありがとうごさいます",
+  "expected_output": [
+   "ありがとうございます"
+  ]
+ },
+ {
+  "index": "t02",
+  "context_text": "",
+  "input": "よろしくおねがします",
+  "expected_output": [
+   "よろしくお願いします",
+   "宜しくお願いします"
+  ]
+ },
+ {
+  "index": "t03",
+  "context_text": "",
+  "input": "おせわになっておりまます",
+  "expected_output": [
+   "お世話になっております"
+  ]
+ },
+ {
+  "index": "t04",
+  "context_text": "",
+  "input": "ちょとまってください",
+  "expected_output": [
+   "ちょっと待ってください"
+  ]
+ },
+ {
+  "index": "t05",
+  "context_text": "",
+  "input": "しりょをおくります",
+  "expected_output": [
+   "資料を送ります"
+  ]
+ },
+ {
+  "index": "t06",
+  "context_text": "",
+  "input": "かいぎのじかんをへんこうしまいた",
+  "expected_output": [
+   "会議の時間を変更しました"
+  ]
+ },
+ {
+  "index": "t07",
+  "context_text": "",
+  "input": "きょうはいいてんきでうね",
+  "expected_output": [
+   "今日はいい天気ですね"
+  ]
+ },
+ {
+  "index": "t08",
+  "context_text": "",
+  "input": "あしたのよていおかくにんします",
+  "expected_output": [
+   "明日の予定を確認します"
+  ]
+ },
+ {
+  "index": "t09",
+  "context_text": "",
+  "input": "よろしくおねがいいたしまっす",
+  "expected_output": [
+   "よろしくお願いいたします",
+   "よろしくお願い致します"
+  ]
+ },
+ {
+  "index": "t10",
+  "context_text": "",
+  "input": "おつかれさまでいた",
+  "expected_output": [
+   "お疲れ様でした",
+   "お疲れさまでした"
+  ]
+ },
+ {
+  "index": "t11",
+  "context_text": "",
+  "input": "すみまえん",
+  "expected_output": [
+   "すみません"
+  ]
+ },
+ {
+  "index": "t12",
+  "context_text": "",
+  "input": "いつもおせあになっております",
+  "expected_output": [
+   "いつもお世話になっております"
+  ]
+ },
+ {
+  "index": "t13",
+  "context_text": "",
+  "input": "けんとしておきます",
+  "expected_output": [
+   "検討しておきます"
+  ]
+ },
+ {
+  "index": "t14",
+  "context_text": "",
+  "input": "ごかくいんおねがいします",
+  "expected_output": [
+   "ご確認お願いします"
+  ]
+ },
+ {
+  "index": "t15",
+  "context_text": "",
+  "input": "らいしゅうのかよびはどうですか",
+  "expected_output": [
+   "来週の火曜日はどうですか"
+  ]
+ },
+ {
+  "index": "t16",
+  "context_text": "",
+  "input": "しょうしょうおまちくだしあ",
+  "expected_output": [
+   "少々お待ちください"
+  ]
+ },
+ {
+  "index": "t17",
+  "context_text": "",
+  "input": "たいへんもうしわけござまいせん",
+  "expected_output": [
+   "大変申し訳ございません"
+  ]
+ },
+ {
+  "index": "t18",
+  "context_text": "",
+  "input": "なにとぞよろしくおねがいもうしあげまう",
+  "expected_output": [
+   "何卒よろしくお願い申し上げます",
+   "なにとぞよろしくお願い申し上げます",
+   "何卒宜しくお願い申し上げます"
+  ]
+ },
+ {
+  "index": "t19",
+  "context_text": "",
+  "input": "こんいちは",
+  "expected_output": [
+   "こんにちは"
+  ]
+ },
+ {
+  "index": "t20",
+  "context_text": "",
+  "input": "ありあとう",
+  "expected_output": [
+   "ありがとう"
+  ]
+ },
+ {
+  "index": "t21",
+  "context_text": "",
+  "input": "おはよございます",
+  "expected_output": [
+   "おはようございます"
+  ]
+ },
+ {
+  "index": "t22",
+  "context_text": "",
+  "input": "でんしゃがおくれていまう",
+  "expected_output": [
+   "電車が遅れています"
+  ]
+ },
+ {
+  "index": "t23",
+  "context_text": "",
+  "input": "いまからでがけます",
+  "expected_output": [
+   "今から出かけます"
+  ]
+ },
+ {
+  "index": "t24",
+  "context_text": "",
+  "input": "かくいんしました",
+  "expected_output": [
+   "確認しました"
+  ]
+ },
+ {
+  "index": "t25",
+  "context_text": "",
+  "input": "しゅくだいがおあった",
+  "expected_output": [
+   "宿題が終わった"
+  ]
+ },
+ {
+  "index": "t26",
+  "context_text": "",
+  "input": "けいやくしょをそうふしまう",
+  "expected_output": [
+   "契約書を送付します"
+  ]
+ },
+ {
+  "index": "t27",
+  "context_text": "",
+  "input": "らいねんのけいかう",
+  "expected_output": [
+   "来年の計画"
+  ]
+ },
+ {
+  "index": "t28",
+  "context_text": "",
+  "input": "びょういんにいきまう",
+  "expected_output": [
+   "病院に行きます"
+  ]
+ },
+ {
+  "index": "t29",
+  "context_text": "",
+  "input": "しんかんせでかえります",
+  "expected_output": [
+   "新幹線で帰ります"
+  ]
+ },
+ {
+  "index": "t30",
+  "context_text": "",
+  "input": "りょうしゅしょをください",
+  "expected_output": [
+   "領収書をください"
+  ]
+ },
+ {
+  "index": "t31",
+  "context_text": "",
+  "input": "よやくおへんこうしたい",
+  "expected_output": [
+   "予約を変更したい"
+  ]
+ },
+ {
+  "index": "t32",
+  "context_text": "",
+  "input": "きをつけてかえてね",
+  "expected_output": [
+   "気をつけて帰ってね",
+   "気を付けて帰ってね"
+  ]
+ },
+ {
+  "index": "t33",
+  "context_text": "",
+  "input": "おめでとうござます",
+  "expected_output": [
+   "おめでとうございます"
+  ]
+ },
+ {
+  "index": "t34",
+  "context_text": "",
+  "input": "せつめいしてくだあい",
+  "expected_output": [
+   "説明してください"
+  ]
+ },
+ {
+  "index": "t35",
+  "context_text": "",
+  "input": "ぜひさんかしたいでう",
+  "expected_output": [
+   "ぜひ参加したいです",
+   "是非参加したいです"
+  ]
+ },
+ {
+  "index": "t36",
+  "context_text": "",
+  "input": "こんどのしゅまつ",
+  "expected_output": [
+   "今度の週末"
+  ]
+ },
+ {
+  "index": "t37",
+  "context_text": "",
+  "input": "れんあくおまちしています",
+  "expected_output": [
+   "連絡お待ちしています"
+  ]
+ },
+ {
+  "index": "t38",
+  "context_text": "",
+  "input": "わかりまいた",
+  "expected_output": [
+   "わかりました",
+   "分かりました"
+  ]
+ },
+ {
+  "index": "t39",
+  "context_text": "",
+  "input": "だいじょうぶでう",
+  "expected_output": [
+   "大丈夫です"
+  ]
+ },
+ {
+  "index": "t40",
+  "context_text": "",
+  "input": "ちゅもんしたしょうひんがとどいた",
+  "expected_output": [
+   "注文した商品が届いた"
+  ]
+ }
+]
