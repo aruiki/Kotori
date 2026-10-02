@@ -43,13 +43,19 @@ index eb74e536e..2e53c117e 100644
  JA_USAGE_DICT_TAG = "2025-01-25"
  
 diff --git a/src/base/BUILD.bazel b/src/base/BUILD.bazel
-index d8ebba55d..89ef47238 100644
+index d8ebba55d..8c61d9c94 100644
 --- a/src/base/BUILD.bazel
 +++ b/src/base/BUILD.bazel
-@@ -48,6 +48,34 @@ load("//build_tools:embed_file.bzl", "mozc_embed_file")
+@@ -48,6 +48,40 @@ load("//build_tools:embed_file.bzl", "mozc_embed_file")
  
  package(default_visibility = ["//:__subpackages__"])
  
++# Kotori: 入力中の候補を取り直すまでの時間(docs/adr/0039)。
++mozc_cc_library(
++    name = "kotori_live",
++    hdrs = ["kotori_live.h"],
++)
++
 +# Kotori: 診断情報と異常終了の記録(作業カード 42)。
 +mozc_cc_library(
 +    name = "kotori_diagnostics",
@@ -477,6 +483,37 @@ index 000000000..3bcfec328
 +}  // namespace
 +}  // namespace kotori
 +}  // namespace mozc
+diff --git a/src/base/kotori_live.h b/src/base/kotori_live.h
+new file mode 100644
+index 000000000..11f4961a8
+--- /dev/null
++++ b/src/base/kotori_live.h
+@@ -0,0 +1,25 @@
++// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
++
++// Kotori: 入力中の候補を、手が止まった後に取り直すまでの時間(docs/adr/0039)。
++// 変換の AI(rewriter/lm_rewriter.cc)が、設定と GPU の有無に合わせて決め、
++// セッション(session/session.cc)が Output.callback に入れてクライアントに送らせる。
++
++#ifndef MOZC_BASE_KOTORI_LIVE_H_
++#define MOZC_BASE_KOTORI_LIVE_H_
++
++#include <atomic>
++
++namespace mozc {
++namespace kotori {
++
++// 打鍵の後、最初に取り直すまでの時間(ms)。0 なら取り直さない。
++inline std::atomic<int> g_live_first_ms{0};
++// 2 回目以降に取り直すまでの時間(ms。裏で作る予測を待つ)。0 なら 1 回だけ。
++inline std::atomic<int> g_live_next_ms{0};
++// 1 回の打鍵の後に取り直す回数の上限。
++inline constexpr int kMaxLiveRefreshes = 3;
++
++}  // namespace kotori
++}  // namespace mozc
++
++#endif  // MOZC_BASE_KOTORI_LIVE_H_
 diff --git a/src/bazel/BUILD.llama_cpp.bazel b/src/bazel/BUILD.llama_cpp.bazel
 new file mode 100644
 index 000000000..cbd6e6dc7
@@ -19489,6 +19526,112 @@ zOgk(bd7cyDvsxi{C{?TFg6nR~AP52?1ZW1=##B3j>WD~rSsb!&r2s+H@Y-BgDg;zb
 zL@613W7Zf1G&4<#nt(BZ;xoE2_j8mrXY(!KeiIne+sK-zQeq6KNh!`3eBt9B?)?Em
 Ce@$lq
 
+diff --git a/src/engine/engine_converter.cc b/src/engine/engine_converter.cc
+index fd03a6c0c..365d80361 100644
+--- a/src/engine/engine_converter.cc
++++ b/src/engine/engine_converter.cc
+@@ -604,6 +604,68 @@ bool EngineConverter::Suggest(const composer::Composer& composer,
+   return true;
+ }
+ 
++// Kotori: 入力中の候補の先頭に、Space と同じ変換の結果を置く(docs/adr/0039)。
++// 変換は別の Segments で行い、今の状態(入力中の候補)は変えない。AI は覚えておいた結果を
++// 使うので、続けて Space を押したときも同じ文が出る。
++bool EngineConverter::KotoriPreviewConversion(
++    const composer::Composer& composer, const commands::Context& context) {
++  if (state_ != SUGGESTION || segments_.conversion_segments_size() != 1) {
++    return false;
++  }
++  DCHECK(request_);
++  DCHECK(config_);
++  ConversionRequest::Options options;
++  options.enable_user_history_for_conversion =
++      conversion_preferences().use_history;
++  // SetRequestType は今の状態(request_type_)を変えるので使わない。
++  options.request_type = ConversionRequest::CONVERSION;
++  options.kotori_preview = true;
++  const ConversionRequest conversion_request =
++      ConversionRequestBuilder()
++          .SetComposer(composer)
++          .SetRequestView(*request_)
++          .SetContextView(context)
++          .SetConfigView(*config_)
++          .SetOptions(std::move(options))
++          .Build();
++  Segments converted = segments_;  // 前の文(履歴の文節)は残す
++  converted.clear_conversion_segments();
++  if (!converter_->StartConversion(conversion_request, &converted)) {
++    return false;
++  }
++  std::string key, value;
++  for (const Segment& seg : converted.conversion_segments()) {
++    if (seg.candidates_size() == 0) return false;
++    key += seg.key();
++    value += seg.candidate(0).value;
++  }
++  Segment* suggestion = segments_.mutable_conversion_segment(0);
++  if (value.empty() || key != suggestion->key()) return false;
++  for (size_t i = 0; i < suggestion->candidates_size(); ++i) {
++    if (suggestion->candidate(i).value != value) continue;
++    if (i == 0) return false;  // もう先頭にある
++    suggestion->erase_candidate(i);
++    break;
++  }
++  converter::Candidate candidate;
++  if (suggestion->candidates_size() > 0) candidate = suggestion->candidate(0);
++  candidate.key = key;
++  candidate.content_key = key;
++  candidate.value = value;
++  candidate.content_value = value;
++  candidate.consumed_key_size = Util::CharsLen(key);
++  candidate.inner_segment_boundary.clear();
++  candidate.prefix.clear();
++  candidate.suffix.clear();
++  candidate.description.clear();
++  candidate.attributes = 0;
++  *suggestion->insert_candidate(0) = std::move(candidate);
++  previous_suggestions_ = *suggestion;
++  UpdateCandidateList();
++  InitializeSelectedCandidateIndices();
++  return true;
++}
++
+ bool EngineConverter::IsEmptySegment(const Segment& segment) const {
+   return ((segment.candidates_size() == 0) &&
+           (segment.meta_candidates_size() == 0));
+diff --git a/src/engine/engine_converter.h b/src/engine/engine_converter.h
+index 6d061cfca..aab8a601b 100644
+--- a/src/engine/engine_converter.h
++++ b/src/engine/engine_converter.h
+@@ -107,6 +107,10 @@ class EngineConverter : public EngineConverterInterface {
+                const commands::Context& context,
+                const ConversionPreferences& preferences) override;
+ 
++  // Kotori: 入力中の候補の先頭に、Space と同じ変換の結果を置く(docs/adr/0039)。
++  bool KotoriPreviewConversion(const composer::Composer& composer,
++                               const commands::Context& context) override;
++
+   // Sends a prediction request to the converter.
+   // Brings base class overloads into scope to avoid name hiding.
+   using EngineConverterInterface::Predict;
+diff --git a/src/engine/engine_converter_interface.h b/src/engine/engine_converter_interface.h
+index f8e3b43ec..22506677c 100644
+--- a/src/engine/engine_converter_interface.h
++++ b/src/engine/engine_converter_interface.h
+@@ -141,6 +141,13 @@ class EngineConverterInterface {
+                    conversion_preferences());
+   }
+ 
++  // Kotori: 今の読みを Space と同じように変換し、その結果を入力中の候補の先頭に置く
++  // (手が止まった後の取り直し。docs/adr/0039)。Suggest の後に呼ぶ。候補を変えたら true。
++  virtual bool KotoriPreviewConversion(const composer::Composer& composer,
++                                       const commands::Context& context) {
++    return false;
++  }
++
+   // Sends a prediction request to the converter.
+   virtual bool Predict(const composer::Composer& composer,
+                        const commands::Context& context,
 diff --git a/src/gui/base/util.cc b/src/gui/base/util.cc
 index b1af98c8a..ba118cd62 100644
 --- a/src/gui/base/util.cc
@@ -20104,6 +20247,21 @@ index 1c4726b0c..366630008 100644
      tags = MOZC_TAGS.WIN_ONLY,
      target_compatible_with = ["@platforms//os:windows"],
  )
+diff --git a/src/protocol/commands.proto b/src/protocol/commands.proto
+index b0c1e6cf6..d26d16a67 100644
+--- a/src/protocol/commands.proto
++++ b/src/protocol/commands.proto
+@@ -453,6 +453,10 @@ message SessionCommand {
+     // Note: This command resets the internal states (history segments) of the
+     // converter.
+     REQUEST_NWP = 27;
++
++    // Kotori: 入力中の候補を取り直す。サーバーが Output.callback で遅らせて送らせる
++    // (手が止まった後に、AI の変換と裏で作った予測を出す。docs/adr/0039)。
++    KOTORI_REFRESH_SUGGESTION = 1000;
+   }
+   required CommandType type = 1;
+ 
 diff --git a/src/protocol/config.proto b/src/protocol/config.proto
 index 7d735374e..3988c7598 100644
 --- a/src/protocol/config.proto
@@ -20138,8 +20296,23 @@ index 7d735374e..3988c7598 100644
    //////////////////////////////////////////////////////////////
    //
    // Cloud (300-319)
+diff --git a/src/request/options.h b/src/request/options.h
+index 0d2eb3455..1b13074f1 100644
+--- a/src/request/options.h
++++ b/src/request/options.h
+@@ -94,6 +94,10 @@ struct ConversionOptions {
+   // TODO(noriyukit): Fix such a hacky handling for realtime conversion.
+   bool skip_slow_rewriters = false;
+ 
++  // Kotori: 入力中の候補に出す AI の変換(手が止まった後の取り直し、docs/adr/0039)。
++  // 覚えておいた結果があれば、裏の予測の計算を止めずにそれを使う。
++  bool kotori_preview = false;
++
+   // If true, partial candidates are created on prediction/suggestion.
+   // For example, "私の" is created from composition "わたしのなまえ".
+   bool create_partial_candidates = false;
 diff --git a/src/rewriter/BUILD.bazel b/src/rewriter/BUILD.bazel
-index 4bbcddeca..dcc3dcc69 100644
+index 4bbcddeca..e8eec4469 100644
 --- a/src/rewriter/BUILD.bazel
 +++ b/src/rewriter/BUILD.bazel
 @@ -1536,6 +1536,7 @@ mozc_cc_library(
@@ -20150,7 +20323,7 @@ index 4bbcddeca..dcc3dcc69 100644
          ":merger_rewriter",
          ":number_rewriter",
          ":remove_redundant_candidate_rewriter",
-@@ -1743,3 +1744,58 @@ mozc_cc_test(
+@@ -1743,3 +1744,59 @@ mozc_cc_test(
          "//testing:gunit_main",
      ],
  )
@@ -20194,6 +20367,7 @@ index 4bbcddeca..dcc3dcc69 100644
 +        ":rewriter_interface",
 +        ":zenz_scorer",
 +        "//base:file_util",
++        "//base:kotori_live",
 +        "//base:system_util",
 +        "//base:util",
 +        "//config:config_handler",
@@ -20549,10 +20723,10 @@ index 000000000..cf2c801ea
 +#endif  // MOZC_REWRITER_LLAMA_RUNTIME_H_
 diff --git a/src/rewriter/lm_rewriter.cc b/src/rewriter/lm_rewriter.cc
 new file mode 100644
-index 000000000..d61abbca0
+index 000000000..9c9f8c334
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.cc
-@@ -0,0 +1,2189 @@
+@@ -0,0 +1,2300 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +
 +#include "rewriter/lm_rewriter.h"
@@ -20585,6 +20759,7 @@ index 000000000..d61abbca0
 +#include "absl/strings/str_join.h"
 +#include "absl/synchronization/mutex.h"
 +#include "base/file_util.h"
++#include "base/kotori_live.h"
 +#include "base/system_util.h"
 +#include "base/util.h"
 +#include "config/config_handler.h"
@@ -21260,6 +21435,9 @@ index 000000000..d61abbca0
 +  if (const char* v = Env("KOTORI_LM_LIGHT_RANK")) light_rank_ = *v != '0';
 +  if (const char* v = Env("KOTORI_LM_LIGHT_DELAY")) light_delay_ms_ = std::atoi(v);
 +  if (const char* v = Env("KOTORI_LM_FULL_DELAY")) full_delay_ms_ = std::atoi(v);
++  if (const char* v = Env("KOTORI_LM_LIVE")) live_ = *v != '0';
++  if (const char* v = Env("KOTORI_LM_LIVE_FIRST")) live_first_ms_ = std::atoi(v);
++  if (const char* v = Env("KOTORI_LM_LIVE_NEXT")) live_next_ms_ = std::atoi(v);
 +  if (const char* v = Env("KOTORI_LM_CPU_LONG")) cpu_long_chars_ = std::atoi(v);
 +  if (const char* v = Env("KOTORI_LM_TYPO")) typo_correct_ = *v != '0';
 +  if (const char* v = Env("KOTORI_LM_TYPO_MARGIN")) typo_margin_ = std::atof(v);
@@ -21353,6 +21531,19 @@ index 000000000..d61abbca0
 +  if (config.kotori_lm_enabled() && sleeping_.exchange(false)) {
 +    RequestLoad(config);
 +  }
++  // Kotori: 入力中の候補を取り直すまでの時間(docs/adr/0039)。GPU があれば生成と採点が速いので
++  // 早めに、ないときは先回りの変換(手が止まって 0.12 秒後に始める生成)が終わる頃にする。
++  // 2 回目以降は、裏で作る予測(手が止まって 0.6 秒後に作り直す)を待って出す。
++  int first = 0, next = 0;
++  if (live_ && config.kotori_lm_enabled()) {
++    const bool gpu = HasGpu();
++    first = live_first_ms_ >= 0 ? live_first_ms_ : (gpu ? 200 : 450);
++    if (predict_ && config.kotori_lm_predict() && UsesLlm(config)) {
++      next = live_next_ms_ >= 0 ? live_next_ms_ : 800;
++    }
++  }
++  kotori::g_live_first_ms = first;
++  kotori::g_live_next_ms = next;
 +}
 +
 +void LmRewriter::UnloadIfIdle(const config::Config& config) const {
@@ -21538,6 +21729,34 @@ index 000000000..d61abbca0
 +  return path + "|" + extra_path_;
 +}
 +
++std::string LmRewriter::MemoKey(const config::Config& config,
++                                const std::string& reading,
++                                const std::string& context) const {
++  return absl::StrCat(reading, "\t", CacheKey(config, context));
++}
++
++std::optional<std::optional<LmRewriter::Best>> LmRewriter::FindMemo(
++    const std::string& key) const {
++  std::lock_guard<std::mutex> lock(job_mu_);
++  for (const auto& [k, best] : memo_) {
++    if (k == key) return best;
++  }
++  return std::nullopt;
++}
++
++void LmRewriter::StoreMemo(const std::string& key,
++                           std::optional<Best> best) const {
++  std::lock_guard<std::mutex> lock(job_mu_);
++  for (auto it = memo_.begin(); it != memo_.end(); ++it) {
++    if (it->first == key) {
++      memo_.erase(it);
++      break;
++    }
++  }
++  memo_.emplace_back(key, std::move(best));
++  while (memo_.size() > 16) memo_.pop_front();
++}
++
 +std::string LmRewriter::CacheKey(const config::Config& config,
 +                                 const std::string& context) const {
 +  // 予測の結果を変える設定(品質、AI モデル、LLM のファイル)。違う設定で作った予測は使わない
@@ -21589,6 +21808,52 @@ index 000000000..d61abbca0
 +  const std::string context = HistoryContext(request, segments);
 +  const std::string key = reading + "\t" + context;
 +  if (!HasGpu() && Util::CharsLen(reading) > kMaxCpuChars) return std::nullopt;
++  // Kotori: 入力中の候補に出した結果(または、前に同じ読みで選んだ結果)があれば、それを使う
++  // (表示と Space の結果をそろえ、裏の計算を止めない。docs/adr/0039)。
++  const std::string memo_key = MemoKey(request.config(), reading, context);
++  const bool preview = request.options().kotori_preview;
++  if (const auto memo = FindMemo(memo_key); memo && (*memo || preview)) {
++    {
++      std::lock_guard<std::mutex> jl(job_mu_);
++      last_converted_key_ = key;
++    }
++    if (!*memo) return std::nullopt;
++    return ResizeFor(**memo, segments);
++  }
++  const std::optional<ResizeSegmentsRequest> resize =
++      SelectSentence(request, segments, reading, context, key);
++  if (!resize && preview) {
++    // AI が選ばなかった・選べなかった(取り直しのたびに計算し直さない)。
++    if (!FindMemo(memo_key)) StoreMemo(memo_key, std::nullopt);
++  }
++  return resize;
++}
++
++std::optional<RewriterInterface::ResizeSegmentsRequest> LmRewriter::ResizeFor(
++    const Best& best, const Segments& segments) {
++  std::vector<std::string> current;
++  for (const Segment& seg : segments.conversion_segments()) {
++    current.emplace_back(seg.key());
++  }
++  if (current == best.keys) return std::nullopt;
++  ResizeSegmentsRequest resize;
++  resize.segment_index = 0;
++  const size_t n = std::min(best.keys.size(), resize.segment_sizes.size());
++  for (size_t i = 0; i < n; ++i) {
++    const size_t len = Util::CharsLen(best.keys[i]);
++    if (len == 0 || len > 255) return std::nullopt;
++    resize.segment_sizes[i] = static_cast<uint8_t>(len);
++  }
++  return resize;
++}
++
++std::optional<RewriterInterface::ResizeSegmentsRequest>
++LmRewriter::SelectSentence(const ConversionRequest& request,
++                           const Segments& segments, const std::string& reading,
++                           const std::string& context,
++                           const std::string& key) const {
++  const std::vector<converter::Candidate>& sentences =
++      segments.kotori_sentences();
 +  const auto t_request = std::chrono::steady_clock::now();
 +  Urgent urgent(urgent_, last_request_us_);
 +  // 同じ読みの先回りの変換が裏で計算中なら、捨てずに終わるのを待つ(上限まで)。
@@ -21802,45 +22067,34 @@ index 000000000..d61abbca0
 +  if (best.keys.empty()) return std::nullopt;
 +
 +  // 今の区切りと同じなら、切り直さずに Rewrite で先頭を入れ替える。
-+  std::vector<std::string> current;
-+  for (const Segment& seg : segments.conversion_segments()) {
-+    current.emplace_back(seg.key());
-+  }
 +  best_ = best;
-+  if (current == best.keys) return std::nullopt;
-+
-+  ResizeSegmentsRequest resize;
-+  resize.segment_index = 0;
-+  const size_t n = std::min(best.keys.size(), resize.segment_sizes.size());
-+  for (size_t i = 0; i < n; ++i) {
-+    const size_t len = Util::CharsLen(best.keys[i]);
-+    if (len == 0 || len > 255) {
-+      best_.reset();
-+      return std::nullopt;
-+    }
-+    resize.segment_sizes[i] = static_cast<uint8_t>(len);
-+  }
-+  return resize;
++  StoreMemo(MemoKey(request.config(), reading, context), best);
++  return ResizeFor(best, segments);
 +}
 +
 +bool LmRewriter::ApplyBest(Segments* segments, const std::string& context,
 +                           bool* changed_out) const {
 +  *changed_out = false;
-+  if (!best_ || best_->context != context ||
-+      best_->reading != ConversionReading(*segments)) {
++  return best_ && ApplyBestFrom(*best_, segments, context, changed_out);
++}
++
++bool LmRewriter::ApplyBestFrom(const Best& best, Segments* segments,
++                               const std::string& context, bool* changed_out) {
++  *changed_out = false;
++  if (best.context != context || best.reading != ConversionReading(*segments)) {
 +    return false;
 +  }
 +  size_t i = 0;
 +  for (const Segment& seg : segments->conversion_segments()) {
-+    if (i >= best_->keys.size() || seg.key() != best_->keys[i]) return false;
++    if (i >= best.keys.size() || seg.key() != best.keys[i]) return false;
 +    ++i;
 +  }
-+  if (i != best_->keys.size()) return false;
++  if (i != best.keys.size()) return false;
 +
 +  bool changed = false;
 +  i = 0;
 +  for (Segment& seg : segments->conversion_segments()) {
-+    const std::string& value = best_->values[i++];
++    const std::string& value = best.values[i++];
 +    if (seg.candidates_size() == 0 || seg.candidate(0).value == value) {
 +      continue;
 +    }
@@ -22565,10 +22819,17 @@ index 000000000..d61abbca0
 +      return !job_cv_.wait_for(lock, std::chrono::milliseconds(ms),
 +                               [&] { return stop_ || job_.has_value(); });
 +    };
-+    for (const bool light : {true, false}) {
++    bool retried = false;  // 取り直しで止められた計算を 1 回だけやり直す
++    bool redo = false;
++    for (int step = 0; step < 2; ++step) {
++      if (redo) {
++        --step;  // 同じ段をやり直す(待ちは入れない)
++      }
++      const bool light = step == 0;
 +      // 続けて打っている間は計算しない(打鍵ごとの計算の多くは次の打鍵で要らなくなる)。
 +      // 作り直しは、手が止まってから(docs/adr/0024)。
-+      const int delay = light ? light_delay_ms_ : full_delay_ms_;
++      const int delay = redo ? 0 : (light ? light_delay_ms_ : full_delay_ms_);
++      redo = false;
 +      if (delay < 0 || !quiet_for(delay)) break;
 +      std::vector<Prediction> preds;
 +      {
@@ -22583,7 +22844,18 @@ index 000000000..d61abbca0
 +                     preds.empty() ? "" : preds[0].text.c_str(),
 +                     interrupted(light) ? " (interrupted)" : "");
 +      }
-+      if (interrupted(light)) break;
++      if (interrupted(light)) {
++        // Kotori: 入力中の候補の取り直し(変換の要求)で止められただけなら、それが終わってから
++        // 同じ計算をやり直す(手が止まっている間に予測を出すため。docs/adr/0039)。
++        if (retried || stop_.load() || new_job_.load()) break;
++        retried = true;
++        while (urgent_.load() > 0 && !stop_.load() && !new_job_.load()) {
++          std::this_thread::sleep_for(std::chrono::milliseconds(5));
++        }
++        if (stop_.load() || new_job_.load()) break;
++        redo = true;
++        continue;
++      }
 +      StorePredictions(job.reading, CacheKey(job.config, job.context), preds);
 +    }
 +  }
@@ -22597,6 +22869,19 @@ index 000000000..d61abbca0
 +  }
 +  // サジェストのための変換(1 打鍵ごと)では、AI の変換を動かさない(入力が重くなるため)。
 +  if (request.options().skip_slow_rewriters) return false;
++  // Kotori: 文全体で選んだ結果を覚えていれば、ロックを取らずに当てはめる(入力中の候補の取り直しと、
++  // その後の Space。docs/adr/0039)。取り直しでは文節ごとの見直しもしない(先頭だけ使う)。
++  if (sentence_ && request.request_type() == ConversionRequest::CONVERSION) {
++    const std::string context = HistoryContext(request, *segments);
++    const auto memo = FindMemo(
++        MemoKey(request.config(), ConversionReading(*segments), context));
++    bool changed = false;
++    if (memo && *memo && ApplyBestFrom(**memo, segments, context, &changed) &&
++        (!post_segment_ || request.options().kotori_preview)) {
++      return changed;
++    }
++    if (request.options().kotori_preview) return changed;
++  }
 +  // LLM がないときの Tab、GPU がなく長い読みでは AI を使わないので、ロックを待たない。
 +  if (request.request_type() == ConversionRequest::PREDICTION &&
 +      !(predict_ && request.config().kotori_lm_predict() &&
@@ -22744,10 +23029,10 @@ index 000000000..d61abbca0
 +}  // namespace mozc
 diff --git a/src/rewriter/lm_rewriter.h b/src/rewriter/lm_rewriter.h
 new file mode 100644
-index 000000000..dab7c68ff
+index 000000000..eaa7436b2
 --- /dev/null
 +++ b/src/rewriter/lm_rewriter.h
-@@ -0,0 +1,339 @@
+@@ -0,0 +1,364 @@
 +// Copyright 2026, Kotori IME contributors (BSD-3-Clause, same as Mozc)
 +//
 +// Kotori: AI による変換(docs/adr/0013、0015、0016)。
@@ -22886,6 +23171,24 @@ index 000000000..dab7c68ff
 +  // (*changed は候補を入れ替えたか)。
 +  bool ApplyBest(Segments* segments, const std::string& context,
 +                 bool* changed) const ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
++  // ApplyBest の本体(覚えておいた結果 best を当てはめる。ロックは要らない)。
++  static bool ApplyBestFrom(const Best& best, Segments* segments,
++                            const std::string& context, bool* changed);
++  // Kotori: 文全体で選んだ結果を覚えておく(入力中の候補に出した AI の変換と Space の結果を
++  // そろえ、Space を待たせない。docs/adr/0039)。key は MemoKey。値が nullopt なら
++  // 「AI は選ばなかった」(入力中の候補の取り直しで、計算をやり直さないため)。
++  std::string MemoKey(const config::Config& config, const std::string& reading,
++                      const std::string& context) const;
++  std::optional<std::optional<Best>> FindMemo(const std::string& key) const;
++  void StoreMemo(const std::string& key, std::optional<Best> best) const;
++  // 文全体の候補と生成した文から AI で選び、区切りを返す(CheckResizeSegmentsRequest の本体)。
++  std::optional<ResizeSegmentsRequest> SelectSentence(
++      const ConversionRequest& request, const Segments& segments,
++      const std::string& reading, const std::string& context,
++      const std::string& key) const;
++  // best の区切りが今の区切りと違えば、切り直す要求を返す。
++  static std::optional<ResizeSegmentsRequest> ResizeFor(
++      const Best& best, const Segments& segments);
 +  // 予測の 1 件。text = base(covered の読みの変換)+ 続き。
 +  struct Prediction {
 +    std::string text;
@@ -23047,6 +23350,13 @@ index 000000000..dab7c68ff
 +  mutable std::atomic<int64_t> last_request_us_{0};
 +  mutable std::string urgent_key_;
 +  mutable std::deque<Entry> cache_;
++  // 文全体で選んだ結果(MemoKey と結果)。job_mu_ で守る。
++  mutable std::deque<std::pair<std::string, std::optional<Best>>> memo_;
++  // 入力中の候補を取り直すまでの時間(ms。KOTORI_LM_LIVE_FIRST / KOTORI_LM_LIVE_NEXT。
++  // 負なら GPU の有無で決める。KOTORI_LM_LIVE=0 で取り直さない。docs/adr/0039)。
++  bool live_ = true;
++  int live_first_ms_ = -1;
++  int live_next_ms_ = -1;
 +  std::atomic<bool> stop_{false};
 +  // 裏の予測の仕事が新しく来たか(来たら今の計算をやめる)。
 +  mutable std::atomic<bool> new_job_{false};
@@ -24106,6 +24416,261 @@ index eda5d517e..2c99a39c7 100644
  
    if (run_level == mozc::RunLevel::RESTRICTED) {
      MOZC_VLOG(1) << "Mozc server starts with timeout mode";
+diff --git a/src/session/BUILD.bazel b/src/session/BUILD.bazel
+index 2da5b8d46..c4c944c55 100644
+--- a/src/session/BUILD.bazel
++++ b/src/session/BUILD.bazel
+@@ -56,6 +56,7 @@ mozc_cc_library(
+         ":key_event_transformer",
+         ":keymap",
+         "//base:clock",
++        "//base:kotori_live",
+         "//base:util",
+         "//composer",
+         "//composer:key_event_util",
+@@ -82,6 +83,7 @@ mozc_cc_test(
+         ":ime_context",
+         ":keymap",
+         ":session",
++        "//base:kotori_live",
+         "//base:vlog",
+         "//base/strings:assign",
+         "//base/strings:unicode",
+diff --git a/src/session/session.cc b/src/session/session.cc
+index 8186b0a8d..1e42be609 100644
+--- a/src/session/session.cc
++++ b/src/session/session.cc
+@@ -44,6 +44,7 @@
+ #include "absl/strings/string_view.h"
+ #include "absl/time/time.h"
+ #include "base/clock.h"
++#include "base/kotori_live.h"
+ #include "base/util.h"
+ #include "composer/composer.h"
+ #include "composer/key_event_util.h"
+@@ -386,6 +387,9 @@ bool Session::SendCommand(commands::Command* command) {
+     case commands::SessionCommand::UPDATE_COMPOSITION:
+       result = UpdateComposition(command);
+       break;
++    case commands::SessionCommand::KOTORI_REFRESH_SUGGESTION:
++      result = KotoriRefreshSuggestion(command);
++      break;
+     case commands::SessionCommand::REQUEST_NWP: {
+       ConversionPreferences conversion_preferences =
+           context_->converter().conversion_preferences();
+@@ -538,10 +542,49 @@ bool Session::SendKey(commands::Command* command) {
+       break;
+   }
+ 
++  // Kotori: 手が止まった後に、入力中の候補を AI の変換で取り直す(docs/adr/0039)。
++  kotori_refresh_count_ = 0;
++  if (result) KotoriScheduleRefresh(command, 0);
+   MaybeSetUndoStatus(command);
+   return result;
+ }
+ 
++void Session::KotoriScheduleRefresh(commands::Command* command, int count) {
++  if (context_->state() != ImeContext::COMPOSITION ||
++      !command->output().has_candidate_window() ||
++      command->output().has_callback() || count >= kotori::kMaxLiveRefreshes) {
++    return;
++  }
++  const int delay =
++      count == 0 ? kotori::g_live_first_ms.load() : kotori::g_live_next_ms.load();
++  if (delay <= 0) return;
++  commands::Output::Callback* callback =
++      command->mutable_output()->mutable_callback();
++  callback->mutable_session_command()->set_type(
++      commands::SessionCommand::KOTORI_REFRESH_SUGGESTION);
++  callback->set_delay_millisec(delay);
++}
++
++bool Session::KotoriRefreshSuggestion(commands::Command* command) {
++  // 打鍵の後に入力中の候補が出ている状態でだけ取り直す(変換中・確定後は何もしない)。
++  // 「使わなかった」と返し、クライアントは画面を変えない(DoNothing は今の画面を出し直すので使わない)。
++  if (context_->state() != ImeContext::COMPOSITION) {
++    command->mutable_output()->set_consumed(false);
++    return true;
++  }
++  command->mutable_output()->set_consumed(true);
++  if (!Suggest(command->input())) {
++    OutputComposition(command);
++    return true;
++  }
++  context_->mutable_converter()->KotoriPreviewConversion(
++      context_->composer(), command->input().context());
++  Output(command);
++  ++kotori_refresh_count_;
++  KotoriScheduleRefresh(command, kotori_refresh_count_);
++  return true;
++}
++
+ bool Session::UpdateCompositionInternal(commands::Command* command) {
+   command->mutable_output()->set_consumed(true);
+ 
+diff --git a/src/session/session.h b/src/session/session.h
+index a9903ecd3..ab3ce6ae0 100644
+--- a/src/session/session.h
++++ b/src/session/session.h
+@@ -116,6 +116,10 @@ class Session {
+   // is called when the CONVERT_REVERSE SessionCommand is called.
+   bool ConvertReverse(mozc::commands::Command* command);
+ 
++  // Kotori: 入力中の候補を取り直し、先頭に Space と同じ変換の結果を置く
++  // (KOTORI_REFRESH_SUGGESTION。docs/adr/0039)。
++  bool KotoriRefreshSuggestion(mozc::commands::Command* command);
++
+   // Fills Output::Callback with the Undo SessionCommand to ask the
+   // client to send back the SessionCommand to the server.
+   // This function is called when the key event representing the
+@@ -275,6 +279,11 @@ class Session {
+  private:
+   friend class SessionTestPeer;
+ 
++  // Kotori: 入力中の候補が出ていれば、少し後に取り直すようにクライアントに頼む
++  // (Output.callback)。count は、この打鍵の後に取り直した回数。
++  void KotoriScheduleRefresh(mozc::commands::Command* command, int count);
++  int kotori_refresh_count_ = 0;
++
+   std::unique_ptr<ImeContext> context_;
+ 
+   // Undo stack. *begin is the oldest, and *back is the newest.
+diff --git a/src/session/session_handler_tool.cc b/src/session/session_handler_tool.cc
+index e22e60a8c..36f138ff1 100644
+--- a/src/session/session_handler_tool.cc
++++ b/src/session/session_handler_tool.cc
+@@ -211,6 +211,15 @@ bool SessionHandlerTool::UndoOrRewind(commands::Output* output) {
+   return EvalCommand(&input, output);
+ }
+ 
++bool SessionHandlerTool::KotoriRefresh(commands::Output* output) {
++  commands::Input input;
++  input.set_type(commands::Input::SEND_COMMAND);
++  input.mutable_command()->set_type(
++      commands::SessionCommand::KOTORI_REFRESH_SUGGESTION);
++  // 取り直しの後の callback(次の取り直し)はすぐに送らない(呼ぶ側が時間を決める)。
++  return EvalCommandInternal(&input, output, false);
++}
++
+ bool SessionHandlerTool::DeleteCandidateFromHistory(std::optional<int> id,
+                                                     commands::Output* output) {
+   commands::Input input;
+@@ -668,6 +677,9 @@ absl::Status SessionHandlerInterpreter::Eval(
+     MOZC_ASSERT_TRUE(client_->SubmitCandidate(id, last_output_.get()));
+   } else if (command == "UNDO_OR_REWIND") {
+     MOZC_ASSERT_TRUE(client_->UndoOrRewind(last_output_.get()));
++  } else if (command == "KOTORI_REFRESH") {
++    // Kotori: 入力中の候補の取り直し(docs/adr/0039)。
++    MOZC_ASSERT_TRUE(client_->KotoriRefresh(last_output_.get()));
+   } else if (command == "DELETE_CANDIDATE_FROM_HISTORY") {
+     MOZC_ASSERT_TRUE(args.size() == 1 || args.size() == 2);
+     std::optional<int> id = std::nullopt;
+diff --git a/src/session/session_handler_tool.h b/src/session/session_handler_tool.h
+index 4d3669e06..5df1ea7d9 100644
+--- a/src/session/session_handler_tool.h
++++ b/src/session/session_handler_tool.h
+@@ -81,6 +81,8 @@ class SessionHandlerTool {
+   bool Reload();
+   bool ResetContext();
+   bool UndoOrRewind(commands::Output* output);
++  // Kotori: 入力中の候補を取り直させる(KOTORI_REFRESH_SUGGESTION。docs/adr/0039)。
++  bool KotoriRefresh(commands::Output* output);
+   // Try to delete the candidate from the history.
+   // The target candidate is specified with the |id|. If |id| is not specified,
+   // the current focused candidate will be specified.
+diff --git a/src/session/session_test.cc b/src/session/session_test.cc
+index 012d822a5..a426ce151 100644
+--- a/src/session/session_test.cc
++++ b/src/session/session_test.cc
+@@ -43,6 +43,7 @@
+ #include "absl/strings/str_cat.h"
+ #include "absl/strings/str_format.h"
+ #include "absl/strings/string_view.h"
++#include "base/kotori_live.h"
+ #include "base/strings/assign.h"
+ #include "base/strings/unicode.h"
+ #include "base/vlog.h"
+@@ -10494,5 +10495,80 @@ TEST_F(SessionTest, MultiSegmentSelectionCancel) {
+             "わたしのなまえはなかのです");
+ }
+ 
++// Kotori: 入力中の候補の取り直し(docs/adr/0039)。打鍵の後に取り直しを頼み、取り直すと
++// Space と同じ変換の結果を候補の先頭に置く。変換を始めた後は何もしない。
++TEST_F(SessionTest, KotoriRefreshSuggestion) {
++  MockEngine engine;
++  std::shared_ptr<MockConverter> converter = CreateEngineConverterMock(&engine);
++  Session session(engine);
++  InitSessionToPrecomposition(&session);
++
++  Segments suggestion;
++  {
++    Segment* segment = suggestion.add_segment();
++    segment->set_key("あいうえお");
++    AddCandidate("あいうえお", "あいうえお", segment);
++    AddCandidate("あいうえお", "アイウエオ", segment);
++  }
++  EXPECT_CALL(*converter, StartPrediction(_, _))
++      .WillRepeatedly(DoAll(SetArgPointee<1>(suggestion), Return(true)));
++  Segments converted;
++  {
++    Segment* segment = converted.add_segment();
++    segment->set_key("あいうえお");
++    AddCandidate("あいうえお", "阿伊宇江於", segment);
++  }
++  EXPECT_CALL(*converter, StartConversion(_, _))
++      .WillRepeatedly(DoAll(SetArgPointee<1>(converted), Return(true)));
++
++  kotori::g_live_first_ms = 200;
++  kotori::g_live_next_ms = 0;
++  commands::Command command;
++  InsertCharacterChars("aiueo", &session, &command);
++  ASSERT_TRUE(command.output().has_callback());
++  EXPECT_EQ(command.output().callback().session_command().type(),
++            commands::SessionCommand::KOTORI_REFRESH_SUGGESTION);
++  EXPECT_EQ(command.output().callback().delay_millisec(), 200);
++  EXPECT_EQ(command.output().candidate_window().candidate(0).value(),
++            "あいうえお");
++
++  auto refresh = [&] {
++    command.Clear();
++    command.mutable_input()->set_type(commands::Input::SEND_COMMAND);
++    command.mutable_input()->mutable_command()->set_type(
++        commands::SessionCommand::KOTORI_REFRESH_SUGGESTION);
++    return session.SendCommand(&command);
++  };
++  EXPECT_TRUE(refresh());
++  EXPECT_TRUE(command.output().consumed());
++  EXPECT_EQ(session.context().state(), ImeContext::COMPOSITION);
++  EXPECT_EQ(command.output().candidate_window().candidate(0).value(),
++            "阿伊宇江於");
++  EXPECT_EQ(command.output().candidate_window().candidate(1).value(),
++            "あいうえお");
++  EXPECT_FALSE(command.output().has_callback());  // 2 回目は頼まない(g_live_next_ms = 0)
++
++  // 2 回目以降の時間があれば、上限まで続けて頼む。
++  kotori::g_live_next_ms = 800;
++  EXPECT_TRUE(refresh());
++  ASSERT_TRUE(command.output().has_callback());
++  EXPECT_EQ(command.output().callback().delay_millisec(), 800);
++
++  // 変換を始めた後の取り直しは何もしない。
++  command.Clear();
++  EXPECT_TRUE(session.Convert(&command));
++  EXPECT_TRUE(refresh());
++  EXPECT_FALSE(command.output().consumed());
++  EXPECT_EQ(session.context().state(), ImeContext::CONVERSION);
++
++  // 取り直さない設定(0)なら頼まない。
++  kotori::g_live_first_ms = 0;
++  kotori::g_live_next_ms = 0;
++  command.Clear();
++  session.Revert(&command);
++  InsertCharacterChars("a", &session, &command);
++  EXPECT_FALSE(command.output().has_callback());
++}
++
+ }  // namespace session
+ }  // namespace mozc
 diff --git a/src/win32/base/display_name_resource.h b/src/win32/base/display_name_resource.h
 index 34ddf93fd..ef789ba71 100644
 --- a/src/win32/base/display_name_resource.h
@@ -24116,6 +24681,113 @@ index 34ddf93fd..ef789ba71 100644
  // MUI string cache.  See b/2994558 for details.
 -#define IDS_TEXTSERVICE_DISPLAYNAME_SYNONYM 201
 +#define IDS_TEXTSERVICE_DISPLAYNAME_SYNONYM 202
+diff --git a/src/win32/tip/tip_edit_session.cc b/src/win32/tip/tip_edit_session.cc
+index 35ffb0911..2643b7ef0 100644
+--- a/src/win32/tip/tip_edit_session.cc
++++ b/src/win32/tip/tip_edit_session.cc
+@@ -298,6 +298,55 @@ class AsyncSessionCommandEditSessionImpl final
+   SessionCommand session_command_;
+ };
+ 
++// Kotori: output が入力中の候補の取り直しを頼んでいれば、タイマーを仕掛ける。
++// 頼んでいなければ、前に仕掛けたものを取り消す(docs/adr/0039)。
++void KotoriHandleRefreshCallback(TipTextService* text_service,
++                                 ITfContext* context, const Output& output) {
++  if (output.has_callback() && output.callback().has_session_command() &&
++      output.callback().session_command().type() ==
++          SessionCommand::KOTORI_REFRESH_SUGGESTION) {
++    text_service->KotoriScheduleRefresh(context,
++                                        output.callback().delay_millisec());
++  } else {
++    text_service->KotoriCancelRefresh();
++  }
++}
++
++// Kotori: 入力中の候補を取り直す編集セッション(docs/adr/0039)。サーバーが取り直さなかった
++// (打鍵の後に変換・確定した)ときは、画面を変えない。
++class AsyncKotoriRefreshEditSessionImpl final
++    : public TipComImplements<ITfEditSession> {
++ public:
++  AsyncKotoriRefreshEditSessionImpl(
++      wil::com_ptr_nothrow<TipTextService> text_service,
++      wil::com_ptr_nothrow<ITfContext> context)
++      : text_service_(std::move(text_service)), context_(std::move(context)) {}
++
++  STDMETHODIMP DoEditSession(TfEditCookie write_cookie) override {
++    TipPrivateContext* private_context =
++        text_service_->GetPrivateContext(context_.get());
++    if (private_context == nullptr) {
++      return E_FAIL;
++    }
++    SessionCommand command;
++    command.set_type(SessionCommand::KOTORI_REFRESH_SUGGESTION);
++    Output output;
++    if (!private_context->GetClient()->SendCommand(command, &output)) {
++      return E_FAIL;
++    }
++    if (!output.consumed()) {
++      return S_OK;
++    }
++    KotoriHandleRefreshCallback(text_service_.get(), context_.get(), output);
++    return TipEditSessionImpl::UpdateContext(
++        text_service_.get(), context_.get(), write_cookie, output);
++  }
++
++ private:
++  wil::com_ptr_nothrow<TipTextService> text_service_;
++  wil::com_ptr_nothrow<ITfContext> context_;
++};
++
+ bool OnSessionCommandAsync(TipTextService* text_service, ITfContext* context,
+                            const SessionCommand& session_command) {
+   auto edit_session = MakeComPtr<AsyncSessionCommandEditSessionImpl>(
+@@ -488,6 +537,9 @@ enum EditSessionMode {
+ 
+ bool OnOutputReceivedImpl(TipTextService* text_service, ITfContext* context,
+                           Output new_output, EditSessionMode mode) {
++  // Kotori: 入力中の候補の取り直し(遅らせて送る。docs/adr/0039)。ほかの callback と違い、
++  // この出力はそのまま画面に出す。
++  KotoriHandleRefreshCallback(text_service, context, new_output);
+   if (new_output.has_callback() &&
+       new_output.callback().has_session_command() &&
+       new_output.callback().session_command().has_type()) {
+@@ -743,6 +795,20 @@ bool TipEditSession::OnRendererCallbackAsync(TipTextService* text_service,
+   }
+ }
+ 
++bool TipEditSession::KotoriRefreshAsync(TipTextService* text_service,
++                                        ITfContext* context) {
++  if (text_service->GetPrivateContext(context) == nullptr) {
++    return false;  // 管理していない欄
++  }
++  auto edit_session = MakeComPtr<AsyncKotoriRefreshEditSessionImpl>(
++      text_service, context);
++  HRESULT edit_session_result = S_OK;
++  const HRESULT hr = context->RequestEditSession(
++      text_service->GetClientID(), edit_session.get(),
++      TF_ES_ASYNCDONTCARE | TF_ES_READWRITE, &edit_session_result);
++  return SUCCEEDED(hr) && SUCCEEDED(edit_session_result);
++}
++
+ bool TipEditSession::SubmitAsync(TipTextService* text_service,
+                                  ITfContext* context) {
+   TipPrivateContext* private_context = text_service->GetPrivateContext(context);
+diff --git a/src/win32/tip/tip_edit_session.h b/src/win32/tip/tip_edit_session.h
+index 640c76986..85af0dba3 100644
+--- a/src/win32/tip/tip_edit_session.h
++++ b/src/win32/tip/tip_edit_session.h
+@@ -87,6 +87,11 @@ class TipEditSession {
+ 
+   // Begins an async edit session to submit the current candidate.
+   static bool SubmitAsync(TipTextService* text_service, ITfContext* context);
++
++  // Kotori: 非同期の編集セッションで、入力中の候補をサーバーに取り直させる
++  // (KOTORI_REFRESH_SUGGESTION。docs/adr/0039)。
++  static bool KotoriRefreshAsync(TipTextService* text_service,
++                                 ITfContext* context);
+   // Begins an async edit session to cancel the current composition.
+   static bool CancelCompositionAsync(TipTextService* text_service,
+                                      ITfContext* context);
 diff --git a/src/win32/tip/tip_resource.rc b/src/win32/tip/tip_resource.rc
 index f6f2c38dc..4af9e749e 100644
 --- a/src/win32/tip/tip_resource.rc
@@ -24166,3 +24838,104 @@ index f6f2c38dc..4af9e749e 100644
  #endif
      IDS_INPUTMODE           "Input Mode"
      IDS_WIN8_TRAY_ITEM      "Right click to show IME options"
+diff --git a/src/win32/tip/tip_text_service.cc b/src/win32/tip/tip_text_service.cc
+index beaef1a55..d6084c809 100644
+--- a/src/win32/tip/tip_text_service.cc
++++ b/src/win32/tip/tip_text_service.cc
+@@ -111,6 +111,8 @@ volatile bool g_module_unloaded = false;
+ volatile DWORD g_tls_index = TLS_OUT_OF_INDEXES;
+ 
+ constexpr UINT kUpdateUIMessage = WM_USER;
++// Kotori: 入力中の候補を取り直すタイマー(タスクのウィンドウ。docs/adr/0039)。
++constexpr UINT_PTR kKotoriRefreshTimerId = 0x4b4f;
+ 
+ #ifdef GOOGLE_JAPANESE_INPUT_BUILD
+ 
+@@ -973,6 +975,42 @@ class TipTextServiceImpl
+     PostMessageW(task_window_handle_, kUpdateUIMessage, 0, 0);
+   }
+ 
++  // Kotori: 入力中の候補の取り直し(docs/adr/0039)。タスクのウィンドウのタイマーで遅らせる。
++  // 同じ ID の SetTimer は前のものを置き換えるので、続けて打てば最後の打鍵から数え直す。
++  void KotoriScheduleRefresh(ITfContext* context, uint32_t delay_ms) override {
++    if (!::IsWindow(task_window_handle_) || context == nullptr) {
++      return;
++    }
++    kotori_refresh_context_ = context;
++    ::SetTimer(task_window_handle_, kKotoriRefreshTimerId, delay_ms, nullptr);
++  }
++
++  void KotoriCancelRefresh() override {
++    if (::IsWindow(task_window_handle_)) {
++      ::KillTimer(task_window_handle_, kKotoriRefreshTimerId);
++    }
++    kotori_refresh_context_.reset();
++  }
++
++  void OnKotoriRefreshTimer() {
++    wil::com_ptr_nothrow<ITfContext> target = std::move(kotori_refresh_context_);
++    KotoriCancelRefresh();
++    if (!target) {
++      return;
++    }
++    // 頼んだ後にフォーカスが別の欄に移っていたら何もしない。
++    wil::com_ptr_nothrow<ITfDocumentMgr> document_manager;
++    if (FAILED(thread_mgr_->GetFocus(&document_manager)) || !document_manager) {
++      return;
++    }
++    wil::com_ptr_nothrow<ITfContext> focused;
++    if (FAILED(document_manager->GetBase(&focused)) ||
++        focused.get() != target.get()) {
++      return;
++    }
++    TipEditSession::KotoriRefreshAsync(this, target.get());
++  }
++
+   void UpdateLangbar(bool enabled, uint32_t mozc_mode) override {
+     langbar_.UpdateMenu(enabled, mozc_mode);
+   }
+@@ -1332,6 +1370,7 @@ class TipTextServiceImpl
+     if (!::IsWindow(task_window_handle_)) {
+       return S_FALSE;
+     }
++    KotoriCancelRefresh();
+     ::DestroyWindow(task_window_handle_);
+     task_window_handle_ = nullptr;
+     return S_OK;
+@@ -1349,6 +1388,10 @@ class TipTextServiceImpl
+         self->OnUpdateUI();
+         return 0;
+       }
++      if (message == WM_TIMER && wparam == kKotoriRefreshTimerId) {
++        self->OnKotoriRefreshTimer();
++        return 0;
++      }
+     }
+     return ::DefWindowProcW(window_handle, message, wparam, lparam);
+   }
+@@ -1481,6 +1524,8 @@ class TipTextServiceImpl
+   PreservedKeyMap preserved_key_map_;
+   std::unique_ptr<TipThreadContext> thread_context_;
+   HWND task_window_handle_;
++  // Kotori: 取り直しを頼まれた欄(タイマーが鳴ったときにフォーカスがあれば取り直す)。
++  wil::com_ptr_nothrow<ITfContext> kotori_refresh_context_;
+   HWND renderer_callback_window_handle_;
+ };
+ 
+diff --git a/src/win32/tip/tip_text_service.h b/src/win32/tip/tip_text_service.h
+index 04d348c59..6ef54d274 100644
+--- a/src/win32/tip/tip_text_service.h
++++ b/src/win32/tip/tip_text_service.h
+@@ -80,6 +80,12 @@ class TipTextService : public IUnknown {
+   // Returns true if the language bar is initialized.
+   virtual bool IsLangbarInitialized() const = 0;
+ 
++  // Kotori: delay_ms 後に、context の入力中の候補をサーバーに取り直させる
++  // (KOTORI_REFRESH_SUGGESTION の callback。docs/adr/0039)。前に頼んだものは取り消す。
++  virtual void KotoriScheduleRefresh(ITfContext* context, uint32_t delay_ms) {}
++  // Kotori: 頼んでいた取り直しを取り消す(次の打鍵など)。
++  virtual void KotoriCancelRefresh() {}
++
+   virtual ~TipTextService() = default;
+ };
+ 
