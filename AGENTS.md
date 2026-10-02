@@ -63,6 +63,10 @@ Kotori日本語入力を開発する AI エージェント(Claude Code、Codex �
 - **Bazel のターゲットが MSYS に書き換えられる**: Git Bash では `MSYS_NO_PATHCONV=1 bazelisk build //converter:converter_main ...`。
 - **実験中にビルドしない**: 走っている `converter_main.exe` を bazel が差し替えると、結果が混ざる。別のビルドが
   CPU を使っている間の時間の計測も揺れる(先に `tasklist` を見る)。
+- **パッチを作り直す道具が Mozc の作業ツリーを壊した(2026-10-02)**: `make_patches.sh` が作業用の clone を作り直せず
+  (別の作業ツリーで Bazel のサーバーが開いていた)、`&&` でつないだせいで止まらずに `~/mz` のまま続け、ファイルを自分自身に
+  写して 13 個を空にした。今は 1 行ずつ確かめて止まる。`~/mz` 以外の所で Bazel を動かしたら `bazelisk shutdown` してから
+  作り直す。壊れたときは、素の Mozc に main のパッチを当てた木から写して戻す(`git worktree add`)。
 - **Bazel の出力は読み取り専用**: `bazel-bin` からコピーしたファイルを上書きするときは `chmod u+w` してから。
 - **積み重ねた PR のマージ**: 下の PR を `--delete-branch` でマージすると、上の PR が付け替えられずに閉じることが
   ある。先に上の PR の base を main に変えてからマージするか、一番上のブランチからまとめて出し直す。

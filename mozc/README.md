@@ -99,6 +99,7 @@ Windows で手元でビルドする: 作業ツリーの `src` で
 | `KOTORI_LM_TAB_BUDGET` | キャッシュのない Tab の上限(ms、既定 700、docs/adr/0025) |
 | `KOTORI_LM_PREDICT=0`、`KOTORI_LM_PREDICT_MODE`、`KOTORI_LM_PREDICT_TOKENS`、`KOTORI_LM_PREDICT_BEAMS` | 予測を切る、予測の作り方、続きのトークン数、続きの数 |
 | `KOTORI_LM_LIGHT_BEAMS`、`KOTORI_LM_LIGHT_RANK`、`KOTORI_LM_LIGHT_DELAY`、`KOTORI_LM_FULL_DELAY` | 打鍵ごとの軽い予測の中身と、始めるまでの待ち(既定 作り直しは 600 ms、docs/adr/0024) |
+| `KOTORI_LM_LIVE`、`KOTORI_LM_LIVE_FIRST`、`KOTORI_LM_LIVE_NEXT` | 手が止まった後に入力中の候補を取り直すか(`0` で取り直さない)と、取り直すまでの時間(既定 GPU あり 200 ms・なし 450 ms、2 回目以降 800 ms。docs/adr/0039) |
 | `KOTORI_LM_PRECONVERT=0` | 先回りの変換を切る(docs/adr/0024) |
 | `KOTORI_LM_IDLE_UNLOAD` | 入力がなくなってからモデルを外すまでの秒数(既定 600、0 で外さない、docs/adr/0034) |
 | `KOTORI_LM_CPU_LONG`、`KOTORI_ZENZ_LONG_MODEL` | GPU のない PC で、この文字数より長い読みに使う zenz(既定 12 文字、同梱の small。0 で使い分けない、docs/adr/0035) |

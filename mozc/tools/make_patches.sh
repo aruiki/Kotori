@@ -16,7 +16,20 @@ cd "$MZ"
 FILES=$( (git -c core.quotepath=off diff --name-only $BASE; git -c core.quotepath=off ls-files --others --exclude-standard) |
   grep -v '\.gguf$' | grep -v '^src/third_party' | grep -v '^src/bazel-' | sort -u)
 echo "$(echo "$FILES" | wc -l) files"
-rm -rf "$WORK" && git clone -q "$BASE_REPO" "$WORK" && cd "$WORK" && git checkout -q $BASE
+# 作り直す clone は 1 行ずつ確かめる(&& でつなぐと set -e が効かず、失敗すると Mozc の作業ツリーのまま
+# 続けて、ファイルを自分自身に写して空にしてしまう。2026-10-02 に起きた)。
+rm -rf "$WORK"
+if [ -e "$WORK" ]; then
+  echo "$WORK を消せない(Bazel のサーバーなどが開いている。cd $WORK/src && bazelisk shutdown)" >&2
+  exit 1
+fi
+git clone -q "$BASE_REPO" "$WORK"
+cd "$WORK"
+if [ "$(pwd -P)" = "$(cd "$MZ" && pwd -P)" ]; then
+  echo "作業用の clone に移れていない" >&2
+  exit 1
+fi
+git checkout -q $BASE
 git -c user.email=k@k -c user.name=k commit -q --allow-empty -m base
 git apply "$R/mozc/patches/0001-kotori-branding.patch" && git add -A && git -c user.email=k@k -c user.name=k commit -q -m 0001
 for f in $FILES; do
