@@ -184,7 +184,7 @@ jobs:
         working-directory: .\mozc-src\src
         env:
           ANDROID_NDK_HOME: ""
-        run: bazelisk test //rewriter:lm_rewriter_test //base:kotori_diagnostics_test --config release_build --disk_cache=D:\bazel-disk-cache
+        run: bazelisk test //rewriter:lm_rewriter_test //base:kotori_diagnostics_test //session:session_test --config release_build --disk_cache=D:\bazel-disk-cache
       - if: github.ref == 'refs/heads/main'
         uses: actions/cache/save@v4
         with:

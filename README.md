@@ -186,6 +186,7 @@ GPU は自動で見つけて使います。ドライバー以外の準備は要�
 
 | 版 | 主な変更 |
 | --- | --- |
+| [v1.1.0-rc.1](https://github.com/aruiki/KotoriIME-japanese-/releases/tag/v1.1.0-rc.1)(リリース候補) | **手を止めると、Space を押す前に AI の変換が出る**。Tab の予測も手を止めると出る |
 | [v1.0.0](https://github.com/aruiki/KotoriIME-japanese-/releases/tag/v1.0.0) | **最初の製品版**(署名は 1.0.x で付ける)。診断情報の書き出し、落ちたときの記録(入力した文字は含まない)、通信の部品を外した、第三者の表示 |
 | [v0.3.0-beta.8](https://github.com/aruiki/KotoriIME-japanese-/releases/tag/v0.3.0-beta.8) | GPU のない PC で、長い文の変換が速く正確に(打ってすぐ Space の正解 36 → 46 / 60 文) |
 | [v0.3.0-beta.7](https://github.com/aruiki/KotoriIME-japanese-/releases/tag/v0.3.0-beta.7) | 10 分使わなければ VRAM を空ける。入力中の GPU の負荷をさらに約 1 割減 |

@@ -41,7 +41,7 @@ Kotori日本語入力を開発する AI エージェント(Claude Code、Codex �
 | Space の待ち・ノート PC | `mozc/tools/space_latency.py KOTORI_LM_DEVICE=cpu` | 固まらない。正解数も出る |
 | 落ちない・待たせない | `mozc/tools/stress_test.py`(GPU と `KOTORI_LM_DEVICE=cpu`) | 異常終了なし、変換の最大が上限内 |
 | 予測 | `mozc/eval_predict.py --warm 1`(`--suggest` で入力中の候補) | 当たり・節約文字数・外れ候補の割合 |
-| 単体テスト | `bazelisk test //rewriter:lm_rewriter_test //base:kotori_diagnostics_test` | 通る(CI でも回る) |
+| 単体テスト | `bazelisk test //rewriter:lm_rewriter_test //base:kotori_diagnostics_test //session:session_test` | 通る(CI でも回る) |
 | 設定画面 | `mozc/tools/capture_window.py`(MSI を展開した mozc_tool) | 崩れない。倍率・ダークモード |
 
 評価と調整の環境変数は `mozc/README.md` の一覧。性能表は `docs/PERFORMANCE.md`。
